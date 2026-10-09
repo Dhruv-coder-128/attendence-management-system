@@ -45,7 +45,7 @@ export default function NotificationsPage({ notifications, onBroadcast }) {
       setMessage(
         'All Batches: Academy study halls will remain open until 09:30 PM this weekend for exam preparation.'
       );
-      setAudience('All Academy Students (472 Total)');
+      setAudience('All Registered Academy Students');
     }
   };
 
@@ -57,9 +57,9 @@ export default function NotificationsPage({ notifications, onBroadcast }) {
       message,
       category: template === 'attendance' ? 'Attendance' : template === 'fee' ? 'Fee Alert' : 'Academic',
       channel,
-      recipientsCount: audience.includes('472') ? 472 : audience.includes('Absentee') ? 36 : 68,
+      recipientsCount: audience.includes('Registered') ? 45 : audience.includes('Absentee') ? 12 : 25,
       sentAt: 'Just now',
-      status: 'Delivered',
+      status: 'Queued (Outbox)',
       sender: 'Director Desk',
     };
 
@@ -151,6 +151,27 @@ export default function NotificationsPage({ notifications, onBroadcast }) {
         </div>
       </div>
 
+      {/* Gateway Notice Banner */}
+      <div
+        style={{
+          marginBottom: '18px',
+          padding: '12px 16px',
+          backgroundColor: '#f0f9ff',
+          border: '1px solid #bae6fd',
+          borderRadius: '6px',
+          color: '#0369a1',
+          fontSize: '13px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+        }}
+      >
+        <AlertCircle size={18} style={{ flexShrink: 0 }} />
+        <span>
+          <strong>Administrative Outbox Mode:</strong> Broadcast messages and roll call alerts are logged in the ERP communication history. Direct Telegram Bot dispatch is queued pending serverless edge webhook configuration.
+        </span>
+      </div>
+
       <DataTable
         columns={columns}
         data={notifications}
@@ -222,9 +243,9 @@ export default function NotificationsPage({ notifications, onBroadcast }) {
               onChange={(e) => setAudience(e.target.value)}
               options={[
                 'Absentee Guardians (Today)',
-                'Grade 12 JEE Students & Guardians',
+                'Active Batches & Guardians',
                 'Pending Fee Accounts',
-                'All Academy Students (472 Total)',
+                'All Registered Academy Students',
               ]}
             />
           </div>

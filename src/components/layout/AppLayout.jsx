@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Info, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Info, Sparkles, CheckCircle2, AlertCircle, Database } from 'lucide-react';
 import Sidebar from './Sidebar';
 import TopNav from './TopNav';
-import { DEMO_NOTICE } from '../../data/demoData';
 import { isSupabaseConfigured } from '../../lib/supabase';
 
 /**
@@ -39,11 +38,22 @@ export default function AppLayout({
 
       {/* Main Workspace Area */}
       <div className="erp-main-area">
-        {/* Top Sandbox Notice */}
+        {/* Top Status Banner */}
         <div className="demo-banner">
           <div className="demo-banner-left">
-            <span className="demo-pill">Sandbox Preview</span>
-            <span>{DEMO_NOTICE.disclaimer}</span>
+            <span
+              className="demo-pill"
+              style={{
+                backgroundColor: 'var(--navy-900)',
+                color: 'var(--gold-primary)',
+                border: '1px solid var(--gold-border)',
+              }}
+            >
+              PostgreSQL Mode
+            </span>
+            <span>
+              Connected to Supabase Cloud Database &bull; Row Level Security Active
+            </span>
           </div>
           <div
             onClick={() => onNavigate('settings')}

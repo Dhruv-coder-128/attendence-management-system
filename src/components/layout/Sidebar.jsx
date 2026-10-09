@@ -35,11 +35,26 @@ export default function Sidebar({
     .toUpperCase();
   const navItems = [
     { id: 'dashboard', label: 'Executive Dashboard', icon: LayoutDashboard },
-    { id: 'students', label: 'Students Directory', icon: Users, badge: counts.students || '472' },
-    { id: 'batches', label: 'Courses & Batches', icon: BookOpen, badge: counts.batches || '16' },
+    {
+      id: 'students',
+      label: 'Students Directory',
+      icon: Users,
+      badge: counts.students !== undefined ? String(counts.students) : '0',
+    },
+    {
+      id: 'batches',
+      label: 'Courses & Batches',
+      icon: BookOpen,
+      badge: counts.batches !== undefined ? String(counts.batches) : '0',
+    },
     { id: 'attendance', label: 'Attendance Register', icon: CalendarCheck, badge: 'Live' },
     { id: 'parents', label: 'Parent Directory', icon: UserCheck },
-    { id: 'notifications', label: 'Telegram & Alerts', icon: Bell, badge: counts.notifications || '4' },
+    {
+      id: 'notifications',
+      label: 'Telegram & Alerts',
+      icon: Bell,
+      badge: counts.notifications !== undefined ? String(counts.notifications) : '0',
+    },
     { id: 'settings', label: 'ERP Settings', icon: Settings },
   ];
 
@@ -67,8 +82,10 @@ export default function Sidebar({
           </div>
 
           <div className="sidebar-badge-strip">
-            <span>AY 2026-27 • Term 1</span>
-            <span style={{ fontWeight: 600 }}>472 / 500</span>
+            <span>AY 2026-27 &bull; Term 1</span>
+            <span style={{ fontWeight: 600 }}>
+              {counts.students !== undefined ? `${counts.students} Students` : 'PostgreSQL'}
+            </span>
           </div>
         </div>
 

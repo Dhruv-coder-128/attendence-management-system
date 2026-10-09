@@ -19,12 +19,22 @@ import { isSupabaseConfigured, checkSupabaseConnection, supabaseConfig } from '.
 /**
  * System Settings & Cloud Integration Status Page
  */
-export default function SettingsPage({ onResetDemo }) {
-  const [instituteName, setInstituteName] = useState('Vanguard Academy of Advanced Sciences');
-  const [campusName, setCampusName] = useState('Central Campus — Block IV');
-  const [academicYear, setAcademicYear] = useState('AY 2026-27 (Term 1)');
-  const [minAttendanceThreshold, setMinAttendanceThreshold] = useState('75');
-  const [lateGracePeriod, setLateGracePeriod] = useState('15');
+export default function SettingsPage() {
+  const [instituteName, setInstituteName] = useState(() => {
+    return localStorage.getItem('erp_institute_name') || 'Ruparel Attendance ERP Academy';
+  });
+  const [campusName, setCampusName] = useState(() => {
+    return localStorage.getItem('erp_campus_name') || 'Central Campus — Main Wing';
+  });
+  const [academicYear, setAcademicYear] = useState(() => {
+    return localStorage.getItem('erp_academic_year') || 'AY 2026-27 (Term 1)';
+  });
+  const [minAttendanceThreshold, setMinAttendanceThreshold] = useState(() => {
+    return localStorage.getItem('erp_min_attendance') || '75';
+  });
+  const [lateGracePeriod, setLateGracePeriod] = useState(() => {
+    return localStorage.getItem('erp_late_grace') || '15';
+  });
   const [savedNotice, setSavedNotice] = useState(false);
 
   // Supabase Connection Diagnostics State
@@ -58,8 +68,17 @@ export default function SettingsPage({ onResetDemo }) {
 
   const handleSaveSettings = (e) => {
     e.preventDefault();
-    setSavedNotice(true);
-    setTimeout(() => setSavedNotice(false), 3000);
+    try {
+      localStorage.setItem('erp_institute_name', instituteName);
+      localStorage.setItem('erp_campus_name', campusName);
+      localStorage.setItem('erp_academic_year', academicYear);
+      localStorage.setItem('erp_min_attendance', minAttendanceThreshold);
+      localStorage.setItem('erp_late_grace', lateGracePeriod);
+      setSavedNotice(true);
+      setTimeout(() => setSavedNotice(false), 3000);
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+    }
   };
 
   return (
@@ -76,10 +95,11 @@ export default function SettingsPage({ onResetDemo }) {
           <Button
             variant="outline"
             size="sm"
-            icon={RotateCcw}
-            onClick={onResetDemo}
+            icon={RefreshCw}
+            onClick={runConnectionTest}
+            disabled={connectionState.loading}
           >
-            Reset Demo Data
+            {connectionState.loading ? 'Checking...' : 'Re-test Supabase'}
           </Button>
           <Button
             variant="primary"
