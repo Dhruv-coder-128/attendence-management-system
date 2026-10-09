@@ -332,7 +332,7 @@ Your ward <b>${escapeHtml(student.full_name)}</b> (Adm No: <code>${escapeHtml(st
 
         // Update database attendance row with actual delivery status
         if (studentDispatchSuccess) {
-          await supabase
+          const upRes = await supabase
             .from('attendance')
             .update({
               telegram_notified: true,
@@ -340,14 +340,33 @@ Your ward <b>${escapeHtml(student.full_name)}</b> (Adm No: <code>${escapeHtml(st
               telegram_error: null,
             })
             .eq('id', record.id);
+
+          if (upRes.error && upRes.error.message?.includes('telegram_error')) {
+            await supabase
+              .from('attendance')
+              .update({
+                telegram_notified: true,
+                telegram_notified_at: new Date().toISOString(),
+              })
+              .eq('id', record.id);
+          }
         } else {
-          await supabase
+          const upRes = await supabase
             .from('attendance')
             .update({
               telegram_notified: false,
               telegram_error: lastErrorDesc,
             })
             .eq('id', record.id);
+
+          if (upRes.error && upRes.error.message?.includes('telegram_error')) {
+            await supabase
+              .from('attendance')
+              .update({
+                telegram_notified: false,
+              })
+              .eq('id', record.id);
+          }
         }
       }
 

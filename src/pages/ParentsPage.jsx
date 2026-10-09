@@ -110,7 +110,10 @@ export default function ParentsPage({ onRefreshCounts }) {
       if (stErr) throw stErr;
 
       // 2. Fetch Parents with joined parent_students and students
-      const { data: parentsData, error: prErr } = await supabase
+      let parentsData = null;
+      let prErr = null;
+
+      const fullSelectRes = await supabase
         .from('parents')
         .select(`
           id,
@@ -134,6 +137,36 @@ export default function ParentsPage({ onRefreshCounts }) {
           )
         `)
         .order('full_name');
+
+      if (fullSelectRes.error && (fullSelectRes.error.message?.includes('invitation_status') || fullSelectRes.error.message?.includes('linking_token'))) {
+        // Fallback to core columns existing on production schema
+        const coreRes = await supabase
+          .from('parents')
+          .select(`
+            id,
+            full_name,
+            phone,
+            email,
+            relationship,
+            preferred_notification_channel,
+            telegram_chat_id,
+            is_verified,
+            created_at,
+            parent_students:parent_students (
+              id,
+              relationship,
+              is_primary_contact,
+              students:student_id ( id, full_name, admission_no )
+            )
+          `)
+          .order('full_name');
+
+        parentsData = coreRes.data;
+        prErr = coreRes.error;
+      } else {
+        parentsData = fullSelectRes.data;
+        prErr = fullSelectRes.error;
+      }
 
       if (prErr) throw prErr;
 

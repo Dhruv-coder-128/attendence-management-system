@@ -40,12 +40,19 @@ ALTER TABLE public.attendance ADD COLUMN IF NOT EXISTS telegram_delivery_status 
 -- 5. ROW LEVEL SECURITY (RLS) FOR PARENT_INVITATIONS
 ALTER TABLE public.parent_invitations ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Authenticated users can view parent_invitations" ON public.parent_invitations;
 CREATE POLICY "Authenticated users can view parent_invitations"
     ON public.parent_invitations FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Authenticated users can insert parent_invitations" ON public.parent_invitations;
 CREATE POLICY "Authenticated users can insert parent_invitations"
     ON public.parent_invitations FOR INSERT TO authenticated WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Authenticated users can update parent_invitations" ON public.parent_invitations;
 CREATE POLICY "Authenticated users can update parent_invitations"
     ON public.parent_invitations FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Authenticated users can delete parent_invitations" ON public.parent_invitations;
 CREATE POLICY "Authenticated users can delete parent_invitations"
     ON public.parent_invitations FOR DELETE TO authenticated USING (true);
 
@@ -228,3 +235,7 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.get_parent_status_by_chat_id(VARCHAR) TO anon, authenticated, service_role;
+
+-- 8. REFRESH SCHEMA CACHE
+-- Signals PostgREST to immediately reload schema cache
+NOTIFY pgrst, 'reload schema';

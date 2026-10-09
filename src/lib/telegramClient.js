@@ -128,29 +128,52 @@ export async function createBulkParentInvitations(parents, channel = 'telegram')
  * (Admin bypass / manual verification in UI)
  */
 export async function linkParentTelegramAccount(parentId, telegramChatId) {
-  if (!supabase) throw new Error('Supabase client not initialized.');
   if (!parentId) throw new Error('Parent ID is required.');
   if (!telegramChatId || !String(telegramChatId).trim()) {
     throw new Error('Valid numeric Telegram Chat ID is required.');
   }
+  if (!supabase) throw new Error('Supabase client not initialized.');
 
   const cleanChatId = String(telegramChatId).trim();
 
-  const { data, error } = await supabase
+  // Core verified update payload (always valid across all schema versions)
+  const corePayload = {
+    telegram_chat_id: cleanChatId,
+    is_verified: true,
+    preferred_notification_channel: 'telegram',
+  };
+
+  // 1. First attempt: include invitation_status if supported by database schema
+  let updateResult = await supabase
     .from('parents')
     .update({
-      telegram_chat_id: cleanChatId,
-      is_verified: true,
-      preferred_notification_channel: 'telegram',
+      ...corePayload,
       invitation_status: 'linked',
     })
     .eq('id', parentId)
     .select()
     .single();
 
-  if (error) throw error;
+  // 2. Graceful fallback if invitation_status column does not exist in schema cache
+  if (updateResult.error && updateResult.error.message?.includes('invitation_status')) {
+    updateResult = await supabase
+      .from('parents')
+      .update(corePayload)
+      .eq('id', parentId)
+      .select()
+      .single();
+  }
 
-  // Also update parent_invitations linking_status if present
+  if (updateResult.error) {
+    if (updateResult.error.code === 'PGRST116' || updateResult.error.message?.includes('single JSON object')) {
+      throw new Error(`Parent record with ID "${parentId}" was not found in the database.`);
+    }
+    throw updateResult.error;
+  }
+
+  const parentData = updateResult.data;
+
+  // 3. Also update parent_invitations linking_status if table exists
   try {
     await supabase
       .from('parent_invitations')
@@ -164,7 +187,7 @@ export async function linkParentTelegramAccount(parentId, telegramChatId) {
     // Non-fatal if table not created
   }
 
-  return { success: true, parent: data, chatId: cleanChatId, ...data };
+  return { success: true, parent: parentData, chatId: cleanChatId, ...parentData };
 }
 
 /**

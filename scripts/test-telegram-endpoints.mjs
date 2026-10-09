@@ -1,8 +1,4 @@
 import fs from 'fs';
-import { getParentTelegramDeepLink } from '../src/lib/telegramClient.js';
-import telegramStatusHandler from '../api/telegram-status.js';
-import telegramWebhookHandler from '../api/telegram-webhook.js';
-import telegramNotifyHandler from '../api/telegram-notify.js';
 
 let passed = 0;
 let failed = 0;
@@ -43,6 +39,12 @@ const env = getEnv();
 process.env.TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN || '8614141443:AAHOlKo5tP167sjlJqU1KfQi15Q1j8PRH8k';
 process.env.VITE_SUPABASE_URL = env.VITE_SUPABASE_URL || 'https://uugvudqbwoyywzbjrfol.supabase.co';
 process.env.VITE_SUPABASE_PUBLISHABLE_KEY = env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_pd2n3DRFhFgn79-SW6FEPw_vqRz2Jut';
+
+// Dynamically import application modules after process.env is configured
+const { getParentTelegramDeepLink, linkParentTelegramAccount } = await import('../src/lib/telegramClient.js');
+const { default: telegramStatusHandler } = await import('../api/telegram-status.js');
+const { default: telegramWebhookHandler } = await import('../api/telegram-webhook.js');
+const { default: telegramNotifyHandler } = await import('../api/telegram-notify.js');
 
 function mockReq(options = {}) {
   return {
@@ -216,6 +218,24 @@ async function runTests() {
   await telegramNotifyHandler(notifyCodeReq, notifyCodeRes);
   assert(notifyCodeRes.statusCode === 404, 'Returns 404 for nonexistent code identifier');
   assert(notifyCodeRes.data.error.includes('NONEXISTENT-BATCH-CODE'), 'Includes searched identifier in diagnostic');
+
+  // TEST 11: linkParentTelegramAccount Input Validation
+  console.log('\n--- TEST 11: linkParentTelegramAccount Input Validation ---');
+  let err1 = null;
+  try {
+    await linkParentTelegramAccount('', '123456');
+  } catch (e) {
+    err1 = e.message;
+  }
+  assert(err1?.includes('Parent ID is required'), 'Rejects empty parentId');
+
+  let err2 = null;
+  try {
+    await linkParentTelegramAccount('parent-uuid-1', '   ');
+  } catch (e) {
+    err2 = e.message;
+  }
+  assert(err2?.includes('Telegram Chat ID is required'), 'Rejects blank chat ID');
 
   console.log('\n======================================================');
   console.log(`TEST SUMMARY: ${passed} Passed, ${failed} Failed`);

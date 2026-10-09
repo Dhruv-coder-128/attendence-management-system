@@ -213,14 +213,22 @@ You will receive real-time roll call notifications whenever attendance is marked
           const cleanParam = param.replace(/^(tk_|link_)/, '');
           const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cleanParam);
 
-          let pQuery = supabase.from('parents').select('id, full_name, linking_token, linking_token_expires_at');
-          if (isUuid) {
-            pQuery = pQuery.or(`id.eq.${cleanParam},linking_token.eq.${param}`);
+          let pData = null;
+          const pQueryRes = await (isUuid
+            ? supabase.from('parents').select('id, full_name, linking_token, linking_token_expires_at').or(`id.eq.${cleanParam},linking_token.eq.${param}`).maybeSingle()
+            : supabase.from('parents').select('id, full_name, linking_token, linking_token_expires_at').eq('linking_token', param).maybeSingle()
+          );
+
+          if (pQueryRes.error && pQueryRes.error.message?.includes('linking_token')) {
+            // Fallback for base schema without linking_token column
+            if (isUuid) {
+              const baseRes = await supabase.from('parents').select('id, full_name').eq('id', cleanParam).maybeSingle();
+              pData = baseRes.data;
+            }
           } else {
-            pQuery = pQuery.eq('linking_token', param);
+            pData = pQueryRes.data;
           }
 
-          const { data: pData } = await pQuery.maybeSingle();
           if (pData) {
             parentRecord = pData;
             if (pData.linking_token_expires_at && new Date(pData.linking_token_expires_at) < new Date()) {
@@ -243,7 +251,7 @@ Your Telegram Chat ID: <code>${chatId}</code>
         }
 
         // Link parent record in Supabase
-        await supabase
+        const upRes = await supabase
           .from('parents')
           .update({
             telegram_chat_id: chatId,
@@ -254,6 +262,18 @@ Your Telegram Chat ID: <code>${chatId}</code>
             updated_at: new Date().toISOString(),
           })
           .eq('id', parentRecord.id);
+
+        if (upRes.error && upRes.error.message?.includes('invitation_status')) {
+          await supabase
+            .from('parents')
+            .update({
+              telegram_chat_id: chatId,
+              is_verified: true,
+              preferred_notification_channel: 'telegram',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', parentRecord.id);
+        }
 
         if (invitation) {
           try {
