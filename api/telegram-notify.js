@@ -5,6 +5,8 @@ import { createClient } from '@supabase/supabase-js';
  * 
  * Security & Integrity:
  * - Server-side resolution of student-to-parent relationships from Supabase.
+ * - Authenticates requests via admin Authorization JWT or server SUPABASE_SERVICE_ROLE_KEY.
+ * - Resolves batches using robust UUID / code / name lookup.
  * - Never trusts client-supplied chat IDs or parent IDs.
  * - Enforces duplicate prevention: skips already notified records unless retry is requested.
  * - Supports batch-level dispatch ("Send Attendance Notifications") and single-student retry.
@@ -12,12 +14,66 @@ import { createClient } from '@supabase/supabase-js';
  * - Accurately categorizes sent, failed, alreadyNotified, and skippedUnlinked.
  */
 
+// Helper to escape HTML special characters for Telegram HTML parse_mode
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Robust Telegram message sender with HTML fallback to plain text
+async function sendTelegramAlert(botToken, chatId, htmlMessage) {
+  try {
+    const tgResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: htmlMessage,
+        parse_mode: 'HTML',
+        disable_web_page_preview: true,
+      }),
+    });
+
+    const tgData = await tgResponse.json();
+
+    if (tgResponse.ok && tgData.ok) {
+      return { ok: true, messageId: tgData.result?.message_id };
+    }
+
+    // If Telegram returned entity parse error, retry with plain text
+    if (tgData.description && tgData.description.includes('can\'t parse entities')) {
+      const plainText = htmlMessage.replace(/<[^>]*>/g, '');
+      const plainResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: plainText,
+          disable_web_page_preview: true,
+        }),
+      });
+      const plainData = await plainResponse.json();
+      if (plainResponse.ok && plainData.ok) {
+        return { ok: true, messageId: plainData.result?.message_id };
+      }
+      return { ok: false, error: plainData.description || `HTTP ${plainResponse.status}` };
+    }
+
+    return { ok: false, error: tgData.description || `HTTP ${tgResponse.status}` };
+  } catch (netErr) {
+    return { ok: false, error: netErr.message || 'Network error communicating with Telegram Bot API' };
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'Method not allowed. Use POST.' });
   }
 
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const rawToken = process.env.TELEGRAM_BOT_TOKEN;
+  const botToken = rawToken ? String(rawToken).trim().replace(/^["']|["']$/g, '') : '';
   if (!botToken) {
     return res.status(500).json({
       ok: false,
@@ -26,7 +82,11 @@ export default async function handler(req, res) {
   }
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const anonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const authHeader = req.headers.authorization;
+
+  const supabaseKey = serviceRoleKey || anonKey;
 
   if (!supabaseUrl || !supabaseKey) {
     return res.status(500).json({
@@ -35,7 +95,15 @@ export default async function handler(req, res) {
     });
   }
 
-  const supabase = createClient(supabaseUrl, supabaseKey);
+  // If service_role is not available, pass the admin's forwarded JWT to satisfy Row Level Security
+  const clientOptions = {};
+  if (!serviceRoleKey && authHeader) {
+    clientOptions.global = {
+      headers: { Authorization: authHeader },
+    };
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseKey, clientOptions);
   const body = req.body || {};
 
   // Case A: Batch-level Roll Call Dispatch (One-Click Attendance Notifications)
@@ -43,18 +111,49 @@ export default async function handler(req, res) {
 
   if (batchId && date) {
     try {
-      // 1. Fetch batch information
-      const { data: batchData, error: bErr } = await supabase
-        .from('batches')
-        .select('id, name, code')
-        .eq('id', batchId)
-        .single();
+      const cleanBatchId = String(batchId).trim();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cleanBatchId);
 
-      if (bErr || !batchData) {
-        return res.status(404).json({ ok: false, error: 'Cohort / Batch not found in database.' });
+      // 1. Fetch batch information (search by UUID or code / name)
+      let batchData = null;
+      let bErr = null;
+
+      if (isUuid) {
+        const resObj = await supabase
+          .from('batches')
+          .select('id, name, code, course_id')
+          .eq('id', cleanBatchId)
+          .maybeSingle();
+        batchData = resObj.data;
+        bErr = resObj.error;
       }
 
-      // 2. Fetch all attendance records for this batch and date
+      if (!batchData) {
+        const resObj = await supabase
+          .from('batches')
+          .select('id, name, code, course_id')
+          .or(`code.eq.${cleanBatchId},name.ilike.%${cleanBatchId}%`)
+          .limit(1)
+          .maybeSingle();
+        if (resObj.data) {
+          batchData = resObj.data;
+          bErr = null;
+        } else if (!bErr) {
+          bErr = resObj.error;
+        }
+      }
+
+      if (bErr || !batchData) {
+        return res.status(404).json({
+          ok: false,
+          error: `Cohort / Batch "${cleanBatchId}" not found in database. Please verify that you are logged in and that the batch exists.`,
+          details: bErr?.message,
+        });
+      }
+
+      const canonicalBatchId = batchData.id;
+
+      // 2. Fetch all attendance records for this canonical batch and date
       const { data: attendanceRecords, error: attErr } = await supabase
         .from('attendance')
         .select(`
@@ -75,7 +174,7 @@ export default async function handler(req, res) {
             roll_no
           )
         `)
-        .eq('batch_id', batchId)
+        .eq('batch_id', canonicalBatchId)
         .eq('date', date);
 
       if (attErr) {
@@ -187,62 +286,36 @@ export default async function handler(req, res) {
         let lastErrorDesc = '';
 
         for (const parent of parents) {
-          const messageText = `
-${statusEmoji} *Ruparel Attendance ERP — Roll Call Notice*
+          const messageHtml = `
+${statusEmoji} <b>Ruparel Attendance ERP — Roll Call Notice</b>
 
-Dear *${parent.full_name}*,
-Your ward *${student.full_name}* (Adm No: \`${student.admission_no}\`, Roll No: \`${student.roll_no || '—'}\`) has been marked *${record.status.toUpperCase()}* for today's session.
+Dear <b>${escapeHtml(parent.full_name)}</b>,
+Your ward <b>${escapeHtml(student.full_name)}</b> (Adm No: <code>${escapeHtml(student.admission_no)}</code>, Roll No: <code>${escapeHtml(student.roll_no || '—')}</code>) has been marked <b>${escapeHtml(record.status.toUpperCase())}</b> for today's session.
 
-📅 *Date:* ${date}
-🏫 *Cohort:* ${batchData.name} (${batchData.code})
-⏱️ *Time Logged:* ${record.time_in || new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}
+📅 <b>Date:</b> ${escapeHtml(date)}
+🏫 <b>Cohort:</b> ${escapeHtml(batchData.name)} (${escapeHtml(batchData.code)})
+⏱️ <b>Time Logged:</b> ${escapeHtml(record.time_in || new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }))}
 
-_This is an official automated alert from Ruparel Attendance Management System._
+<i>This is an official automated alert from Ruparel Attendance Management System.</i>
 `.trim();
 
-          try {
-            const tgResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                chat_id: parent.telegram_chat_id,
-                text: messageText,
-                parse_mode: 'Markdown',
-              }),
+          const sendResult = await sendTelegramAlert(botToken, parent.telegram_chat_id, messageHtml);
+
+          if (sendResult.ok) {
+            summary.sent++;
+            dispatchDetails.push({
+              studentId: student.id,
+              studentName: student.full_name,
+              admissionNo: student.admission_no,
+              parentName: parent.full_name,
+              chatId: parent.telegram_chat_id,
+              status: record.status,
+              result: 'sent',
+              messageId: sendResult.messageId,
             });
-
-            const tgData = await tgResponse.json();
-
-            if (tgResponse.ok && tgData.ok) {
-              summary.sent++;
-              dispatchDetails.push({
-                studentId: student.id,
-                studentName: student.full_name,
-                admissionNo: student.admission_no,
-                parentName: parent.full_name,
-                chatId: parent.telegram_chat_id,
-                status: record.status,
-                result: 'sent',
-                messageId: tgData.result?.message_id,
-              });
-            } else {
-              studentDispatchSuccess = false;
-              lastErrorDesc = tgData.description || `HTTP ${tgResponse.status}`;
-              summary.failed++;
-              dispatchDetails.push({
-                studentId: student.id,
-                studentName: student.full_name,
-                admissionNo: student.admission_no,
-                parentName: parent.full_name,
-                chatId: parent.telegram_chat_id,
-                status: record.status,
-                result: 'failed',
-                error: lastErrorDesc,
-              });
-            }
-          } catch (netErr) {
+          } else {
             studentDispatchSuccess = false;
-            lastErrorDesc = netErr.message;
+            lastErrorDesc = sendResult.error || 'Telegram Bot API delivery failure';
             summary.failed++;
             dispatchDetails.push({
               studentId: student.id,
@@ -252,7 +325,7 @@ _This is an official automated alert from Ruparel Attendance Management System._
               chatId: parent.telegram_chat_id,
               status: record.status,
               result: 'failed',
-              error: netErr.message,
+              error: lastErrorDesc,
             });
           }
         }
@@ -322,32 +395,23 @@ _This is an official automated alert from Ruparel Attendance Management System._
       const parent = parentLinks[0].parents;
       const statusEmoji = singleStatus === 'Present' ? '✅' : singleStatus === 'Absent' ? '🚨' : singleStatus === 'Late' ? '⚠️' : 'ℹ️';
 
-      const messageText = `
-${statusEmoji} *Ruparel Attendance ERP — Roll Call Notice*
+      const messageHtml = `
+${statusEmoji} <b>Ruparel Attendance ERP — Roll Call Notice</b>
 
-Dear *${parent.full_name}*,
-Your ward *${student.full_name}* (Adm No: \`${student.admission_no}\`) has been marked *${(singleStatus || 'Absent').toUpperCase()}* for today's session.
+Dear <b>${escapeHtml(parent.full_name)}</b>,
+Your ward <b>${escapeHtml(student.full_name)}</b> (Adm No: <code>${escapeHtml(student.admission_no)}</code>) has been marked <b>${escapeHtml((singleStatus || 'Absent').toUpperCase())}</b> for today's session.
 
-📅 *Date:* ${singleDate || new Date().toISOString().split('T')[0]}
-🏫 *Cohort:* ${singleBatchName || 'Regular Session'}
-⏱️ *Time Logged:* ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}
+📅 <b>Date:</b> ${escapeHtml(singleDate || new Date().toISOString().split('T')[0])}
+🏫 <b>Cohort:</b> ${escapeHtml(singleBatchName || 'Regular Session')}
+⏱️ <b>Time Logged:</b> ${escapeHtml(new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }))}
 
-_This is an official automated alert from Ruparel Attendance Management System._
+<i>This is an official automated alert from Ruparel Attendance Management System.</i>
 `.trim();
 
-      const tgResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: parent.telegram_chat_id,
-          text: messageText,
-          parse_mode: 'Markdown',
-        }),
-      });
+      const sendResult = await sendTelegramAlert(botToken, parent.telegram_chat_id, messageHtml);
 
-      const tgData = await tgResponse.json();
-      if (!tgResponse.ok || !tgData.ok) {
-        return res.status(400).json({ ok: false, error: tgData.description || 'Telegram Bot API error.' });
+      if (!sendResult.ok) {
+        return res.status(400).json({ ok: false, error: sendResult.error || 'Telegram Bot API error.' });
       }
 
       return res.status(200).json({
@@ -355,7 +419,7 @@ _This is an official automated alert from Ruparel Attendance Management System._
         sent: true,
         parentName: parent.full_name,
         chatId: parent.telegram_chat_id,
-        messageId: tgData.result?.message_id,
+        messageId: sendResult.messageId,
       });
     } catch (err) {
       return res.status(500).json({ ok: false, error: err.message });

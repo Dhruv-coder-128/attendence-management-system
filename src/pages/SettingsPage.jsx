@@ -90,7 +90,7 @@ export default function SettingsPage() {
     setTelegramStatus((prev) => ({ ...prev, loading: true, error: null }));
     try {
       const res = await getTelegramBotStatus();
-      if (res.ok) {
+      if (res.ok || (res.configured && res.valid)) {
         setTelegramStatus({
           loading: false,
           checked: true,

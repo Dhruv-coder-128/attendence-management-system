@@ -1022,7 +1022,7 @@ export default function AttendancePage({ onRefreshCounts }) {
             const parent = activeTestStudent.parent_students?.[0]?.parents;
             const record = attendanceMap[activeTestStudent.id];
             const currentStatus = record?.status || 'Unmarked';
-            const deepLinkInfo = parent ? getParentTelegramDeepLink(parent.id) : '';
+            const deepLinkInfo = parent ? getParentTelegramDeepLink(parent.linking_token || parent.id) : '';
 
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

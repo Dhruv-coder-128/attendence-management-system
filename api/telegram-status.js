@@ -4,11 +4,14 @@
  */
 
 export default async function handler(req, res) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const rawToken = process.env.TELEGRAM_BOT_TOKEN;
+  const botToken = rawToken ? String(rawToken).trim().replace(/^["']|["']$/g, '') : '';
 
   if (!botToken) {
     return res.status(200).json({
+      ok: false,
       configured: false,
+      valid: false,
       error: 'TELEGRAM_BOT_TOKEN is not configured in server environment variables.',
     });
   }
@@ -21,6 +24,7 @@ export default async function handler(req, res) {
 
     if (!meRes.ok) {
       return res.status(200).json({
+        ok: false,
         configured: true,
         valid: false,
         error: meRes.description || 'Invalid Telegram Bot Token.',
@@ -31,18 +35,22 @@ export default async function handler(req, res) {
     const webhookInfo = webhookRes.result || {};
 
     return res.status(200).json({
+      ok: true,
       configured: true,
       valid: true,
       bot: {
         id: botInfo.id,
         firstName: botInfo.first_name,
+        first_name: botInfo.first_name,
         username: botInfo.username,
         canJoinGroups: botInfo.can_join_groups,
       },
       webhook: {
         url: webhookInfo.url || '',
         hasCustomCertificate: webhookInfo.has_custom_certificate,
+        has_custom_certificate: webhookInfo.has_custom_certificate,
         pendingUpdateCount: webhookInfo.pending_update_count || 0,
+        pending_update_count: webhookInfo.pending_update_count || 0,
         lastErrorDate: webhookInfo.last_error_date
           ? new Date(webhookInfo.last_error_date * 1000).toISOString()
           : null,
@@ -51,7 +59,8 @@ export default async function handler(req, res) {
       },
     });
   } catch (err) {
-    return res.status(500).json({
+    return res.status(200).json({
+      ok: false,
       configured: true,
       valid: false,
       error: err.message || 'Failed to inspect Telegram Bot API.',

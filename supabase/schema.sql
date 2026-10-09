@@ -416,3 +416,53 @@ BEGIN
     );
 END;
 $$;
+
+-- Grant execution permissions on the linking function
+GRANT EXECUTE ON FUNCTION public.link_parent_telegram_by_token(VARCHAR, VARCHAR) TO anon, authenticated, service_role;
+
+-- 12. PARENT STATUS INSPECTOR RPC (SECURITY DEFINER)
+-- Allows the Telegram Bot to query linked student wards safely by chat ID
+CREATE OR REPLACE FUNCTION public.get_parent_status_by_chat_id(
+    p_chat_id VARCHAR(100)
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_parent RECORD;
+    v_wards jsonb;
+BEGIN
+    SELECT id, full_name INTO v_parent
+    FROM public.parents
+    WHERE telegram_chat_id = p_chat_id
+    LIMIT 1;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('found', false);
+    END IF;
+
+    SELECT coalesce(jsonb_agg(
+        jsonb_build_object(
+            'full_name', s.full_name,
+            'admission_no', s.admission_no,
+            'batch_code', b.code,
+            'batch_name', b.name
+        )
+    ), '[]'::jsonb) INTO v_wards
+    FROM public.parent_students ps
+    JOIN public.students s ON s.id = ps.student_id
+    LEFT JOIN public.batches b ON b.id = s.batch_id
+    WHERE ps.parent_id = v_parent.id;
+
+    RETURN jsonb_build_object(
+        'found', true,
+        'parent_id', v_parent.id,
+        'parent_name', v_parent.full_name,
+        'wards', v_wards
+    );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_parent_status_by_chat_id(VARCHAR) TO anon, authenticated, service_role;

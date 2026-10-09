@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase } from './supabase.js';
 
 /**
  * Client-Side Telegram & Parent Communications Service
@@ -30,7 +30,8 @@ function generateRandomTokenHex(byteLength = 16) {
  */
 export function getParentTelegramDeepLink(tokenOrId, botUsername = TELEGRAM_BOT_USERNAME) {
   if (!tokenOrId) return '';
-  const param = tokenOrId.startsWith('tk_') || tokenOrId.startsWith('link_') ? tokenOrId : `tk_${tokenOrId}`;
+  const str = String(tokenOrId).trim();
+  const param = str.startsWith('tk_') || str.startsWith('link_') ? str : `tk_${str}`;
   return `https://t.me/${botUsername}?start=${param}`;
 }
 
@@ -167,6 +168,25 @@ export async function linkParentTelegramAccount(parentId, telegramChatId) {
 }
 
 /**
+/**
+ * Helper to retrieve authenticated JWT from Supabase session
+ */
+async function getAuthHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    if (supabase) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not retrieve auth session token for notification request:', err);
+  }
+  return headers;
+}
+
+/**
  * Dispatches one-click attendance notifications for an entire batch.
  * The serverless backend authorizes student-parent relationships and resolves chat IDs.
  */
@@ -182,9 +202,10 @@ export async function sendBatchAttendanceNotifications({
   }
 
   try {
+    const headers = await getAuthHeaders();
     const response = await fetch('/api/telegram-notify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         batchId,
         date,
@@ -233,9 +254,10 @@ export async function sendVerifiedAttendanceNotice({
   }
 
   try {
+    const headers = await getAuthHeaders();
     const response = await fetch('/api/telegram-notify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         studentId: student.id,
         status,

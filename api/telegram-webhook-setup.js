@@ -8,7 +8,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: 'Method not allowed. Use POST.' });
   }
 
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const rawToken = process.env.TELEGRAM_BOT_TOKEN;
+  const botToken = rawToken ? String(rawToken).trim().replace(/^["']|["']$/g, '') : '';
   if (!botToken) {
     return res.status(500).json({
       ok: false,
@@ -24,7 +25,10 @@ export default async function handler(req, res) {
         method: 'POST',
       });
       const data = await response.json();
-      return res.status(200).json(data);
+      if (!data.ok) {
+        return res.status(400).json({ ok: false, error: data.description || 'Telegram rejected webhook deletion.' });
+      }
+      return res.status(200).json({ ok: true, message: 'Webhook cleared successfully.' });
     }
 
     if (!webhookUrl || !webhookUrl.startsWith('https://')) {
@@ -45,7 +49,13 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
-    return res.status(200).json(data);
+    if (!data.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: data.description || 'Telegram Bot API rejected webhook registration.',
+      });
+    }
+    return res.status(200).json({ ok: true, result: data.result, description: data.description });
   } catch (err) {
     return res.status(500).json({
       ok: false,
