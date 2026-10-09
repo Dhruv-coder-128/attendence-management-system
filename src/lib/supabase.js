@@ -6,18 +6,8 @@ import { createClient } from '@supabase/supabase-js';
  * Safe for client-side execution (never uses service_role or secret keys).
  */
 
-const rawUrl = (
-  import.meta.env.VITE_SUPABASE_URL ||
-  import.meta.env.NEXT_PUBLIC_SUPABASE_URL ||
-  ''
-).trim();
-
-const rawKey = (
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  import.meta.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-  ''
-).trim();
+const rawUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+const rawKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim();
 
 // Check if valid configuration is provided and not default placeholders
 export const isSupabaseConfigured = Boolean(

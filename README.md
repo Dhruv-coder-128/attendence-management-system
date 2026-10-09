@@ -78,14 +78,14 @@ attendence-management-system/
 ## 🔌 Connecting Backend Services
 
 ### 1. Supabase (PostgreSQL & Authentication)
-1. Copy `.env.example` to `.env`:
+1. Copy `.env.example` to `.env.local`:
    ```bash
-   cp .env.example .env
+   cp .env.example .env.local
    ```
-2. Populate your Supabase project credentials:
+2. Populate your Supabase project credentials in `.env.local`:
    ```env
    VITE_SUPABASE_URL=https://your-project.supabase.co
-   VITE_SUPABASE_ANON_KEY=your-anon-public-key
+   VITE_SUPABASE_PUBLISHABLE_KEY=your-supabase-publishable-key
    ```
 3. The client in `src/lib/supabase.js` will automatically detect the configuration.
 

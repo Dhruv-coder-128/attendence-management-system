@@ -1,0 +1,256 @@
+-- =====================================================================
+-- RUPAREL ATTENDANCE ERP — COMPLETE SUPABASE DATABASE SCHEMA
+-- Path: supabase/schema.sql
+-- Run this in your Supabase Dashboard -> SQL Editor -> New Query
+-- =====================================================================
+
+-- 0. Enable required extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- =====================================================================
+-- 1. COURSES TABLE
+-- Supports: 11th, 12th, FY, SY, TY, BCA, B.Sc, Commerce, and Arts
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS public.courses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    level VARCHAR(50) NOT NULL, -- e.g., '11th', '12th', 'FY', 'SY', 'TY', 'BCA', 'Other'
+    description TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- =====================================================================
+-- 2. BATCHES TABLE
+-- Groups students within a course into specific timing and room cohorts
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS public.batches (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    course_id UUID NOT NULL REFERENCES public.courses(id) ON DELETE RESTRICT,
+    name VARCHAR(255) NOT NULL,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    academic_year VARCHAR(50) NOT NULL DEFAULT '2026-27',
+    shift VARCHAR(50) DEFAULT 'Morning', -- e.g., 'Morning', 'Afternoon', 'Evening'
+    timing VARCHAR(100),                -- e.g., '07:30 AM - 10:30 AM'
+    classroom VARCHAR(100),             -- e.g., 'Room 101', 'LH-2'
+    max_capacity INTEGER NOT NULL DEFAULT 60 CHECK (max_capacity > 0),
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- =====================================================================
+-- 3. STUDENTS TABLE
+-- Core student registry linked to Course and Batch
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS public.students (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    admission_no VARCHAR(50) UNIQUE NOT NULL,
+    full_name VARCHAR(255) NOT NULL,
+    roll_no VARCHAR(50),
+    course_id UUID NOT NULL REFERENCES public.courses(id) ON DELETE RESTRICT,
+    batch_id UUID NOT NULL REFERENCES public.batches(id) ON DELETE RESTRICT,
+    gender VARCHAR(20) CHECK (gender IN ('Male', 'Female', 'Other')),
+    dob DATE,
+    email VARCHAR(255),
+    phone VARCHAR(50),
+    blood_group VARCHAR(10),
+    address TEXT,
+    enrollment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended', 'graduated')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+-- =====================================================================
+-- 4. PARENTS / GUARDIANS TABLE
+-- Private guardian registry with Telegram chat ID integration support
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS public.parents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    full_name VARCHAR(255) NOT NULL,
+    phone VARCHAR(50) NOT NULL,
+    email VARCHAR(255),
+    relationship VARCHAR(50) NOT NULL DEFAULT 'Parent', -- e.g., 'Father', 'Mother', 'Guardian'
+    telegram_chat_id VARCHAR(100),                      -- Strictly private: for server-side alert routing
+    preferred_notification_channel VARCHAR(20) NOT NULL DEFAULT 'telegram' 
+        CHECK (preferred_notification_channel IN ('telegram', 'sms', 'whatsapp', 'email')),
+    is_verified BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    CONSTRAINT uq_parents_phone_relationship UNIQUE(phone, relationship)
+);
+
+-- =====================================================================
+-- 5. PARENT_STUDENTS (JUNCTION TABLE)
+-- Supports 1 student linked to multiple parents (Father, Mother, Guardian)
+-- and parents with multiple student wards
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS public.parent_students (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    parent_id UUID NOT NULL REFERENCES public.parents(id) ON DELETE CASCADE,
+    student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+    relationship VARCHAR(50) NOT NULL DEFAULT 'Parent',
+    is_primary_contact BOOLEAN NOT NULL DEFAULT false,
+    can_receive_alerts BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    CONSTRAINT uq_parent_student UNIQUE (parent_id, student_id)
+);
+
+-- =====================================================================
+-- 6. ATTENDANCE TABLE
+-- Daily roll call with constraint preventing duplicates per student/date/session
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS public.attendance (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
+    batch_id UUID NOT NULL REFERENCES public.batches(id) ON DELETE RESTRICT,
+    date DATE NOT NULL DEFAULT CURRENT_DATE,
+    session_name VARCHAR(50) NOT NULL DEFAULT 'Regular', -- e.g., 'Regular', 'Morning Lecture', 'Lab'
+    status VARCHAR(20) NOT NULL CHECK (status IN ('Present', 'Absent', 'Late', 'Excused')),
+    time_in TIME,
+    remarks TEXT,
+    marked_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    telegram_notified BOOLEAN NOT NULL DEFAULT false,
+    telegram_notified_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    -- Uniqueness constraint: prevents duplicate attendance record for same student, batch, date & session
+    CONSTRAINT uq_student_attendance_session UNIQUE (student_id, batch_id, date, session_name)
+);
+
+-- =====================================================================
+-- 7. PERFORMANCE INDEXES
+-- =====================================================================
+CREATE INDEX IF NOT EXISTS idx_batches_course_id ON public.batches(course_id);
+CREATE INDEX IF NOT EXISTS idx_students_batch_id ON public.students(batch_id);
+CREATE INDEX IF NOT EXISTS idx_students_course_id ON public.students(course_id);
+CREATE INDEX IF NOT EXISTS idx_students_admission_no ON public.students(admission_no);
+CREATE INDEX IF NOT EXISTS idx_attendance_batch_date ON public.attendance(batch_id, date);
+CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON public.attendance(student_id, date);
+CREATE INDEX IF NOT EXISTS idx_parent_students_parent ON public.parent_students(parent_id);
+CREATE INDEX IF NOT EXISTS idx_parent_students_student ON public.parent_students(student_id);
+CREATE INDEX IF NOT EXISTS idx_parents_phone ON public.parents(phone);
+
+-- =====================================================================
+-- 8. AUTO-UPDATE TIMESTAMPS TRIGGER
+-- =====================================================================
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = timezone('utc'::text, now());
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_courses_updated_at ON public.courses;
+CREATE TRIGGER trigger_courses_updated_at BEFORE UPDATE ON public.courses
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trigger_batches_updated_at ON public.batches;
+CREATE TRIGGER trigger_batches_updated_at BEFORE UPDATE ON public.batches
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trigger_students_updated_at ON public.students;
+CREATE TRIGGER trigger_students_updated_at BEFORE UPDATE ON public.students
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trigger_parents_updated_at ON public.parents;
+CREATE TRIGGER trigger_parents_updated_at BEFORE UPDATE ON public.parents
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trigger_attendance_updated_at ON public.attendance;
+CREATE TRIGGER trigger_attendance_updated_at BEFORE UPDATE ON public.attendance
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+-- =====================================================================
+-- 9. ROW LEVEL SECURITY (RLS) POLICIES
+-- Zero access for anonymous ('anon') users.
+-- Full access for authenticated staff/admin users ('authenticated').
+-- =====================================================================
+
+-- Enable RLS on all 6 tables
+ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.batches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.parents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.parent_students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
+
+-- COURSES POLICIES
+CREATE POLICY "Authenticated users can view courses"
+    ON public.courses FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Authenticated users can insert courses"
+    ON public.courses FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated users can update courses"
+    ON public.courses FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated users can delete courses"
+    ON public.courses FOR DELETE TO authenticated USING (true);
+
+-- BATCHES POLICIES
+CREATE POLICY "Authenticated users can view batches"
+    ON public.batches FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Authenticated users can insert batches"
+    ON public.batches FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated users can update batches"
+    ON public.batches FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated users can delete batches"
+    ON public.batches FOR DELETE TO authenticated USING (true);
+
+-- STUDENTS POLICIES (Strictly inaccessible to anon users)
+CREATE POLICY "Authenticated users can view students"
+    ON public.students FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Authenticated users can insert students"
+    ON public.students FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated users can update students"
+    ON public.students FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated users can delete students"
+    ON public.students FOR DELETE TO authenticated USING (true);
+
+-- PARENTS POLICIES (Protects phone numbers and private Telegram Chat IDs)
+CREATE POLICY "Authenticated users can view parents"
+    ON public.parents FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Authenticated users can insert parents"
+    ON public.parents FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated users can update parents"
+    ON public.parents FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated users can delete parents"
+    ON public.parents FOR DELETE TO authenticated USING (true);
+
+-- PARENT_STUDENTS JUNCTION POLICIES
+CREATE POLICY "Authenticated users can view parent_students"
+    ON public.parent_students FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Authenticated users can insert parent_students"
+    ON public.parent_students FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated users can update parent_students"
+    ON public.parent_students FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated users can delete parent_students"
+    ON public.parent_students FOR DELETE TO authenticated USING (true);
+
+-- ATTENDANCE POLICIES
+CREATE POLICY "Authenticated users can view attendance"
+    ON public.attendance FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Authenticated users can insert attendance"
+    ON public.attendance FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Authenticated users can update attendance"
+    ON public.attendance FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Authenticated users can delete attendance"
+    ON public.attendance FOR DELETE TO authenticated USING (true);
+
+-- =====================================================================
+-- 10. REFERENCE DATA: STANDARD COURSES & LEVELS
+-- Adds common academic streams if not already existing
+-- =====================================================================
+INSERT INTO public.courses (code, name, level, description)
+VALUES 
+    ('11TH-SCI', '11th Standard — Science', '11th', 'Higher Secondary Science (Physics, Chemistry, Math/Bio)'),
+    ('12TH-SCI', '12th Standard — Science', '12th', 'Higher Secondary Science Board & Competitive Prep'),
+    ('11TH-COM', '11th Standard — Commerce', '11th', 'Higher Secondary Commerce with Accountancy & Math'),
+    ('12TH-COM', '12th Standard — Commerce', '12th', 'Higher Secondary Commerce Board Examination'),
+    ('FY-BCA', 'First Year — Bachelor of Computer Applications', 'FY', 'Undergraduate Computer Applications (Sem I & II)'),
+    ('SY-BCA', 'Second Year — Bachelor of Computer Applications', 'SY', 'Undergraduate Computer Applications (Sem III & IV)'),
+    ('TY-BCA', 'Third Year — Bachelor of Computer Applications', 'TY', 'Undergraduate Computer Applications (Sem V & VI)')
+ON CONFLICT (code) DO NOTHING;
