@@ -9,10 +9,15 @@ import {
   Search,
   Edit,
   Trash2,
-  AlertCircle,
   CheckCircle2,
   Sparkles,
   Users,
+  Upload,
+  MessageCircle,
+  Copy,
+  ExternalLink,
+  ShieldCheck,
+  AlertCircle,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -20,12 +25,18 @@ import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import Select from '../components/common/Select';
+import BulkImportModal from '../components/importer/BulkImportModal';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import {
+  getParentTelegramDeepLink,
+  linkParentTelegramAccount,
+  TELEGRAM_BOT_USERNAME,
+} from '../lib/telegramClient';
 
 /**
  * Parent Directory — Connected directly to Supabase public.parents & public.parent_students
  */
-export default function ParentsPage() {
+export default function ParentsPage({ onRefreshCounts }) {
   const [parents, setParents] = useState([]);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -38,10 +49,17 @@ export default function ParentsPage() {
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [parentToEdit, setParentToEdit] = useState(null);
   const [parentToDelete, setParentToDelete] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalError, setModalError] = useState('');
+
+  // Telegram Deep Link Modal State
+  const [telegramModalParent, setTelegramModalParent] = useState(null);
+  const [telegramChatIdInput, setTelegramChatIdInput] = useState('');
+  const [isLinkingTelegram, setIsLinkingTelegram] = useState(false);
+  const [telegramLinkMessage, setTelegramLinkMessage] = useState(null);
 
   // Form State
   const initialForm = {
@@ -88,6 +106,7 @@ export default function ParentsPage() {
           email,
           relationship,
           preferred_notification_channel,
+          telegram_chat_id,
           is_verified,
           created_at,
           parent_students:parent_students (
@@ -224,6 +243,7 @@ export default function ParentsPage() {
       }
 
       await fetchData();
+      if (onRefreshCounts) onRefreshCounts();
     } catch (err) {
       console.error('Save parent error:', err);
       setModalError(err.message || 'Failed to save guardian record.');
@@ -248,11 +268,45 @@ export default function ParentsPage() {
       showToast(`Guardian ${parentToDelete.full_name} deleted.`);
       setParentToDelete(null);
       await fetchData();
+      if (onRefreshCounts) onRefreshCounts();
     } catch (err) {
       console.error('Delete parent error:', err);
       alert('Failed to delete parent: ' + err.message);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Telegram Deep Link Handlers
+  const handleOpenTelegramLink = (parent) => {
+    setTelegramModalParent(parent);
+    setTelegramChatIdInput(parent.telegram_chat_id || '');
+    setTelegramLinkMessage(null);
+  };
+
+  const handleSaveTelegramChatId = async () => {
+    if (!telegramModalParent) return;
+    if (!telegramChatIdInput.trim()) {
+      setTelegramLinkMessage({ error: 'Please enter a valid numeric Telegram Chat ID.' });
+      return;
+    }
+
+    setIsLinkingTelegram(true);
+    setTelegramLinkMessage(null);
+
+    try {
+      const res = await linkParentTelegramAccount(telegramModalParent.id, telegramChatIdInput.trim());
+      if (res.success) {
+        setTelegramLinkMessage({ success: `Telegram Chat ID ${res.chatId} successfully linked & verified!` });
+        showToast(`Guardian ${telegramModalParent.full_name} Telegram verified!`);
+        await fetchData();
+      } else {
+        setTelegramLinkMessage({ error: res.error || 'Failed to update chat ID.' });
+      }
+    } catch (err) {
+      setTelegramLinkMessage({ error: err.message || 'Linking failed.' });
+    } finally {
+      setIsLinkingTelegram(false);
     }
   };
 
@@ -276,6 +330,15 @@ export default function ParentsPage() {
             disabled={loading}
           >
             {loading ? 'Refreshing...' : 'Refresh'}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="md"
+            icon={Upload}
+            onClick={() => setIsImportModalOpen(true)}
+          >
+            Bulk Import
           </Button>
 
           <Button
@@ -388,21 +451,22 @@ export default function ParentsPage() {
                 <th>Relationship</th>
                 <th>Linked Student Wards</th>
                 <th>Contact Phone</th>
-                <th>Preferred Channel</th>
+                <th>Channel</th>
+                <th>Telegram Status</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
                     <RefreshCw size={22} className="animate-spin" style={{ marginBottom: '8px' }} />
                     <div>Loading guardians from Supabase...</div>
                   </td>
                 </tr>
               ) : filteredParents.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
                     <Users size={32} color="var(--gold-dark)" style={{ marginBottom: '10px' }} />
                     <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--navy-950)' }}>
                       {parents.length === 0
@@ -490,6 +554,69 @@ export default function ParentsPage() {
                         >
                           {parent.preferred_notification_channel}
                         </span>
+                      </td>
+                      <td>
+                        {parent.is_verified && parent.telegram_chat_id ? (
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                backgroundColor: 'var(--status-present-bg)',
+                                color: 'var(--status-present)',
+                                border: '1px solid var(--status-present-border)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <CheckCircle2 size={12} /> Verified ({parent.telegram_chat_id})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenTelegramLink(parent)}
+                              className="btn btn-outline"
+                              style={{ padding: '2px 6px', fontSize: '10px' }}
+                              title="Update Telegram ID"
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                backgroundColor: '#fef3c7',
+                                color: '#92400e',
+                                border: '1px solid #fde68a',
+                                fontWeight: 500,
+                              }}
+                            >
+                              Unlinked
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenTelegramLink(parent)}
+                              className="btn btn-outline"
+                              style={{
+                                padding: '2px 8px',
+                                fontSize: '11px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                              title="Generate One-Time Telegram Deep Link"
+                            >
+                              <MessageCircle size={12} color="var(--gold-dark)" />
+                              Deep Link
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -673,6 +800,204 @@ export default function ParentsPage() {
           </div>
         )}
       </Modal>
+
+      {/* TELEGRAM DEEP LINK & VERIFICATION MODAL */}
+      {telegramModalParent && (
+        <Modal
+          isOpen={Boolean(telegramModalParent)}
+          onClose={() => {
+            setTelegramModalParent(null);
+            setTelegramLinkMessage(null);
+          }}
+          title={`Telegram Linking — ${telegramModalParent.full_name}`}
+          subtitle="Generate deep link or manually verify guardian Telegram Chat ID"
+          footer={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setTelegramModalParent(null);
+                setTelegramLinkMessage(null);
+              }}
+            >
+              Close
+            </Button>
+          }
+        >
+          {(() => {
+            const deepLinkInfo = getParentTelegramDeepLink(telegramModalParent.id);
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    backgroundColor: 'var(--bg-subtle)',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-subtle)',
+                    fontSize: '12px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Guardian Name:</span>
+                    <strong>{telegramModalParent.full_name}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Phone Number:</span>
+                    <strong>{telegramModalParent.phone}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Current Status:</span>
+                    {telegramModalParent.is_verified && telegramModalParent.telegram_chat_id ? (
+                      <span style={{ color: 'var(--status-present)', fontWeight: 600 }}>
+                        Verified (Chat ID: {telegramModalParent.telegram_chat_id})
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--status-absent)', fontWeight: 600 }}>
+                        Not Linked
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Step 1: Deep Link */}
+                <div
+                  style={{
+                    padding: '14px',
+                    border: '1px solid var(--gold-border)',
+                    borderRadius: '6px',
+                    backgroundColor: 'var(--gold-subtle-bg)',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--navy-950)', marginBottom: '4px' }}>
+                    Step 1: One-Time Telegram Bot Deep Link
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                    Share this personalized link with the parent. When clicked, Telegram opens the verified academy bot and activates auto-linking.
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      readOnly
+                      value={deepLinkInfo.url}
+                      className="form-input"
+                      style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '11px',
+                        backgroundColor: '#ffffff',
+                      }}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={Copy}
+                      onClick={() => {
+                        navigator.clipboard.writeText(deepLinkInfo.url);
+                        showToast('Telegram deep link copied to clipboard!');
+                      }}
+                    >
+                      Copy
+                    </Button>
+                    <a
+                      href={deepLinkInfo.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-sm btn-primary"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
+                    >
+                      Open <ExternalLink size={12} />
+                    </a>
+                  </div>
+                </div>
+
+                {/* Step 2: Manual Chat ID Verification */}
+                <div
+                  style={{
+                    padding: '14px',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '6px',
+                    backgroundColor: '#ffffff',
+                  }}
+                >
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--navy-950)', marginBottom: '4px' }}>
+                    Step 2: Verify &amp; Save Chat ID
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                    Enter or verify the numeric Chat ID provided by the Telegram bot for this parent.
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      placeholder="e.g. 987654321"
+                      value={telegramChatIdInput}
+                      onChange={(e) => setTelegramChatIdInput(e.target.value)}
+                      className="form-input"
+                      style={{ fontFamily: 'var(--font-mono)' }}
+                    />
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={ShieldCheck}
+                      onClick={handleSaveTelegramChatId}
+                      disabled={isLinkingTelegram}
+                    >
+                      {isLinkingTelegram ? 'Verifying...' : 'Verify & Save'}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Messages */}
+                {telegramLinkMessage?.success && (
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      backgroundColor: 'var(--status-present-bg)',
+                      border: '1px solid var(--status-present-border)',
+                      borderRadius: '6px',
+                      color: 'var(--status-present)',
+                      fontSize: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>{telegramLinkMessage.success}</span>
+                  </div>
+                )}
+                {telegramLinkMessage?.error && (
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      backgroundColor: 'var(--status-absent-bg)',
+                      border: '1px solid var(--status-absent-border)',
+                      borderRadius: '6px',
+                      color: 'var(--status-absent)',
+                      fontSize: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <AlertCircle size={16} />
+                    <span>{telegramLinkMessage.error}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </Modal>
+      )}
+
+      {/* Bulk Import Modal */}
+      <BulkImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        initialEntity="parents"
+        onImportSuccess={() => {
+          fetchData();
+          showToast('Parent directory bulk import completed successfully!');
+        }}
+      />
     </div>
   );
 }

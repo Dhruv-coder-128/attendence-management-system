@@ -83,7 +83,6 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
           courses:course_id ( id, name, code ),
           students:students ( count )
         `)
-        .eq('is_active', true)
         .order('name');
       if (batchesErr) throw batchesErr;
 

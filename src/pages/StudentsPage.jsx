@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Sparkles,
   Layers,
+  Upload,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -23,12 +24,13 @@ import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import Select from '../components/common/Select';
+import BulkImportModal from '../components/importer/BulkImportModal';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 /**
  * Students Directory Page — Connected directly to Supabase PostgreSQL
  */
-export default function StudentsPage() {
+export default function StudentsPage({ onRefreshCounts }) {
   // Supabase Data State
   const [students, setStudents] = useState([]);
   const [courses, setCourses] = useState([]);
@@ -48,6 +50,7 @@ export default function StudentsPage() {
   const [studentToEdit, setStudentToEdit] = useState(null);
   const [studentToDelete, setStudentToDelete] = useState(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalError, setModalError] = useState('');
 
@@ -311,6 +314,7 @@ export default function StudentsPage() {
       }
 
       await fetchData();
+      if (onRefreshCounts) onRefreshCounts();
     } catch (err) {
       console.error('Save student error:', err);
       if (err.message?.includes('duplicate key') || err.message?.includes('students_admission_no_key')) {
@@ -339,6 +343,7 @@ export default function StudentsPage() {
       showToast(`Student ${studentToDelete.full_name} deleted from database.`);
       setStudentToDelete(null);
       await fetchData();
+      if (onRefreshCounts) onRefreshCounts();
     } catch (err) {
       console.error('Delete student error:', err);
       alert('Failed to delete student: ' + err.message);
@@ -373,6 +378,15 @@ export default function StudentsPage() {
             disabled={loading}
           >
             {loading ? 'Refreshing...' : 'Refresh'}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="md"
+            icon={Upload}
+            onClick={() => setIsImportModalOpen(true)}
+          >
+            Bulk Import
           </Button>
 
           <Button
@@ -1055,6 +1069,18 @@ export default function StudentsPage() {
           </div>
         )}
       </Modal>
+
+      {/* Bulk Import Modal */}
+      <BulkImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        initialEntity="students"
+        onImportSuccess={() => {
+          fetchData();
+          if (onRefreshCounts) onRefreshCounts();
+          showToast('Bulk student import completed successfully!');
+        }}
+      />
     </div>
   );
 }

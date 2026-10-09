@@ -11,15 +11,34 @@ import {
   RefreshCw,
   Users,
   Search,
+  UserCheck,
+  ExternalLink,
+  ShieldCheck,
+  Copy,
+  MessageCircle,
+  CheckCircle2,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
+import Modal from '../components/common/Modal';
+import Input from '../components/common/Input';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import {
+  ensureDhruvShahTestStudent,
+  TEST_STUDENT_NAME,
+  TEST_STUDENT_ADMISSION_NO,
+} from '../lib/testStudent';
+import {
+  getParentTelegramDeepLink,
+  linkParentTelegramAccount,
+  sendVerifiedAttendanceNotice,
+  TELEGRAM_BOT_USERNAME,
+} from '../lib/telegramClient';
 
 /**
  * Daily Attendance Register — Real Supabase Database Connection
  */
-export default function AttendancePage() {
+export default function AttendancePage({ onRefreshCounts }) {
   const [batches, setBatches] = useState([]);
   const [selectedBatchId, setSelectedBatchId] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -32,31 +51,53 @@ export default function AttendancePage() {
   const [error, setError] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
 
+  // Test Student & Telegram Modal State
+  const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
+  const [activeTestStudent, setActiveTestStudent] = useState(null);
+  const [testChatIdInput, setTestChatIdInput] = useState('');
+  const [isLinkingTelegram, setIsLinkingTelegram] = useState(false);
+  const [telegramDispatchStatus, setTelegramDispatchStatus] = useState(null);
+
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 4000);
   };
 
-  // 1. Fetch available batches
+  // 1. Fetch available batches (all cohorts from public.batches)
   const fetchBatches = async () => {
-    if (!isSupabaseConfigured || !supabase) return;
+    if (!isSupabaseConfigured || !supabase) {
+      setLoading(false);
+      return;
+    }
 
     try {
+      // Query all batches in database without restrictive filters
       const { data, error: err } = await supabase
         .from('batches')
-        .select('id, name, code, timing, classroom')
-        .eq('is_active', true)
+        .select('id, name, code, timing, classroom, is_active')
         .order('name');
 
       if (err) throw err;
 
-      setBatches(data || []);
-      if (data && data.length > 0 && !selectedBatchId) {
-        setSelectedBatchId(data[0].id);
+      const batchList = data || [];
+      setBatches(batchList);
+
+      if (batchList.length > 0) {
+        setSelectedBatchId((prev) => {
+          if (prev && batchList.some((b) => b.id === prev)) {
+            return prev;
+          }
+          return batchList[0].id;
+        });
+      } else {
+        setSelectedBatchId('');
+        setStudents([]);
+        setLoading(false);
       }
     } catch (err) {
       console.error('Error fetching batches for attendance:', err);
-      setError(err.message || 'Failed to load batches.');
+      setError(err.message || 'Failed to load batches from Supabase.');
+      setLoading(false);
     }
   };
 
@@ -66,7 +107,12 @@ export default function AttendancePage() {
 
   // 2. Fetch students in the selected batch and existing attendance for the date
   const fetchBatchAttendance = async () => {
-    if (!selectedBatchId || !isSupabaseConfigured || !supabase) {
+    if (!selectedBatchId) {
+      setLoading(false);
+      return;
+    }
+
+    if (!isSupabaseConfigured || !supabase) {
       setLoading(false);
       return;
     }
@@ -75,12 +121,31 @@ export default function AttendancePage() {
     setError(null);
 
     try {
-      // Fetch students in this batch
+      // Fetch students in this batch with linked parent details for Telegram routing
       const { data: studentsData, error: studentsErr } = await supabase
         .from('students')
-        .select('id, admission_no, full_name, roll_no, status')
+        .select(`
+          id,
+          admission_no,
+          full_name,
+          roll_no,
+          status,
+          parent_students (
+            id,
+            relationship,
+            is_primary_contact,
+            can_receive_alerts,
+            parents:parent_id (
+              id,
+              full_name,
+              phone,
+              email,
+              telegram_chat_id,
+              is_verified
+            )
+          )
+        `)
         .eq('batch_id', selectedBatchId)
-        .eq('status', 'active')
         .order('admission_no');
 
       if (studentsErr) throw studentsErr;
@@ -104,8 +169,9 @@ export default function AttendancePage() {
       setAttendanceMap(map);
     } catch (err) {
       console.error('Error fetching attendance:', err);
-      setError(err.message || 'Failed to load roll call data.');
+      setError(err.message || 'Failed to load roll call data from Supabase.');
     } finally {
+      // Ensure loading spinner ALWAYS terminates
       setLoading(false);
     }
   };
@@ -155,6 +221,7 @@ export default function AttendancePage() {
       if (upsertErr) throw upsertErr;
 
       setAttendanceMap((prev) => ({ ...prev, [studentId]: data }));
+      if (onRefreshCounts) onRefreshCounts();
     } catch (err) {
       console.error('Failed to mark attendance:', err);
       alert('Error updating attendance: ' + err.message);
@@ -205,6 +272,126 @@ export default function AttendancePage() {
     }
   };
 
+  // 5. Ensure Test Student (Dhruv Shah) Handler
+  const handleEnsureTestStudent = async () => {
+    setLoading(true);
+    try {
+      const res = await ensureDhruvShahTestStudent();
+      if (!res.success) {
+        alert(res.error);
+        return;
+      }
+      showToast(res.message);
+      if (onRefreshCounts) onRefreshCounts();
+
+      // If Dhruv Shah is assigned to another batch, switch to that batch to display him
+      if (res.student && res.student.batch_id && res.student.batch_id !== selectedBatchId) {
+        setSelectedBatchId(res.student.batch_id);
+      } else {
+        await fetchBatchAttendance();
+      }
+    } catch (err) {
+      console.error('Error ensuring test student:', err);
+      alert('Error: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 6. Telegram Modal Handlers
+  const handleOpenTelegramModal = (student) => {
+    setActiveTestStudent(student);
+    setTelegramDispatchStatus(null);
+    const parent = student.parent_students?.[0]?.parents;
+    setTestChatIdInput(parent?.telegram_chat_id || '');
+    setIsTelegramModalOpen(true);
+  };
+
+  const handleLinkParentTelegram = async (e) => {
+    e.preventDefault();
+    if (!activeTestStudent) return;
+    const parent = activeTestStudent.parent_students?.[0]?.parents;
+
+    if (!parent) {
+      alert('No guardian is currently linked to this student ward. Please add or link a guardian in Parent Directory first.');
+      return;
+    }
+
+    if (!testChatIdInput.trim()) {
+      alert('Please enter a valid numeric Telegram Chat ID (e.g. from @userinfobot).');
+      return;
+    }
+
+    setIsLinkingTelegram(true);
+    try {
+      await linkParentTelegramAccount(parent.id, testChatIdInput.trim());
+      showToast(`Guardian Telegram Chat ID linked and verified!`);
+      await fetchBatchAttendance();
+
+      // Update active student in modal
+      setActiveTestStudent((prev) => {
+        if (!prev) return null;
+        const updatedPs = (prev.parent_students || []).map((ps) => ({
+          ...ps,
+          parents: { ...ps.parents, telegram_chat_id: testChatIdInput.trim(), is_verified: true },
+        }));
+        return { ...prev, parent_students: updatedPs };
+      });
+    } catch (err) {
+      alert('Failed to link Telegram Chat ID: ' + err.message);
+    } finally {
+      setIsLinkingTelegram(false);
+    }
+  };
+
+  const handleDispatchTelegramTest = async () => {
+    if (!activeTestStudent) return;
+    const parent = activeTestStudent.parent_students?.[0]?.parents;
+    const record = attendanceMap[activeTestStudent.id];
+    const currentStatus = record?.status || 'Absent';
+
+    setTelegramDispatchStatus({ sending: true });
+
+    const result = await sendVerifiedAttendanceNotice({
+      student: activeTestStudent,
+      status: currentStatus,
+      date: selectedDate,
+      batchName: activeBatch?.name,
+      parent,
+    });
+
+    if (result.success) {
+      setTelegramDispatchStatus({
+        success: true,
+        message: `Official alert successfully dispatched to verified Chat ID: ${result.chatId}!`,
+      });
+
+      // Update record in public.attendance
+      if (record?.id) {
+        await supabase
+          .from('attendance')
+          .update({ telegram_notified: true, telegram_notified_at: new Date().toISOString() })
+          .eq('id', record.id);
+
+        setAttendanceMap((prev) => ({
+          ...prev,
+          [activeTestStudent.id]: {
+            ...prev[activeTestStudent.id],
+            telegram_notified: true,
+            telegram_notified_at: new Date().toISOString(),
+          },
+        }));
+      }
+    } else {
+      setTelegramDispatchStatus({
+        success: false,
+        error: result.error,
+        requiresLinking: result.requiresLinking,
+        deepLink: result.deepLink,
+      });
+    }
+  };
+
   // Live Metric Counts
   const totalCount = students.length;
   const presentCount = students.filter((s) => attendanceMap[s.id]?.status === 'Present').length;
@@ -225,7 +412,16 @@ export default function AttendancePage() {
           </p>
         </div>
 
-        <div className="page-actions">
+        <div className="page-actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <Button
+            variant="gold"
+            size="sm"
+            icon={Sparkles}
+            onClick={handleEnsureTestStudent}
+          >
+            Ensure Dhruv Shah (Test Student)
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
@@ -306,7 +502,7 @@ export default function AttendancePage() {
           backgroundColor: '#ffffff',
         }}
       >
-        <div style={{ width: '200px' }}>
+        <div style={{ flex: '1 1 180px', minWidth: '160px' }}>
           <label className="form-label" style={{ marginBottom: '4px' }}>
             Roll Call Date
           </label>
@@ -318,7 +514,7 @@ export default function AttendancePage() {
           />
         </div>
 
-        <div style={{ flex: 1, minWidth: '280px' }}>
+        <div style={{ flex: '2 1 240px', minWidth: '200px' }}>
           <label className="form-label" style={{ marginBottom: '4px' }}>
             Academic Cohort / Batch
           </label>
@@ -347,6 +543,8 @@ export default function AttendancePage() {
               borderRadius: '4px',
               border: '1px solid var(--border-subtle)',
               fontSize: '12px',
+              alignSelf: 'flex-end',
+              marginBottom: '2px',
             }}
           >
             <span style={{ color: 'var(--text-muted)' }}>Classroom: </span>
@@ -520,7 +718,24 @@ export default function AttendancePage() {
                         </span>
                       </td>
                       <td>
-                        <strong style={{ color: 'var(--navy-950)' }}>{student.full_name}</strong>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <strong style={{ color: 'var(--navy-950)' }}>{student.full_name}</strong>
+                          {(student.full_name === TEST_STUDENT_NAME || student.admission_no === TEST_STUDENT_ADMISSION_NO) && (
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                padding: '1px 6px',
+                                borderRadius: '4px',
+                                backgroundColor: 'var(--gold-subtle-bg)',
+                                color: 'var(--gold-dark)',
+                                border: '1px solid var(--gold-border)',
+                              }}
+                            >
+                              ⭐ Test Student
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td style={{ fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
                         {student.roll_no || '—'}
@@ -632,8 +847,45 @@ export default function AttendancePage() {
                       <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                         {record?.time_in || '—'}
                       </td>
-                      <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                        {record?.remarks || '—'}
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+                          {record?.telegram_notified ? (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '11px',
+                                color: 'var(--status-present)',
+                                fontWeight: 600,
+                              }}
+                              title={`Dispatched at ${record.telegram_notified_at || 'today'}`}
+                            >
+                              <CheckCircle2 size={13} /> Telegram Sent
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                              {record?.remarks || '—'}
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenTelegramModal(student)}
+                            className="btn btn-outline"
+                            style={{
+                              padding: '3px 8px',
+                              fontSize: '11px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                            title="Open Telegram Parent Alert & Deep Link Manager"
+                          >
+                            <MessageCircle size={12} color="var(--gold-dark)" />
+                            Telegram
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -643,6 +895,221 @@ export default function AttendancePage() {
           </table>
         </div>
       </div>
+
+      {/* Telegram Parent Alert & Deep Link Verification Modal */}
+      {isTelegramModalOpen && activeTestStudent && (
+        <Modal
+          isOpen={isTelegramModalOpen}
+          onClose={() => setIsTelegramModalOpen(false)}
+          title={`Telegram Parent Alert & Linking — ${activeTestStudent.full_name}`}
+          subtitle={`Student Admission No: ${activeTestStudent.admission_no} • Official Deep Link Integration`}
+          size="md"
+          footer={
+            <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%', gap: '8px' }}>
+              <Button variant="outline" size="sm" onClick={() => setIsTelegramModalOpen(false)}>
+                Close
+              </Button>
+            </div>
+          }
+        >
+          {(() => {
+            const parent = activeTestStudent.parent_students?.[0]?.parents;
+            const record = attendanceMap[activeTestStudent.id];
+            const currentStatus = record?.status || 'Unmarked';
+            const deepLinkInfo = parent ? getParentTelegramDeepLink(parent.id) : '';
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Ward and Guardian Overview */}
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    backgroundColor: 'var(--bg-subtle)',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-subtle)',
+                    fontSize: '12px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Student Ward:</span>
+                    <strong>{activeTestStudent.full_name} ({activeTestStudent.admission_no})</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Linked Guardian:</span>
+                    <strong>{parent?.full_name || 'No guardian linked'} {parent?.relationship ? `(${parent.relationship})` : ''}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Current Roll Call Status:</span>
+                    <Badge status={currentStatus}>{currentStatus}</Badge>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Telegram Status:</span>
+                    {parent?.is_verified && parent?.telegram_chat_id ? (
+                      <span style={{ color: 'var(--status-present)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <CheckCircle2 size={13} /> Verified (Chat ID: {parent.telegram_chat_id})
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--status-absent)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <AlertCircle size={13} /> Not Linked / Unverified
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Step A: One-Time Deep Link */}
+                <div
+                  style={{
+                    padding: '14px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '6px',
+                  }}
+                >
+                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <ShieldCheck size={16} color="var(--gold-dark)" />
+                    1. Secure Parent Linking Deep Link
+                  </h4>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                    To ensure parent privacy, notifications are strictly dispatched only after the guardian verifies their Telegram account.
+                  </p>
+
+                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                    <input
+                      type="text"
+                      readOnly
+                      value={deepLinkInfo || 'Please link guardian in Parent Directory to generate token.'}
+                      className="form-input"
+                      style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', flex: 1, backgroundColor: '#f8fafc' }}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={Copy}
+                      onClick={() => {
+                        if (deepLinkInfo) {
+                          navigator.clipboard.writeText(deepLinkInfo);
+                          showToast('Telegram deep link copied to clipboard!');
+                        }
+                      }}
+                      disabled={!deepLinkInfo}
+                    >
+                      Copy
+                    </Button>
+                    {deepLinkInfo && (
+                      <a
+                        href={deepLinkInfo}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-sm btn-outline"
+                        style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 8px' }}
+                        title="Open in Telegram Web / App"
+                      >
+                        <ExternalLink size={14} />
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                {/* Step B: Manual Chat ID Verification Form */}
+                <div
+                  style={{
+                    padding: '14px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '6px',
+                  }}
+                >
+                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '4px' }}>
+                    2. Link or Update Telegram Chat ID
+                  </h4>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                    Enter the parent's Telegram numeric chat identifier (retrieved via Telegram Bot <code>/start</code> or <code>@userinfobot</code>).
+                  </p>
+                  <form onSubmit={handleLinkParentTelegram} style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="e.g. 123456789"
+                      value={testChatIdInput}
+                      onChange={(e) => setTestChatIdInput(e.target.value)}
+                      className="form-input"
+                      style={{ flex: 1, fontSize: '12px' }}
+                      required
+                    />
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      icon={CheckCircle2}
+                      disabled={isLinkingTelegram || !parent}
+                    >
+                      {isLinkingTelegram ? 'Linking...' : 'Verify & Link'}
+                    </Button>
+                  </form>
+                </div>
+
+                {/* Step C: Safe Test Workflow Dispatch */}
+                <div
+                  style={{
+                    padding: '14px',
+                    backgroundColor: parent?.is_verified ? 'var(--status-present-bg)' : '#f8fafc',
+                    border: parent?.is_verified ? '1px solid var(--status-present-border)' : '1px solid var(--border-subtle)',
+                    borderRadius: '6px',
+                  }}
+                >
+                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '4px' }}>
+                    3. Dispatch Roll Call Telegram Notice
+                  </h4>
+                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                    Dispatches official notification for <strong>{activeTestStudent.full_name}</strong> to their verified parent.
+                  </p>
+
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <Button
+                      variant={parent?.is_verified ? 'gold' : 'outline'}
+                      size="sm"
+                      icon={Send}
+                      disabled={!parent?.is_verified || telegramDispatchStatus?.sending}
+                      onClick={handleDispatchTelegramTest}
+                    >
+                      {telegramDispatchStatus?.sending ? 'Sending Alert...' : 'Dispatch Verified Alert'}
+                    </Button>
+
+                    {!parent?.is_verified && (
+                      <span style={{ fontSize: '11px', color: 'var(--status-absent)' }}>
+                        Alerts disabled until parent is verified.
+                      </span>
+                    )}
+                  </div>
+
+                  {telegramDispatchStatus && (
+                    <div
+                      style={{
+                        marginTop: '10px',
+                        padding: '8px 12px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        backgroundColor: telegramDispatchStatus.success ? '#ffffff' : 'var(--status-absent-bg)',
+                        color: telegramDispatchStatus.success ? 'var(--status-present)' : 'var(--status-absent)',
+                        border: telegramDispatchStatus.success ? '1px solid var(--status-present-border)' : '1px solid var(--status-absent-border)',
+                      }}
+                    >
+                      {telegramDispatchStatus.success ? (
+                        <div>
+                          <strong>Dispatched:</strong> {telegramDispatchStatus.message}
+                        </div>
+                      ) : (
+                        <div>
+                          <strong>Dispatch Guard:</strong> {telegramDispatchStatus.error}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </Modal>
+      )}
     </div>
   );
 }

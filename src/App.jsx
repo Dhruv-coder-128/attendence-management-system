@@ -8,6 +8,7 @@ import AttendancePage from './pages/AttendancePage';
 import ParentsPage from './pages/ParentsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import SettingsPage from './pages/SettingsPage';
+import BulkImportPage from './pages/BulkImportPage';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { RefreshCw, GraduationCap } from 'lucide-react';
 
@@ -46,20 +47,27 @@ export default function App() {
     if (!supabase || !isSupabaseConfigured) return;
 
     try {
-      // 1. Live Student Count
-      const { count: studentCount, error: sErr } = await supabase
+      // 1. Live Student Count directly from public.students
+      const { count: studentCount, data: sData, error: sErr } = await supabase
         .from('students')
-        .select('id', { count: 'exact', head: true });
+        .select('id', { count: 'exact' });
 
-      // 2. Live Active Batches Count
-      const { count: batchCount, error: bErr } = await supabase
+      // 2. Live Batches Count directly from public.batches (All cohorts in database)
+      const { count: batchCount, data: bData, error: bErr } = await supabase
         .from('batches')
-        .select('id', { count: 'exact', head: true })
-        .eq('is_active', true);
+        .select('id, is_active', { count: 'exact' });
+
+      const finalStudents = !sErr && studentCount !== null && studentCount !== undefined
+        ? studentCount
+        : (sData ? sData.length : 0);
+
+      const finalBatches = !bErr && batchCount !== null && batchCount !== undefined
+        ? batchCount
+        : (bData ? bData.length : 0);
 
       setCounts({
-        students: sErr ? 0 : studentCount || 0,
-        batches: bErr ? 0 : batchCount || 0,
+        students: finalStudents,
+        batches: finalBatches,
         notifications: notifications.length,
       });
     } catch (err) {
@@ -201,21 +209,26 @@ export default function App() {
       )}
 
       {activePage === 'students' && (
-        <StudentsPage />
+        <StudentsPage onRefreshCounts={refreshCounts} />
       )}
 
       {activePage === 'batches' && (
-        <BatchesPage />
+        <BatchesPage onRefreshCounts={refreshCounts} />
       )}
 
       {activePage === 'attendance' && (
-        <AttendancePage />
+        <AttendancePage onRefreshCounts={refreshCounts} />
       )}
 
       {activePage === 'parents' && (
         <ParentsPage
           onSendNotice={() => setActivePage('notifications')}
+          onRefreshCounts={refreshCounts}
         />
+      )}
+
+      {activePage === 'import' && (
+        <BulkImportPage onNavigate={setActivePage} onRefreshCounts={refreshCounts} />
       )}
 
       {activePage === 'notifications' && (

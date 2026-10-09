@@ -13,6 +13,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Sparkles,
+  Upload,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -20,12 +21,13 @@ import Button from '../components/common/Button';
 import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import Select from '../components/common/Select';
+import BulkImportModal from '../components/importer/BulkImportModal';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 /**
  * Courses & Batches Management Page — Real Supabase Integration
  */
-export default function BatchesPage() {
+export default function BatchesPage({ onRefreshCounts }) {
   const [batches, setBatches] = useState([]);
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -38,6 +40,7 @@ export default function BatchesPage() {
 
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [batchToEdit, setBatchToEdit] = useState(null);
   const [batchToDelete, setBatchToDelete] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -216,6 +219,7 @@ export default function BatchesPage() {
       }
 
       await fetchData();
+      if (onRefreshCounts) onRefreshCounts();
     } catch (err) {
       console.error('Save batch error:', err);
       if (err.message?.includes('duplicate key') || err.message?.includes('batches_code_key')) {
@@ -244,6 +248,7 @@ export default function BatchesPage() {
       showToast(`Batch ${batchToDelete.name} deleted.`);
       setBatchToDelete(null);
       await fetchData();
+      if (onRefreshCounts) onRefreshCounts();
     } catch (err) {
       console.error('Delete batch error:', err);
       if (err.message?.includes('foreign key constraint') || err.message?.includes('students_batch_id_fkey')) {
@@ -276,6 +281,15 @@ export default function BatchesPage() {
             disabled={loading}
           >
             {loading ? 'Refreshing...' : 'Refresh'}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="md"
+            icon={Upload}
+            onClick={() => setIsImportModalOpen(true)}
+          >
+            Bulk Import
           </Button>
 
           <Button
@@ -700,6 +714,18 @@ export default function BatchesPage() {
           </div>
         )}
       </Modal>
+
+      {/* Bulk Import Modal */}
+      <BulkImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        initialEntity="batches"
+        onImportSuccess={() => {
+          fetchData();
+          if (onRefreshCounts) onRefreshCounts();
+          showToast('Batches bulk import completed successfully!');
+        }}
+      />
     </div>
   );
 }

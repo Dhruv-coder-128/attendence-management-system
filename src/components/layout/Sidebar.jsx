@@ -10,6 +10,7 @@ import {
   LogOut,
   GraduationCap,
   ShieldCheck,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 /**
@@ -49,6 +50,12 @@ export default function Sidebar({
     },
     { id: 'attendance', label: 'Attendance Register', icon: CalendarCheck, badge: 'Live' },
     { id: 'parents', label: 'Parent Directory', icon: UserCheck },
+    {
+      id: 'import',
+      label: 'Bulk Data Import',
+      icon: FileSpreadsheet,
+      badge: 'XLS/CSV',
+    },
     {
       id: 'notifications',
       label: 'Telegram & Alerts',
