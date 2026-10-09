@@ -1,6 +1,7 @@
 import React from 'react';
-import { Menu, Calendar, Shield, Bell, Plus, CheckSquare } from 'lucide-react';
+import { Menu, Calendar, Shield, Bell, Plus, CheckSquare, Database } from 'lucide-react';
 import Button from '../common/Button';
+import { isSupabaseConfigured } from '../../lib/supabase';
 
 /**
  * Enterprise Top Navigation Bar
@@ -52,6 +53,27 @@ export default function TopNav({
       </div>
 
       <div className="topbar-right">
+        {/* Database Connection Chip */}
+        <div
+          onClick={() => onQuickAction && onQuickAction('goto-settings')}
+          className="topbar-chip"
+          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+          title={isSupabaseConfigured ? 'Supabase Database Connected' : 'Supabase Not Configured'}
+        >
+          <span
+            style={{
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              backgroundColor: isSupabaseConfigured ? 'var(--status-present)' : 'var(--status-absent)',
+              display: 'inline-block',
+            }}
+          />
+          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--navy-900)' }}>
+            {isSupabaseConfigured ? 'DB: Live' : 'DB: Offline'}
+          </span>
+        </div>
+
         {/* Campus & Term Chip */}
         <div className="topbar-chip" style={{ display: 'none', md: 'flex' }}>
           <Calendar size={13} color="var(--gold-dark)" />

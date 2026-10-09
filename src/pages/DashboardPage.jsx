@@ -87,9 +87,9 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
       if (batchesErr) throw batchesErr;
 
       // 3. Courses Count
-      const { count: coursesCount, error: coursesErr } = await supabase
+      const { data: coursesData, count: coursesCount, error: coursesErr } = await supabase
         .from('courses')
-        .select('id', { count: 'exact', head: true });
+        .select('id', { count: 'exact' });
       if (coursesErr) throw coursesErr;
 
       // 4. Today's Attendance Records
@@ -132,7 +132,7 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
         totalEnrolled,
         totalCapacity,
         totalBatches,
-        totalCourses: coursesCount || 0,
+        totalCourses: coursesCount ?? (coursesData?.length || 0),
         todayPresentCount: presentCount,
         todayAbsentCount: absentCount,
         todayLateCount: lateCount,

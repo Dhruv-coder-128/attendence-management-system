@@ -32,6 +32,7 @@ import {
   getParentTelegramDeepLink,
   linkParentTelegramAccount,
   sendVerifiedAttendanceNotice,
+  sendBatchAttendanceNotifications,
   TELEGRAM_BOT_USERNAME,
 } from '../lib/telegramClient';
 
@@ -50,6 +51,12 @@ export default function AttendancePage({ onRefreshCounts }) {
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
+
+  // Bulk Attendance Notification State
+  const [isBulkNotifyModalOpen, setIsBulkNotifyModalOpen] = useState(false);
+  const [isDispatchingBatch, setIsDispatchingBatch] = useState(false);
+  const [bulkNotifyResults, setBulkNotifyResults] = useState(null);
+  const [retryFailedOnly, setRetryFailedOnly] = useState(false);
 
   // Test Student & Telegram Modal State
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
@@ -392,6 +399,64 @@ export default function AttendancePage({ onRefreshCounts }) {
     }
   };
 
+  // Eligible Linked Guardians in current batch
+  const eligibleLinkedCount = useMemo(() => {
+    return students.filter((s) => {
+      const parent = s.parent_students?.[0]?.parents;
+      return parent?.is_verified && Boolean(parent?.telegram_chat_id);
+    }).length;
+  }, [students]);
+
+  // Bulk Attendance Notification Dispatcher (Server-Side Resolution)
+  const handleSendAttendanceNotifications = async (isRetry = false) => {
+    if (!selectedBatchId || !selectedDate) {
+      alert('Please select an academic cohort and roll call date.');
+      return;
+    }
+
+    setIsDispatchingBatch(true);
+    try {
+      const result = await sendBatchAttendanceNotifications({
+        batchId: selectedBatchId,
+        date: selectedDate,
+        retryFailedOnly: isRetry || retryFailedOnly,
+        forceAll: false,
+      });
+
+      if (result.success) {
+        setBulkNotifyResults({
+          ok: true,
+          summary: result.summary,
+          details: result.details || [],
+          batchName: result.batchName || activeBatch?.name,
+          date: result.date || selectedDate,
+        });
+
+        showToast(
+          `Alerts processed: ${result.summary.sent} dispatched, ${result.summary.alreadyNotified} already notified, ${result.summary.failed} failed.`
+        );
+
+        // Re-fetch attendance records so UI reflects latest telegram_notified flags
+        await fetchBatchAttendance();
+        if (onRefreshCounts) onRefreshCounts();
+      } else {
+        setBulkNotifyResults({
+          ok: false,
+          error: result.error || 'Server rejected attendance alert dispatch.',
+          summary: result.summary,
+        });
+      }
+    } catch (err) {
+      console.error('Batch notify error:', err);
+      setBulkNotifyResults({
+        ok: false,
+        error: err.message || 'Network error executing notification dispatcher.',
+      });
+    } finally {
+      setIsDispatchingBatch(false);
+    }
+  };
+
   // Live Metric Counts
   const totalCount = students.length;
   const presentCount = students.filter((s) => attendanceMap[s.id]?.status === 'Present').length;
@@ -413,6 +478,19 @@ export default function AttendancePage({ onRefreshCounts }) {
         </div>
 
         <div className="page-actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <Button
+            variant="primary"
+            size="sm"
+            icon={Send}
+            onClick={() => {
+              setBulkNotifyResults(null);
+              setIsBulkNotifyModalOpen(true);
+            }}
+            disabled={loading || students.length === 0}
+          >
+            Send Attendance Notifications
+          </Button>
+
           <Button
             variant="gold"
             size="sm"
@@ -863,9 +941,37 @@ export default function AttendancePage({ onRefreshCounts }) {
                             >
                               <CheckCircle2 size={13} /> Telegram Sent
                             </span>
+                          ) : record?.telegram_delivery_status === 'failed' || record?.telegram_error ? (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '11px',
+                                color: 'var(--status-absent)',
+                                fontWeight: 600,
+                              }}
+                              title={record.telegram_error || 'Delivery failed'}
+                            >
+                              <AlertCircle size={13} /> Alert Failed
+                            </span>
+                          ) : student.parent_students?.[0]?.parents?.is_verified && student.parent_students?.[0]?.parents?.telegram_chat_id ? (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '11px',
+                                color: '#0369a1',
+                                fontWeight: 500,
+                              }}
+                              title="Guardian linked & ready to receive alert"
+                            >
+                              Parent Linked
+                            </span>
                           ) : (
                             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                              {record?.remarks || '—'}
+                              Unlinked
                             </span>
                           )}
 
@@ -883,7 +989,7 @@ export default function AttendancePage({ onRefreshCounts }) {
                             title="Open Telegram Parent Alert & Deep Link Manager"
                           >
                             <MessageCircle size={12} color="var(--gold-dark)" />
-                            Telegram
+                            Alert
                           </button>
                         </div>
                       </td>
@@ -1108,6 +1214,273 @@ export default function AttendancePage({ onRefreshCounts }) {
               </div>
             );
           })()}
+        </Modal>
+      )}
+
+      {/* SEND BATCH ATTENDANCE NOTIFICATIONS MODAL */}
+      {isBulkNotifyModalOpen && (
+        <Modal
+          isOpen={isBulkNotifyModalOpen}
+          onClose={() => setIsBulkNotifyModalOpen(false)}
+          title="Send Batch Attendance Notifications"
+          subtitle={`Academic Cohort: ${activeBatch?.name || 'Selected Cohort'} • Date: ${selectedDate}`}
+          size="lg"
+          footer={
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                {bulkNotifyResults ? (
+                  <span>Verified Telegram Bot API delivery records</span>
+                ) : (
+                  <span>Strict privacy: Guardians receive only their own child's roll call status</span>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsBulkNotifyModalOpen(false)}
+                >
+                  Close
+                </Button>
+                {!bulkNotifyResults ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={Send}
+                    onClick={() => handleSendAttendanceNotifications(false)}
+                    disabled={isDispatchingBatch || markedCount === 0}
+                  >
+                    {isDispatchingBatch ? 'Dispatching Notices...' : 'Dispatch Parent Notices'}
+                  </Button>
+                ) : bulkNotifyResults.summary?.failed > 0 ? (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={RefreshCw}
+                    onClick={() => handleSendAttendanceNotifications(true)}
+                    disabled={isDispatchingBatch}
+                  >
+                    {isDispatchingBatch ? 'Retrying Failed...' : `Retry ${bulkNotifyResults.summary.failed} Failed`}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="gold"
+                    size="sm"
+                    icon={RefreshCw}
+                    onClick={() => handleSendAttendanceNotifications(false)}
+                    disabled={isDispatchingBatch}
+                  >
+                    Re-dispatch Batch
+                  </Button>
+                )}
+              </div>
+            </div>
+          }
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Step 1: Pre-dispatch Confirmation & Eligibility Overview */}
+            {!bulkNotifyResults && (
+              <>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                    gap: '10px',
+                  }}
+                >
+                  <div style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid var(--border-subtle)', textAlign: 'center' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Total Enrolled</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--navy-950)' }}>{totalCount}</div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: 'var(--status-present-bg)', borderRadius: '6px', border: '1px solid var(--status-present-border)', textAlign: 'center' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--status-present)' }}>Present / Late</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--status-present)' }}>{presentCount + lateCount}</div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: 'var(--status-absent-bg)', borderRadius: '6px', border: '1px solid var(--status-absent-border)', textAlign: 'center' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--status-absent)' }}>Absent</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--status-absent)' }}>{absentCount}</div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: '#e0f2fe', borderRadius: '6px', border: '1px solid #bae6fd', textAlign: 'center' }}>
+                    <div style={{ fontSize: '11px', color: '#0369a1' }}>Linked Guardians</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#0369a1' }}>{eligibleLinkedCount}</div>
+                  </div>
+                </div>
+
+                {markedCount === 0 && (
+                  <div
+                    style={{
+                      padding: '12px 14px',
+                      backgroundColor: 'var(--status-absent-bg)',
+                      border: '1px solid var(--status-absent-border)',
+                      borderRadius: '6px',
+                      color: 'var(--status-absent)',
+                      fontSize: '12px',
+                    }}
+                  >
+                    <strong>Notice:</strong> Roll call has not been marked yet for {selectedDate}. Please mark students Present or Absent before sending notifications.
+                  </div>
+                )}
+
+                {/* Privacy & Anti-Duplicate Guarantees */}
+                <div
+                  style={{
+                    padding: '14px',
+                    border: '1px solid var(--gold-border)',
+                    borderRadius: '6px',
+                    backgroundColor: 'var(--gold-subtle-bg)',
+                    fontSize: '12px',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, color: 'var(--navy-950)', marginBottom: '6px' }}>
+                    Automated Telegram Parent Notice Rules:
+                  </div>
+                  <ul style={{ margin: '0 0 0 16px', padding: 0, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                    <li>
+                      <strong>Zero Privacy Leaks:</strong> Every notification is resolved server-side from <code>public.parent_students</code>. Parents receive strictly their child's individual attendance record.
+                    </li>
+                    <li>
+                      <strong>Duplicate Suppression:</strong> Students already notified for date <code>{selectedDate}</code> are skipped automatically to avoid repeated spam.
+                    </li>
+                    <li>
+                      <strong>Verified Deliveries Only:</strong> Status is marked <code>telegram_notified: true</code> in PostgreSQL only when Telegram Bot API confirms HTTP 200 message delivery.
+                    </li>
+                  </ul>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    id="retryFailedOnlyCheckbox"
+                    checked={retryFailedOnly}
+                    onChange={(e) => setRetryFailedOnly(e.target.checked)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  <label htmlFor="retryFailedOnlyCheckbox" style={{ fontSize: '12px', cursor: 'pointer', color: 'var(--navy-900)', fontWeight: 500 }}>
+                    Only retry failed notices (skip all newly marked or pending students)
+                  </label>
+                </div>
+              </>
+            )}
+
+            {/* Step 2: Post-dispatch Results View */}
+            {bulkNotifyResults && (
+              <div>
+                {bulkNotifyResults.ok ? (
+                  <>
+                    {/* Live Metric Counters */}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+                        gap: '8px',
+                        marginBottom: '14px',
+                      }}
+                    >
+                      <div style={{ padding: '8px', backgroundColor: '#f1f5f9', borderRadius: '4px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Roll Call</div>
+                        <div style={{ fontSize: '16px', fontWeight: 700 }}>{bulkNotifyResults.summary.totalMarked}</div>
+                      </div>
+                      <div style={{ padding: '8px', backgroundColor: '#e0f2fe', borderRadius: '4px', textAlign: 'center', border: '1px solid #bae6fd' }}>
+                        <div style={{ fontSize: '11px', color: '#0369a1' }}>Eligible</div>
+                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#0369a1' }}>{bulkNotifyResults.summary.eligibleLinked}</div>
+                      </div>
+                      <div style={{ padding: '8px', backgroundColor: 'var(--status-present-bg)', borderRadius: '4px', textAlign: 'center', border: '1px solid var(--status-present-border)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--status-present)' }}>Dispatched</div>
+                        <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--status-present)' }}>{bulkNotifyResults.summary.sent}</div>
+                      </div>
+                      <div style={{ padding: '8px', backgroundColor: '#fef3c7', borderRadius: '4px', textAlign: 'center', border: '1px solid #fde68a' }}>
+                        <div style={{ fontSize: '11px', color: '#92400e' }}>Prev. Sent</div>
+                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#92400e' }}>{bulkNotifyResults.summary.alreadyNotified}</div>
+                      </div>
+                      <div style={{ padding: '8px', backgroundColor: '#f8fafc', borderRadius: '4px', textAlign: 'center', border: '1px solid var(--border-subtle)' }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Unlinked</div>
+                        <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-secondary)' }}>{bulkNotifyResults.summary.skippedUnlinked}</div>
+                      </div>
+                      {bulkNotifyResults.summary.failed > 0 && (
+                        <div style={{ padding: '8px', backgroundColor: 'var(--status-absent-bg)', borderRadius: '4px', textAlign: 'center', border: '1px solid var(--status-absent-border)' }}>
+                          <div style={{ fontSize: '11px', color: 'var(--status-absent)' }}>Failed</div>
+                          <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--status-absent)' }}>{bulkNotifyResults.summary.failed}</div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Detailed Delivery Ledger */}
+                    <div style={{ marginBottom: '6px', fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)' }}>
+                      Notification Audit Log ({bulkNotifyResults.details.length} records)
+                    </div>
+                    <div
+                      style={{
+                        maxHeight: '280px',
+                        overflowY: 'auto',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: '6px',
+                      }}
+                    >
+                      <table className="erp-table" style={{ fontSize: '12px' }}>
+                        <thead>
+                          <tr>
+                            <th>Student Ward</th>
+                            <th>Status</th>
+                            <th>Guardian Name</th>
+                            <th>Telegram Chat</th>
+                            <th style={{ textAlign: 'right' }}>Result</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bulkNotifyResults.details.map((d) => (
+                            <tr key={d.studentId}>
+                              <td>
+                                <strong>{d.studentName}</strong>
+                              </td>
+                              <td>
+                                <Badge status={d.status}>{d.status}</Badge>
+                              </td>
+                              <td>{d.parentName || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>None linked</span>}</td>
+                              <td style={{ fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+                                {d.chatId || '—'}
+                              </td>
+                              <td style={{ textAlign: 'right' }}>
+                                {d.result === 'sent' ? (
+                                  <span style={{ color: 'var(--status-present)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                    <CheckCircle2 size={12} /> Dispatched
+                                  </span>
+                                ) : d.result === 'already_notified' ? (
+                                  <span style={{ color: '#0369a1', fontSize: '11px' }}>
+                                    Already Sent
+                                  </span>
+                                ) : d.result === 'failed' ? (
+                                  <span style={{ color: 'var(--status-absent)', fontWeight: 600, fontSize: '11px' }} title={d.error}>
+                                    Failed: {d.error}
+                                  </span>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                                    Skipped (Unlinked)
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <div
+                    style={{
+                      padding: '14px',
+                      backgroundColor: 'var(--status-absent-bg)',
+                      border: '1px solid var(--status-absent-border)',
+                      borderRadius: '6px',
+                      color: 'var(--status-absent)',
+                      fontSize: '12px',
+                    }}
+                  >
+                    <strong>Dispatch Error:</strong> {bulkNotifyResults.error}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </Modal>
       )}
     </div>

@@ -18,6 +18,8 @@ import {
   ExternalLink,
   ShieldCheck,
   AlertCircle,
+  Share2,
+  Clock,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -29,7 +31,10 @@ import BulkImportModal from '../components/importer/BulkImportModal';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   getParentTelegramDeepLink,
+  createSecureParentInvitation,
+  createBulkParentInvitations,
   linkParentTelegramAccount,
+  getWhatsAppShareUrl,
   TELEGRAM_BOT_USERNAME,
 } from '../lib/telegramClient';
 
@@ -55,7 +60,15 @@ export default function ParentsPage({ onRefreshCounts }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalError, setModalError] = useState('');
 
-  // Telegram Deep Link Modal State
+  // Bulk Parent Invitations State
+  const [invitationsMap, setInvitationsMap] = useState({});
+  const [isBulkInviteModalOpen, setIsBulkInviteModalOpen] = useState(false);
+  const [bulkInviteScope, setBulkInviteScope] = useState('unlinked'); // 'unlinked', 'pending', 'all'
+  const [bulkInviteChannel, setBulkInviteChannel] = useState('telegram'); // 'telegram', 'whatsapp'
+  const [isDispatchingInvites, setIsDispatchingInvites] = useState(false);
+  const [bulkInviteResults, setBulkInviteResults] = useState(null);
+
+  // Telegram Deep Link Modal State (Individual)
   const [telegramModalParent, setTelegramModalParent] = useState(null);
   const [telegramChatIdInput, setTelegramChatIdInput] = useState('');
   const [isLinkingTelegram, setIsLinkingTelegram] = useState(false);
@@ -108,6 +121,10 @@ export default function ParentsPage({ onRefreshCounts }) {
           preferred_notification_channel,
           telegram_chat_id,
           is_verified,
+          linking_token,
+          linking_token_expires_at,
+          invitation_status,
+          invitation_sent_at,
           created_at,
           parent_students:parent_students (
             id,
@@ -122,6 +139,24 @@ export default function ParentsPage({ onRefreshCounts }) {
 
       setStudents(studentsData || []);
       setParents(parentsData || []);
+
+      // 3. Try to fetch invitations from parent_invitations table
+      try {
+        const { data: invData } = await supabase
+          .from('parent_invitations')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (invData) {
+          const map = {};
+          invData.forEach((inv) => {
+            if (!map[inv.parent_id]) map[inv.parent_id] = inv;
+          });
+          setInvitationsMap(map);
+        }
+      } catch (invErr) {
+        console.warn('parent_invitations query fallback:', invErr);
+      }
     } catch (err) {
       console.error('Error fetching parents:', err);
       setError(err.message || 'Failed to load parents from Supabase.');
@@ -277,11 +312,71 @@ export default function ParentsPage({ onRefreshCounts }) {
     }
   };
 
+  // Metric Summaries
+  const linkedCount = useMemo(() => {
+    return parents.filter((p) => p.is_verified && p.telegram_chat_id).length;
+  }, [parents]);
+
+  const pendingCount = useMemo(() => {
+    return parents.filter((p) => {
+      if (p.is_verified && p.telegram_chat_id) return false;
+      const inv = invitationsMap[p.id] || (p.linking_token ? { token: p.linking_token, expires_at: p.linking_token_expires_at } : null);
+      if (!inv || !inv.token) return false;
+      if (inv.expires_at && new Date(inv.expires_at) < new Date()) return false;
+      return true;
+    }).length;
+  }, [parents, invitationsMap]);
+
+  const uninvitedCount = Math.max(0, parents.length - linkedCount - pendingCount);
+
   // Telegram Deep Link Handlers
-  const handleOpenTelegramLink = (parent) => {
+  const handleOpenTelegramLink = async (parent) => {
     setTelegramModalParent(parent);
     setTelegramChatIdInput(parent.telegram_chat_id || '');
     setTelegramLinkMessage(null);
+
+    // Auto-generate a secure token if neither table has one
+    const activeInv = invitationsMap[parent.id] || (parent.linking_token ? { token: parent.linking_token, expires_at: parent.linking_token_expires_at } : null);
+    if (!activeInv || !activeInv.token) {
+      try {
+        const newInv = await createSecureParentInvitation(parent.id, 'telegram');
+        setInvitationsMap((prev) => ({
+          ...prev,
+          [parent.id]: {
+            parent_id: parent.id,
+            token: newInv.token,
+            expires_at: newInv.expiresAt,
+            invitation_channel: 'telegram',
+            invitation_status: 'sent',
+            linking_status: 'unlinked',
+          },
+        }));
+      } catch (err) {
+        console.warn('Auto token generation warning:', err);
+      }
+    }
+  };
+
+  const handleRegenerateToken = async () => {
+    if (!telegramModalParent) return;
+    try {
+      const newInv = await createSecureParentInvitation(telegramModalParent.id, 'telegram');
+      setInvitationsMap((prev) => ({
+        ...prev,
+        [telegramModalParent.id]: {
+          parent_id: telegramModalParent.id,
+          token: newInv.token,
+          expires_at: newInv.expiresAt,
+          invitation_channel: 'telegram',
+          invitation_status: 'sent',
+          linking_status: 'unlinked',
+        },
+      }));
+      showToast('Generated fresh 7-day single-use linking token!');
+      fetchData();
+    } catch (err) {
+      alert('Failed to generate token: ' + err.message);
+    }
   };
 
   const handleSaveTelegramChatId = async () => {
@@ -310,6 +405,80 @@ export default function ParentsPage({ onRefreshCounts }) {
     }
   };
 
+  // Bulk Invitations Handler
+  const handleRunBulkInvitations = async () => {
+    let targetList = [];
+    if (bulkInviteScope === 'unlinked') {
+      targetList = parents.filter((p) => !(p.is_verified && p.telegram_chat_id));
+    } else if (bulkInviteScope === 'pending') {
+      targetList = parents.filter((p) => {
+        const inv = invitationsMap[p.id] || (p.linking_token ? { token: p.linking_token } : null);
+        return !(p.is_verified && p.telegram_chat_id) && inv;
+      });
+    } else {
+      targetList = [...parents];
+    }
+
+    if (targetList.length === 0) {
+      alert('No eligible guardians found for the selected scope.');
+      return;
+    }
+
+    setIsDispatchingInvites(true);
+    try {
+      const results = await createBulkParentInvitations(targetList, bulkInviteChannel);
+      const successCount = results.filter((r) => r.success).length;
+      const failedCount = results.filter((r) => !r.success).length;
+
+      setBulkInviteResults({
+        total: targetList.length,
+        successCount,
+        failedCount,
+        channel: bulkInviteChannel,
+        items: results,
+      });
+
+      showToast(`Generated ${successCount} parent invitations!`);
+      await fetchData();
+    } catch (err) {
+      console.error('Bulk invite generation error:', err);
+      alert('Error generating invitations: ' + err.message);
+    } finally {
+      setIsDispatchingInvites(false);
+    }
+  };
+
+  const handleRetryFailedInvitations = async () => {
+    if (!bulkInviteResults?.items) return;
+    const failedItems = bulkInviteResults.items.filter((i) => !i.success);
+    const retryParents = parents.filter((p) => failedItems.some((f) => f.parentId === p.id));
+    if (retryParents.length === 0) return;
+
+    setIsDispatchingInvites(true);
+    try {
+      const retryResults = await createBulkParentInvitations(retryParents, bulkInviteResults.channel);
+      const newItems = bulkInviteResults.items.map((item) => {
+        const retried = retryResults.find((r) => r.parentId === item.parentId);
+        return retried || item;
+      });
+      const successCount = newItems.filter((r) => r.success).length;
+      const failedCount = newItems.filter((r) => !r.success).length;
+
+      setBulkInviteResults((prev) => ({
+        ...prev,
+        successCount,
+        failedCount,
+        items: newItems,
+      }));
+      showToast(`Retried ${retryParents.length} invitations.`);
+      await fetchData();
+    } catch (err) {
+      alert('Retry error: ' + err.message);
+    } finally {
+      setIsDispatchingInvites(false);
+    }
+  };
+
   return (
     <div>
       {/* Header */}
@@ -321,7 +490,19 @@ export default function ParentsPage({ onRefreshCounts }) {
           </p>
         </div>
 
-        <div className="page-actions">
+        <div className="page-actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <Button
+            variant="gold"
+            size="md"
+            icon={Send}
+            onClick={() => {
+              setBulkInviteResults(null);
+              setIsBulkInviteModalOpen(true);
+            }}
+          >
+            Send Parent Invitations
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
@@ -349,6 +530,84 @@ export default function ParentsPage({ onRefreshCounts }) {
           >
             Register Guardian
           </Button>
+        </div>
+      </div>
+
+      {/* Top Metrics Ribbon */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+          gap: '12px',
+          marginBottom: '20px',
+        }}
+      >
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            padding: '12px 14px',
+            borderRadius: '6px',
+            border: '1px solid var(--border-subtle)',
+            borderLeft: '3px solid var(--navy-900)',
+          }}
+        >
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
+            Total Guardians
+          </div>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--navy-950)', marginTop: '2px' }}>
+            {parents.length}
+          </div>
+        </div>
+
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            padding: '12px 14px',
+            borderRadius: '6px',
+            border: '1px solid var(--border-subtle)',
+            borderLeft: '3px solid var(--status-present)',
+          }}
+        >
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
+            Linked with Telegram
+          </div>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--status-present)', marginTop: '2px' }}>
+            {linkedCount}
+          </div>
+        </div>
+
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            padding: '12px 14px',
+            borderRadius: '6px',
+            border: '1px solid var(--border-subtle)',
+            borderLeft: '3px solid #0284c7',
+          }}
+        >
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
+            Active Invitations (7d)
+          </div>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: '#0284c7', marginTop: '2px' }}>
+            {pendingCount}
+          </div>
+        </div>
+
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            padding: '12px 14px',
+            borderRadius: '6px',
+            border: '1px solid var(--border-subtle)',
+            borderLeft: '3px solid #d97706',
+          }}
+        >
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>
+            Uninvited / Action Req.
+          </div>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: '#d97706', marginTop: '2px' }}>
+            {uninvitedCount}
+          </div>
         </div>
       </div>
 
@@ -556,67 +815,140 @@ export default function ParentsPage({ onRefreshCounts }) {
                         </span>
                       </td>
                       <td>
-                        {parent.is_verified && parent.telegram_chat_id ? (
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                            <span
-                              style={{
-                                fontSize: '11px',
-                                fontWeight: 600,
-                                padding: '2px 8px',
-                                borderRadius: '4px',
-                                backgroundColor: 'var(--status-present-bg)',
-                                color: 'var(--status-present)',
-                                border: '1px solid var(--status-present-border)',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                              }}
-                            >
-                              <CheckCircle2 size={12} /> Verified ({parent.telegram_chat_id})
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenTelegramLink(parent)}
-                              className="btn btn-outline"
-                              style={{ padding: '2px 6px', fontSize: '10px' }}
-                              title="Update Telegram ID"
-                            >
-                              Edit
-                            </button>
-                          </div>
-                        ) : (
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                            <span
-                              style={{
-                                fontSize: '11px',
-                                padding: '2px 8px',
-                                borderRadius: '4px',
-                                backgroundColor: '#fef3c7',
-                                color: '#92400e',
-                                border: '1px solid #fde68a',
-                                fontWeight: 500,
-                              }}
-                            >
-                              Unlinked
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenTelegramLink(parent)}
-                              className="btn btn-outline"
-                              style={{
-                                padding: '2px 8px',
-                                fontSize: '11px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                              }}
-                              title="Generate One-Time Telegram Deep Link"
-                            >
-                              <MessageCircle size={12} color="var(--gold-dark)" />
-                              Deep Link
-                            </button>
-                          </div>
-                        )}
+                        {(() => {
+                          const isLinked = parent.is_verified && parent.telegram_chat_id;
+                          const inv = invitationsMap[parent.id] || (parent.linking_token ? { token: parent.linking_token, expires_at: parent.linking_token_expires_at } : null);
+                          const isExpired = inv?.expires_at && new Date(inv.expires_at) < new Date();
+                          const activeToken = inv?.token && !isExpired ? inv.token : null;
+                          const tokenUrl = activeToken ? getParentTelegramDeepLink(activeToken) : getParentTelegramDeepLink(parent.id);
+                          const wardNames = (parent.parent_students || [])
+                            .map((ps) => ps.students?.full_name)
+                            .filter(Boolean)
+                            .join(', ');
+                          const waUrl = getWhatsAppShareUrl(parent, wardNames, tokenUrl);
+
+                          if (isLinked) {
+                            return (
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    fontWeight: 600,
+                                    padding: '2px 8px',
+                                    borderRadius: '4px',
+                                    backgroundColor: 'var(--status-present-bg)',
+                                    color: 'var(--status-present)',
+                                    border: '1px solid var(--status-present-border)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                  }}
+                                  title={`Connected via Telegram Chat ID: ${parent.telegram_chat_id}`}
+                                >
+                                  <CheckCircle2 size={12} /> Linked ({parent.telegram_chat_id})
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenTelegramLink(parent)}
+                                  className="btn btn-outline"
+                                  style={{ padding: '2px 6px', fontSize: '10px' }}
+                                  title="View Connection Details"
+                                >
+                                  Manage
+                                </button>
+                              </div>
+                            );
+                          }
+
+                          if (activeToken) {
+                            return (
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    fontWeight: 600,
+                                    padding: '2px 8px',
+                                    borderRadius: '4px',
+                                    backgroundColor: '#e0f2fe',
+                                    color: '#0369a1',
+                                    border: '1px solid #bae6fd',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                  }}
+                                  title={`Token: ${activeToken} (Valid 7 days)`}
+                                >
+                                  <Clock size={11} /> Invite Active (7d)
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(tokenUrl);
+                                    showToast(`Deep link for ${parent.full_name} copied!`);
+                                  }}
+                                  className="btn btn-outline"
+                                  style={{ padding: '2px 6px', fontSize: '10px', display: 'inline-flex', alignItems: 'center', gap: '2px' }}
+                                  title="Copy Telegram Deep Link"
+                                >
+                                  <Copy size={10} /> Copy
+                                </button>
+                                <a
+                                  href={waUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn btn-outline"
+                                  style={{
+                                    padding: '2px 6px',
+                                    fontSize: '10px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '2px',
+                                    color: '#15803d',
+                                    borderColor: '#bbf7d0',
+                                    textDecoration: 'none',
+                                  }}
+                                  title="Share Invitation via WhatsApp"
+                                >
+                                  <Share2 size={10} /> WhatsApp
+                                </a>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <span
+                                style={{
+                                  fontSize: '11px',
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  backgroundColor: '#fef3c7',
+                                  color: '#92400e',
+                                  border: '1px solid #fde68a',
+                                  fontWeight: 500,
+                                }}
+                              >
+                                {isExpired ? 'Token Expired' : 'Uninvited'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenTelegramLink(parent)}
+                                className="btn btn-outline"
+                                style={{
+                                  padding: '2px 8px',
+                                  fontSize: '11px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                                title="Generate One-Time Secure Deep Link"
+                              >
+                                <MessageCircle size={12} color="var(--gold-dark)" />
+                                Invite
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -825,7 +1157,15 @@ export default function ParentsPage({ onRefreshCounts }) {
           }
         >
           {(() => {
-            const deepLinkInfo = getParentTelegramDeepLink(telegramModalParent.id);
+            const activeInv = invitationsMap[telegramModalParent.id] || (telegramModalParent.linking_token ? { token: telegramModalParent.linking_token, expires_at: telegramModalParent.linking_token_expires_at } : null);
+            const tokenParam = activeInv?.token || telegramModalParent.id;
+            const deepLinkUrl = getParentTelegramDeepLink(tokenParam);
+            const wardNames = (telegramModalParent.parent_students || [])
+              .map((ps) => ps.students?.full_name)
+              .filter(Boolean)
+              .join(', ');
+            const waUrl = getWhatsAppShareUrl(telegramModalParent, wardNames, deepLinkUrl);
+
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div
@@ -849,7 +1189,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                     <span style={{ color: 'var(--text-muted)' }}>Current Status:</span>
                     {telegramModalParent.is_verified && telegramModalParent.telegram_chat_id ? (
                       <span style={{ color: 'var(--status-present)', fontWeight: 600 }}>
-                        Verified (Chat ID: {telegramModalParent.telegram_chat_id})
+                        ✓ Linked &amp; Verified (Chat ID: {telegramModalParent.telegram_chat_id})
                       </span>
                     ) : (
                       <span style={{ color: 'var(--status-absent)', fontWeight: 600 }}>
@@ -859,7 +1199,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                   </div>
                 </div>
 
-                {/* Step 1: Deep Link */}
+                {/* Step 1: Deep Link & WhatsApp Share */}
                 <div
                   style={{
                     padding: '14px',
@@ -868,22 +1208,34 @@ export default function ParentsPage({ onRefreshCounts }) {
                     backgroundColor: 'var(--gold-subtle-bg)',
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--navy-950)', marginBottom: '4px' }}>
-                    Step 1: One-Time Telegram Bot Deep Link
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--navy-950)' }}>
+                      1. One-Time Telegram Bot Deep Link
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRegenerateToken}
+                      className="btn btn-outline"
+                      style={{ padding: '2px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      title="Generate a brand new single-use 7-day token"
+                    >
+                      <RefreshCw size={11} /> New Token
+                    </button>
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
-                    Share this personalized link with the parent. When clicked, Telegram opens the verified academy bot and activates auto-linking.
+                    Share this unique link with the parent. When clicked, Telegram opens the academy bot and links their account securely upon pressing Start.
                   </div>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <input
                       type="text"
                       readOnly
-                      value={deepLinkInfo.url}
+                      value={deepLinkUrl}
                       className="form-input"
                       style={{
                         fontFamily: 'var(--font-mono)',
                         fontSize: '11px',
                         backgroundColor: '#ffffff',
+                        flex: '1 1 200px',
                       }}
                     />
                     <Button
@@ -891,20 +1243,37 @@ export default function ParentsPage({ onRefreshCounts }) {
                       size="sm"
                       icon={Copy}
                       onClick={() => {
-                        navigator.clipboard.writeText(deepLinkInfo.url);
+                        navigator.clipboard.writeText(deepLinkUrl);
                         showToast('Telegram deep link copied to clipboard!');
                       }}
                     >
                       Copy
                     </Button>
                     <a
-                      href={deepLinkInfo.url}
+                      href={deepLinkUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="btn btn-sm btn-primary"
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
                     >
                       Open <ExternalLink size={12} />
+                    </a>
+                    <a
+                      href={waUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-sm btn-outline"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        color: '#15803d',
+                        borderColor: '#bbf7d0',
+                        textDecoration: 'none',
+                      }}
+                      title="Share directly to parent on WhatsApp"
+                    >
+                      <Share2 size={12} /> WhatsApp
                     </a>
                   </div>
                 </div>
@@ -919,10 +1288,10 @@ export default function ParentsPage({ onRefreshCounts }) {
                   }}
                 >
                   <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--navy-950)', marginBottom: '4px' }}>
-                    Step 2: Verify &amp; Save Chat ID
+                    2. Manual Telegram Chat ID Verification (Admin Override)
                   </div>
                   <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
-                    Enter or verify the numeric Chat ID provided by the Telegram bot for this parent.
+                    Alternatively, manually enter the numeric Chat ID provided by the parent or retrieved via <code>@userinfobot</code>.
                   </div>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <input
@@ -987,6 +1356,255 @@ export default function ParentsPage({ onRefreshCounts }) {
           })()}
         </Modal>
       )}
+
+      {/* BULK PARENT INVITATIONS MODAL */}
+      <Modal
+        isOpen={isBulkInviteModalOpen}
+        onClose={() => setIsBulkInviteModalOpen(false)}
+        title="Send Bulk Parent Invitations"
+        subtitle="Generate secure single-use Telegram tokens (7-day validity) & WhatsApp invites"
+        size="lg"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              {bulkInviteResults ? (
+                <span>Processed {bulkInviteResults.total} guardians</span>
+              ) : (
+                <span>Tokens are time-limited to 7 days for strict security</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsBulkInviteModalOpen(false)}
+              >
+                Close
+              </Button>
+              {!bulkInviteResults ? (
+                <Button
+                  variant="gold"
+                  size="sm"
+                  icon={Send}
+                  onClick={handleRunBulkInvitations}
+                  disabled={isDispatchingInvites}
+                >
+                  {isDispatchingInvites ? 'Generating Invitations...' : 'Generate & Prepare Invitations'}
+                </Button>
+              ) : bulkInviteResults.failedCount > 0 ? (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={RefreshCw}
+                  onClick={handleRetryFailedInvitations}
+                  disabled={isDispatchingInvites}
+                >
+                  {isDispatchingInvites ? 'Retrying...' : `Retry ${bulkInviteResults.failedCount} Failed`}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Configuration Form (when results not yet generated) */}
+          {!bulkInviteResults && (
+            <>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                  gap: '12px',
+                }}
+              >
+                <div>
+                  <label className="form-label" style={{ marginBottom: '6px' }}>Target Scope</label>
+                  <select
+                    className="form-select"
+                    value={bulkInviteScope}
+                    onChange={(e) => setBulkInviteScope(e.target.value)}
+                  >
+                    <option value="unlinked">Unlinked Guardians Only ({parents.length - linkedCount})</option>
+                    <option value="pending">Refresh Active / Pending Invites ({pendingCount})</option>
+                    <option value="all">All Registered Guardians ({parents.length})</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ marginBottom: '6px' }}>Invitation Channel</label>
+                  <select
+                    className="form-select"
+                    value={bulkInviteChannel}
+                    onChange={(e) => setBulkInviteChannel(e.target.value)}
+                  >
+                    <option value="telegram">Telegram Bot Deep Link (Recommended)</option>
+                    <option value="whatsapp">WhatsApp Direct Invite Link</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Informational callout regarding WhatsApp & Telegram delivery */}
+              <div
+                style={{
+                  padding: '12px 14px',
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                }}
+              >
+                <div style={{ fontWeight: 600, color: 'var(--navy-950)', marginBottom: '4px' }}>
+                  Transparent Multi-Channel Notice:
+                </div>
+                <ul style={{ margin: '4px 0 0 16px', padding: 0, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  <li>
+                    <strong>Telegram:</strong> Secure single-use deep links (<code>https://t.me/RuparelAttendanceBot?start=tk_...</code>) are generated with a 7-day expiration.
+                  </li>
+                  <li>
+                    <strong>WhatsApp:</strong> Cloud API is currently unconfigured. The system provides <strong>1-click manual WhatsApp share links</strong> with prefilled invitation messages and deep links for each parent.
+                  </li>
+                  <li>
+                    A parent must explicitly press <strong>Start</strong> in Telegram to link their account. Accounts are never marked linked until verified.
+                  </li>
+                </ul>
+              </div>
+            </>
+          )}
+
+          {/* Results View */}
+          {bulkInviteResults && (
+            <div>
+              {/* Counters */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+                  gap: '10px',
+                  marginBottom: '14px',
+                }}
+              >
+                <div style={{ padding: '8px 10px', backgroundColor: '#f1f5f9', borderRadius: '4px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Targeted</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700 }}>{bulkInviteResults.total}</div>
+                </div>
+                <div style={{ padding: '8px 10px', backgroundColor: 'var(--status-present-bg)', borderRadius: '4px', textAlign: 'center', border: '1px solid var(--status-present-border)' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--status-present)' }}>Generated</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--status-present)' }}>{bulkInviteResults.successCount}</div>
+                </div>
+                {bulkInviteResults.failedCount > 0 && (
+                  <div style={{ padding: '8px 10px', backgroundColor: 'var(--status-absent-bg)', borderRadius: '4px', textAlign: 'center', border: '1px solid var(--status-absent-border)' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--status-absent)' }}>Failed</div>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--status-absent)' }}>{bulkInviteResults.failedCount}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action buttons inside result */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)' }}>
+                  Generated Invitation Links &amp; Actions
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBulkInviteResults(null)}
+                >
+                  Generate New Batch
+                </Button>
+              </div>
+
+              {/* Scrollable List */}
+              <div
+                style={{
+                  maxHeight: '320px',
+                  overflowY: 'auto',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '6px',
+                }}
+              >
+                <table className="erp-table" style={{ fontSize: '12px' }}>
+                  <thead>
+                    <tr>
+                      <th>Guardian</th>
+                      <th>Phone</th>
+                      <th>Status</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bulkInviteResults.items.map((item) => {
+                      const parentObj = parents.find((p) => p.id === item.parentId) || { full_name: item.parentName, phone: item.phone };
+                      const wardNames = (parentObj.parent_students || [])
+                        .map((ps) => ps.students?.full_name)
+                        .filter(Boolean)
+                        .join(', ');
+                      const waShareUrl = getWhatsAppShareUrl(parentObj, wardNames, item.deepLink);
+
+                      return (
+                        <tr key={item.parentId}>
+                          <td>
+                            <strong>{item.parentName}</strong>
+                            {wardNames && <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Ward: {wardNames}</div>}
+                          </td>
+                          <td style={{ fontFamily: 'var(--font-mono)' }}>{item.phone}</td>
+                          <td>
+                            {item.success ? (
+                              <span style={{ fontSize: '11px', color: 'var(--status-present)', fontWeight: 600 }}>
+                                ✓ Ready (7d)
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '11px', color: 'var(--status-absent)' }}>
+                                ✗ {item.error || 'Failed'}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            {item.success && (
+                              <div style={{ display: 'inline-flex', gap: '4px' }}>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  icon={Copy}
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(item.deepLink);
+                                    showToast(`Deep link copied for ${item.parentName}!`);
+                                  }}
+                                  title="Copy Telegram Link"
+                                >
+                                  Copy Link
+                                </Button>
+                                <a
+                                  href={waShareUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn btn-sm btn-outline"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px',
+                                    color: '#15803d',
+                                    borderColor: '#bbf7d0',
+                                    textDecoration: 'none',
+                                    padding: '4px 8px',
+                                    fontSize: '11px',
+                                  }}
+                                  title="Share invitation via WhatsApp"
+                                >
+                                  <Share2 size={12} /> WhatsApp
+                                </a>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* Bulk Import Modal */}
       <BulkImportModal

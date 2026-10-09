@@ -21,6 +21,7 @@ export default function AppLayout({
     if (action === 'goto-attendance') onNavigate('attendance');
     else if (action === 'goto-notifications') onNavigate('notifications');
     else if (action === 'new-student') onNavigate('students');
+    else if (action === 'goto-settings') onNavigate('settings');
   };
 
   return (
@@ -38,67 +39,40 @@ export default function AppLayout({
 
       {/* Main Workspace Area */}
       <div className="erp-main-area">
-        {/* Top Status Banner */}
-        <div className="demo-banner">
-          <div className="demo-banner-left">
-            <span
-              className="demo-pill"
-              style={{
-                backgroundColor: 'var(--navy-900)',
-                color: 'var(--gold-primary)',
-                border: '1px solid var(--gold-border)',
-              }}
-            >
-              PostgreSQL Mode
-            </span>
-            <span>
-              Connected to Supabase Cloud Database &bull; Row Level Security Active
-            </span>
-          </div>
+        {/* Offline Warning Banner — Only displayed if database credentials are not configured */}
+        {!isSupabaseConfigured && (
           <div
-            onClick={() => onNavigate('settings')}
             style={{
+              backgroundColor: 'var(--status-absent-bg)',
+              borderBottom: '1px solid var(--status-absent-border)',
+              padding: '10px 20px',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
-              cursor: 'pointer',
-              userSelect: 'none',
+              justifyContent: 'space-between',
+              fontSize: '12px',
+              color: 'var(--status-absent)',
             }}
-            title="Click to view Supabase connection details in Settings"
           >
-            {isSupabaseConfigured ? (
-              <>
-                <span
-                  style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    backgroundColor: 'var(--status-present)',
-                    display: 'inline-block',
-                  }}
-                />
-                <span style={{ fontWeight: 600, color: 'var(--navy-950)' }}>
-                  Supabase: Connected
-                </span>
-              </>
-            ) : (
-              <>
-                <span
-                  style={{
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    backgroundColor: 'var(--gold-dark)',
-                    display: 'inline-block',
-                  }}
-                />
-                <span style={{ fontWeight: 600, color: 'var(--navy-950)' }}>
-                  Supabase: Setup .env.local
-                </span>
-              </>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertCircle size={16} />
+              <span>
+                <strong>Production Database Offline:</strong> Missing <code>VITE_SUPABASE_URL</code> or <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> in environment variables. Real database records cannot load until configured.
+              </span>
+            </div>
+            <button
+              onClick={() => onNavigate('settings')}
+              className="btn btn-outline"
+              style={{
+                padding: '3px 10px',
+                fontSize: '11px',
+                borderColor: 'var(--status-absent-border)',
+                color: 'var(--status-absent)',
+              }}
+            >
+              Configure in Settings
+            </button>
           </div>
-        </div>
+        )}
 
         {/* Top Navigation */}
         <TopNav

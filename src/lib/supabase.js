@@ -7,8 +7,8 @@ import { createClient } from '@supabase/supabase-js';
  */
 
 const envObj = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : (typeof process !== 'undefined' ? process.env : {});
-const rawUrl = (envObj.VITE_SUPABASE_URL || '').trim();
-const rawKey = (envObj.VITE_SUPABASE_PUBLISHABLE_KEY || '').trim();
+const rawUrl = (envObj.VITE_SUPABASE_URL || envObj.SUPABASE_URL || '').trim();
+const rawKey = (envObj.VITE_SUPABASE_PUBLISHABLE_KEY || envObj.VITE_SUPABASE_ANON_KEY || envObj.SUPABASE_ANON_KEY || '').trim();
 
 // Check if valid configuration is provided and not default placeholders
 export const isSupabaseConfigured = Boolean(
