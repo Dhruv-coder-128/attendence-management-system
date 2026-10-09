@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -8,6 +8,7 @@ import AttendancePage from './pages/AttendancePage';
 import ParentsPage from './pages/ParentsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import SettingsPage from './pages/SettingsPage';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
 
 import {
   instituteSummary as initialSummary,
@@ -17,20 +18,21 @@ import {
   initialParents,
   initialNotifications,
 } from './data/demoData';
+import { RefreshCw, GraduationCap } from 'lucide-react';
 
 /**
- * Ruparel Attendence ERP Root Application Component
+ * Ruparel Attendance ERP Root Application Component
  */
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(true);
-  const [currentUser, setCurrentUser] = useState({
-    name: 'Dr. S. Nair',
-    role: 'Academic Director',
-    email: 'director@vanguard.edu',
-  });
+  // Supabase Auth Session State
+  const [session, setSession] = useState(null);
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Active View / Route State
   const [activePage, setActivePage] = useState('dashboard');
 
-  // Core ERP Reactive State
+  // Academic Modules State (Preserved for Dashboard, Batches & Roll Call)
   const [summary, setSummary] = useState(initialSummary);
   const [batches, setBatches] = useState(initialBatches);
   const [students, setStudents] = useState(initialStudents);
@@ -38,24 +40,53 @@ export default function App() {
   const [parents, setParents] = useState(initialParents);
   const [notifications, setNotifications] = useState(initialNotifications);
 
+  // Initialize and subscribe to Supabase Auth State
+  useEffect(() => {
+    if (!supabase || !isSupabaseConfigured) {
+      setAuthLoading(false);
+      return;
+    }
+
+    // 1. Get initial session
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      setSession(initialSession);
+      setUser(initialSession?.user ?? null);
+      setAuthLoading(false);
+    }).catch((err) => {
+      console.error('Session retrieval error:', err);
+      setAuthLoading(false);
+    });
+
+    // 2. Listen for auth state changes (sign in, sign out, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
+      setAuthLoading(false);
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
+  }, []);
+
   // Authentication Handlers
-  const handleLoginSuccess = (user) => {
-    setCurrentUser(user);
-    setIsAuthenticated(true);
+  const handleLoginSuccess = (authenticatedUser) => {
+    setUser(authenticatedUser);
     setActivePage('dashboard');
   };
 
-  const handleLogout = () => {
-    setIsAuthenticated(false);
-  };
-
-  // Student Actions
-  const handleAddStudent = (newStudent) => {
-    setStudents((prev) => [newStudent, ...prev]);
-    setSummary((prev) => ({
-      ...prev,
-      totalEnrolled: prev.totalEnrolled + 1,
-    }));
+  const handleLogout = async () => {
+    try {
+      if (supabase) {
+        await supabase.auth.signOut();
+      }
+    } catch (err) {
+      console.error('Logout error:', err);
+    } finally {
+      setSession(null);
+      setUser(null);
+      setActivePage('dashboard');
+    }
   };
 
   // Batch Actions
@@ -100,7 +131,6 @@ export default function App() {
   };
 
   const handleSendAlerts = (batchId) => {
-    // Flag notified guardians and append to notifications queue
     setAttendanceList((prev) =>
       prev.map((rec) => {
         if (rec.batchId === batchId && (rec.status === 'Absent' || rec.status === 'Late')) {
@@ -130,7 +160,7 @@ export default function App() {
     setNotifications((prev) => [newNotice, ...prev]);
   };
 
-  // Reset to original demo data
+  // Reset demo dataset
   const handleResetDemo = () => {
     setSummary(initialSummary);
     setBatches(initialBatches);
@@ -140,17 +170,59 @@ export default function App() {
     setNotifications(initialNotifications);
   };
 
-  // If user is logged out, render the Login Screen
-  if (!isAuthenticated) {
+  // 1. Loading Splash Screen
+  if (authLoading) {
+    return (
+      <div
+        style={{
+          minHeight: '100vh',
+          backgroundColor: 'var(--navy-950)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '16px',
+          color: '#ffffff',
+        }}
+      >
+        <div
+          style={{
+            width: '52px',
+            height: '52px',
+            backgroundColor: 'var(--navy-800)',
+            border: '1px solid var(--gold-border)',
+            borderRadius: '10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--gold-primary)',
+          }}
+        >
+          <GraduationCap size={30} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#cbd5e1' }}>
+          <RefreshCw size={16} className="animate-spin" />
+          <span>Verifying Administrative Session with Supabase...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Route Protection: If unauthenticated, ONLY render the Login Page!
+  if (!user) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
-  // Render the ERP Main Workspace
+  // Current logged in admin profile
+  const adminDisplayName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'Administrator';
+
+  // 3. Render Protected Administrative ERP Console
   return (
     <AppLayout
       activePage={activePage}
       onNavigate={setActivePage}
       onLogout={handleLogout}
+      user={user}
       counts={{
         students: students.length,
         batches: batches.length,
@@ -171,12 +243,9 @@ export default function App() {
         />
       )}
 
+      {/* Real Supabase-connected Students Directory */}
       {activePage === 'students' && (
-        <StudentsPage
-          students={students}
-          batches={batches}
-          onAddStudent={handleAddStudent}
-        />
+        <StudentsPage />
       )}
 
       {activePage === 'batches' && (

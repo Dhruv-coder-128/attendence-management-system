@@ -23,7 +23,16 @@ export default function Sidebar({
   onClose,
   onLogout,
   counts = {},
+  user,
 }) {
+  const adminName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Administrator';
+  const adminRole = user?.user_metadata?.role || (user ? 'Admin Staff' : 'Director');
+  const userInitials = (adminName || 'AD')
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase();
   const navItems = [
     { id: 'dashboard', label: 'Executive Dashboard', icon: LayoutDashboard },
     { id: 'students', label: 'Students Directory', icon: Users, badge: counts.students || '472' },
@@ -107,12 +116,12 @@ export default function Sidebar({
         {/* Sidebar Footer with Logged In User Profile */}
         <div className="sidebar-footer">
           <div className="user-snippet">
-            <div className="user-avatar" title="Director Profile">
-              DR
+            <div className="user-avatar" title={user?.email || 'Admin Profile'}>
+              {userInitials}
             </div>
             <div className="user-info">
-              <div className="user-name">Dr. S. Nair</div>
-              <div className="user-role">Academic Director</div>
+              <div className="user-name" title={adminName}>{adminName}</div>
+              <div className="user-role">{adminRole}</div>
             </div>
             <button
               type="button"
