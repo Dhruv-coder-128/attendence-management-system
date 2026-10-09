@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Info, Sparkles } from 'lucide-react';
+import { Info, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
 import Sidebar from './Sidebar';
 import TopNav from './TopNav';
 import { DEMO_NOTICE } from '../../data/demoData';
+import { isSupabaseConfigured } from '../../lib/supabase';
 
 /**
  * Main Enterprise App Layout
@@ -42,8 +43,48 @@ export default function AppLayout({
             <span className="demo-pill">Sandbox Preview</span>
             <span>{DEMO_NOTICE.disclaimer}</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontWeight: 600 }}>PostgreSQL &amp; Telegram:</span> Ready for backend keys
+          <div
+            onClick={() => onNavigate('settings')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+            title="Click to view Supabase connection details in Settings"
+          >
+            {isSupabaseConfigured ? (
+              <>
+                <span
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    backgroundColor: 'var(--status-present)',
+                    display: 'inline-block',
+                  }}
+                />
+                <span style={{ fontWeight: 600, color: 'var(--navy-950)' }}>
+                  Supabase: Connected
+                </span>
+              </>
+            ) : (
+              <>
+                <span
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    backgroundColor: 'var(--gold-dark)',
+                    display: 'inline-block',
+                  }}
+                />
+                <span style={{ fontWeight: 600, color: 'var(--navy-950)' }}>
+                  Supabase: Setup .env.local
+                </span>
+              </>
+            )}
           </div>
         </div>
 

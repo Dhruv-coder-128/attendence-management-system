@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Shield,
   Database,
@@ -9,10 +9,12 @@ import {
   Save,
   RotateCcw,
   Sparkles,
+  RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { isSupabaseConfigured, checkSupabaseConnection, supabaseConfig } from '../lib/supabase';
 
 /**
  * System Settings & Cloud Integration Status Page
@@ -24,6 +26,35 @@ export default function SettingsPage({ onResetDemo }) {
   const [minAttendanceThreshold, setMinAttendanceThreshold] = useState('75');
   const [lateGracePeriod, setLateGracePeriod] = useState('15');
   const [savedNotice, setSavedNotice] = useState(false);
+
+  // Supabase Connection Diagnostics State
+  const [connectionState, setConnectionState] = useState({
+    loading: false,
+    tested: false,
+    ok: false,
+    url: '',
+    latencyMs: 0,
+    error: null,
+    statusText: '',
+  });
+
+  const runConnectionTest = async () => {
+    setConnectionState((prev) => ({ ...prev, loading: true }));
+    const result = await checkSupabaseConnection();
+    setConnectionState({
+      loading: false,
+      tested: true,
+      ok: result.ok,
+      url: result.url,
+      latencyMs: result.latencyMs,
+      error: result.error,
+      statusText: result.statusText,
+    });
+  };
+
+  useEffect(() => {
+    runConnectionTest();
+  }, []);
 
   const handleSaveSettings = (e) => {
     e.preventDefault();
@@ -37,7 +68,7 @@ export default function SettingsPage({ onResetDemo }) {
         <div>
           <h1 className="page-title">Institution &amp; ERP System Settings</h1>
           <p className="page-description">
-            Academic Calendar, Attendance Policies, PostgreSQL (Supabase) &amp; Telegram Bot Configuration
+            Academic Policies, Supabase PostgreSQL Connection Diagnostics &amp; Cloud Gateway
           </p>
         </div>
 
@@ -161,67 +192,156 @@ export default function SettingsPage({ onResetDemo }) {
           </div>
         </div>
 
-        {/* Right Column: Cloud Backend & Integration Status */}
+        {/* Right Column: Cloud Backend & Supabase Diagnostic Integration */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div className="erp-card" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              <Database size={18} color="var(--navy-800)" />
-              <h2
-                style={{
-                  fontFamily: 'var(--font-heading)',
-                  fontSize: '15px',
-                  fontWeight: 700,
-                  color: 'var(--navy-950)',
-                }}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Database size={18} color="var(--navy-800)" />
+                <h2
+                  style={{
+                    fontFamily: 'var(--font-heading)',
+                    fontSize: '15px',
+                    fontWeight: 700,
+                    color: 'var(--navy-950)',
+                  }}
+                >
+                  Supabase &amp; PostgreSQL Database
+                </h2>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                icon={RefreshCw}
+                onClick={runConnectionTest}
+                disabled={connectionState.loading}
               >
-                Supabase &amp; PostgreSQL Database
-              </h2>
+                {connectionState.loading ? 'Testing...' : 'Test Connection'}
+              </Button>
             </div>
+
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
-              Permanent persistence layer for 400–500 students, roll call registers &amp; audit trails
+              Backend PostgreSQL connectivity via <code>.env.local</code> publishable credentials
             </p>
 
+            {/* Live Connection Status Banner */}
             <div
               style={{
-                padding: '12px',
+                padding: '14px 16px',
                 borderRadius: '6px',
-                backgroundColor: isSupabaseConfigured ? 'var(--status-present-bg)' : '#f8fafc',
-                border: `1px solid ${isSupabaseConfigured ? 'var(--status-present-border)' : 'var(--border-subtle)'}`,
+                backgroundColor: connectionState.ok
+                  ? 'var(--status-present-bg)'
+                  : isSupabaseConfigured
+                  ? 'var(--status-absent-bg)'
+                  : '#f8fafc',
+                border: `1px solid ${
+                  connectionState.ok
+                    ? 'var(--status-present-border)'
+                    : isSupabaseConfigured
+                    ? 'var(--status-absent-border)'
+                    : 'var(--border-subtle)'
+                }`,
                 display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                marginBottom: '12px',
+                alignItems: 'flex-start',
+                gap: '12px',
+                marginBottom: '14px',
               }}
             >
-              {isSupabaseConfigured ? (
-                <>
-                  <CheckCircle2 size={18} color="var(--status-present)" />
-                  <div>
-                    <strong style={{ color: 'var(--status-present)', fontSize: '12px' }}>
-                      Connected to Supabase Project
-                    </strong>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      PostgreSQL schema ready for synchronization
-                    </div>
-                  </div>
-                </>
+              {connectionState.ok ? (
+                <CheckCircle2 size={20} color="var(--status-present)" style={{ marginTop: '2px', flexShrink: 0 }} />
               ) : (
-                <>
-                  <AlertCircle size={18} color="var(--gold-dark)" />
-                  <div>
-                    <strong style={{ color: 'var(--navy-950)', fontSize: '12px' }}>
-                      Ready for Supabase Connection
-                    </strong>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      Configure <code>VITE_SUPABASE_URL</code> &amp; <code>VITE_SUPABASE_ANON_KEY</code> in <code>.env</code>
-                    </div>
-                  </div>
-                </>
+                <AlertCircle
+                  size={20}
+                  color={isSupabaseConfigured ? 'var(--status-absent)' : 'var(--gold-dark)'}
+                  style={{ marginTop: '2px', flexShrink: 0 }}
+                />
               )}
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <strong
+                    style={{
+                      color: connectionState.ok
+                        ? 'var(--status-present)'
+                        : isSupabaseConfigured
+                        ? 'var(--status-absent)'
+                        : 'var(--navy-950)',
+                      fontSize: '13px',
+                    }}
+                  >
+                    {connectionState.ok
+                      ? 'Supabase Connection Active'
+                      : isSupabaseConfigured
+                      ? 'Connection Failed'
+                      : 'Configuration Missing'}
+                  </strong>
+
+                  {connectionState.latencyMs > 0 && (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        padding: '1px 6px',
+                        borderRadius: '3px',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid var(--border-subtle)',
+                        color: 'var(--text-secondary)',
+                      }}
+                    >
+                      {connectionState.latencyMs}ms
+                    </span>
+                  )}
+                </div>
+
+                {connectionState.ok ? (
+                  <div style={{ fontSize: '12px', color: '#166534', marginTop: '3px' }}>
+                    Successfully verified connection to endpoint: <code>{connectionState.url}</code>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      color: isSupabaseConfigured ? 'var(--status-absent)' : 'var(--text-secondary)',
+                      marginTop: '3px',
+                    }}
+                  >
+                    {connectionState.error || 'Configure VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in .env.local'}
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              The client library <code>@supabase/supabase-js</code> is bundled. When credentials are provided in <code>.env</code>, live tables will sync automatically.
+            {/* Technical Parameters Box */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-subtle)',
+                padding: '12px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-subtle)',
+                fontSize: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Configured URL:</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                  {supabaseConfig.url || '(None)'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Publishable Key Status:</span>
+                <span style={{ color: isSupabaseConfigured ? 'var(--status-present)' : 'var(--status-absent)', fontWeight: 600 }}>
+                  {isSupabaseConfigured ? 'Valid Client Key Loaded' : 'Missing in .env.local'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Security Scope:</span>
+                <span style={{ color: 'var(--navy-900)', fontWeight: 500 }}>
+                  Client Publishable Key Only (Zero Secret Exposure)
+                </span>
+              </div>
             </div>
           </div>
 
