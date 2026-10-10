@@ -1,4 +1,4 @@
-# Vanguard Tuition & Academy Management ERP
+# Ruparel Tuition & Academy Management ERP
 
 A premium enterprise Tuition Management ERP designed specifically for coaching academies and tuition centers with 400–500 students.
 
