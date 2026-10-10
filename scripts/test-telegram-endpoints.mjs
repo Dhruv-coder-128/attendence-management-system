@@ -41,7 +41,12 @@ process.env.VITE_SUPABASE_URL = env.VITE_SUPABASE_URL || 'https://uugvudqbwoyywz
 process.env.VITE_SUPABASE_PUBLISHABLE_KEY = env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_pd2n3DRFhFgn79-SW6FEPw_vqRz2Jut';
 
 // Dynamically import application modules after process.env is configured
-const { getParentTelegramDeepLink, linkParentTelegramAccount } = await import('../src/lib/telegramClient.js');
+const {
+  getParentTelegramDeepLink,
+  getParentTelegramAppUri,
+  getParentTelegramLinks,
+  linkParentTelegramAccount
+} = await import('../src/lib/telegramClient.js');
 const { default: telegramStatusHandler } = await import('../api/telegram-status.js');
 const { default: telegramWebhookHandler } = await import('../api/telegram-webhook.js');
 const { default: telegramNotifyHandler } = await import('../api/telegram-notify.js');
@@ -94,6 +99,13 @@ async function runTests() {
 
   const link4 = getParentTelegramDeepLink('');
   assert(link4 === '', 'Deep link handles empty token gracefully');
+
+  const appUri1 = getParentTelegramAppUri('tk_abcdef123456');
+  assert(appUri1 === 'tg://resolve?domain=RuparelAttendanceBot&start=tk_abcdef123456', 'App URI generates correct tg://resolve scheme');
+
+  const linksObj = getParentTelegramLinks('tk_abcdef123456');
+  assert(linksObj.deepLink.startsWith('https://t.me/'), 'Links object contains HTTPS universal URL');
+  assert(linksObj.appUri.startsWith('tg://resolve'), 'Links object contains direct native App URI');
 
   // TEST 2: Telegram Bot Status Inspector (/api/telegram-status)
   console.log('\n--- TEST 2: Telegram Bot Status Inspector (/api/telegram-status) ---');

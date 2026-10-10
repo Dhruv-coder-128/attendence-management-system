@@ -35,6 +35,8 @@ import BulkImportModal from '../components/importer/BulkImportModal';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   getParentTelegramDeepLink,
+  getParentTelegramAppUri,
+  getParentTelegramLinks,
   createSecureParentInvitation,
   createBulkParentInvitations,
   linkParentTelegramAccount,
@@ -1236,6 +1238,7 @@ export default function ParentsPage({ onRefreshCounts }) {
             const activeInv = invitationsMap[telegramModalParent.id] || (telegramModalParent.linking_token ? { token: telegramModalParent.linking_token, expires_at: telegramModalParent.linking_token_expires_at } : null);
             const tokenParam = activeInv?.token || telegramModalParent.id;
             const deepLinkUrl = getParentTelegramDeepLink(tokenParam);
+            const appUri = getParentTelegramAppUri(tokenParam);
             const wardNames = (telegramModalParent.parent_students || [])
               .map((ps) => ps.students?.full_name)
               .filter(Boolean)
@@ -1355,13 +1358,22 @@ export default function ParentsPage({ onRefreshCounts }) {
                       Copy Link
                     </Button>
                     <a
+                      href={appUri}
+                      className="btn btn-sm btn-primary"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
+                      title="Launch Telegram app directly on phone/desktop without web redirect"
+                    >
+                      Open in App <ExternalLink size={12} />
+                    </a>
+                    <a
                       href={deepLinkUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="btn btn-sm btn-primary"
+                      className="btn btn-sm btn-outline"
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
+                      title="Open via web landing page (t.me)"
                     >
-                      Open Bot <ExternalLink size={12} />
+                      Web Link
                     </a>
                     <a
                       href={waUrl}

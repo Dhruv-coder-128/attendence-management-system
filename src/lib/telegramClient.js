@@ -26,13 +26,62 @@ function generateRandomTokenHex(byteLength = 16) {
 }
 
 /**
- * Generates an official Telegram deep link for parent registration
+ * Normalizes bot username by stripping leading '@' and trimming whitespace
+ */
+export function normalizeBotUsername(botUsername = TELEGRAM_BOT_USERNAME) {
+  return String(botUsername || TELEGRAM_BOT_USERNAME).replace(/^@/, '').trim();
+}
+
+/**
+ * Normalizes and sanitizes the start parameter per Telegram Bot deep-linking rules:
+ * - Allowed chars: A-Z, a-z, 0-9, _, -
+ * - Maximum length: 64 characters
+ */
+export function formatStartParam(tokenOrId) {
+  if (!tokenOrId) return '';
+  const str = String(tokenOrId).trim();
+  const raw = str.startsWith('tk_') || str.startsWith('link_') ? str : `tk_${str}`;
+  // Strip any illegal characters not allowed by Telegram Bot API specification
+  const sanitized = raw.replace(/[^A-Za-z0-9_-]/g, '');
+  return sanitized.slice(0, 64);
+}
+
+/**
+ * Generates an official Telegram universal HTTPS deep link for parent registration
+ * (e.g. https://t.me/RuparelAttendanceBot?start=tk_...)
  */
 export function getParentTelegramDeepLink(tokenOrId, botUsername = TELEGRAM_BOT_USERNAME) {
   if (!tokenOrId) return '';
-  const str = String(tokenOrId).trim();
-  const param = str.startsWith('tk_') || str.startsWith('link_') ? str : `tk_${str}`;
-  return `https://t.me/${botUsername}?start=${param}`;
+  const cleanUsername = normalizeBotUsername(botUsername);
+  const param = formatStartParam(tokenOrId);
+  return `https://t.me/${cleanUsername}?start=${param}`;
+}
+
+/**
+ * Generates a direct native Telegram app URI (tg://resolve?domain=...&start=...)
+ * Bypasses web redirects on Android and iOS devices to launch the native client directly.
+ */
+export function getParentTelegramAppUri(tokenOrId, botUsername = TELEGRAM_BOT_USERNAME) {
+  if (!tokenOrId) return '';
+  const cleanUsername = normalizeBotUsername(botUsername);
+  const param = formatStartParam(tokenOrId);
+  return `tg://resolve?domain=${cleanUsername}&start=${param}`;
+}
+
+/**
+ * Returns both the universal HTTPS web link and the direct native tg:// URI
+ */
+export function getParentTelegramLinks(tokenOrId, botUsername = TELEGRAM_BOT_USERNAME) {
+  if (!tokenOrId) {
+    return { deepLink: '', appUri: '', token: '' };
+  }
+  const cleanUsername = normalizeBotUsername(botUsername);
+  const param = formatStartParam(tokenOrId);
+  return {
+    deepLink: `https://t.me/${cleanUsername}?start=${param}`,
+    appUri: `tg://resolve?domain=${cleanUsername}&start=${param}`,
+    token: param,
+  };
 }
 
 /**
@@ -46,6 +95,7 @@ export async function createSecureParentInvitation(parentId, channel = 'telegram
   const token = generateRandomTokenHex(16); // e.g. tk_8a7d2f9c...
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
   const deepLink = getParentTelegramDeepLink(token);
+  const appUri = getParentTelegramAppUri(token);
 
   // 1. Try writing to public.parent_invitations table
   try {
@@ -87,6 +137,7 @@ export async function createSecureParentInvitation(parentId, channel = 'telegram
     success: true,
     token,
     deepLink,
+    appUri,
     expiresAt,
   };
 }
