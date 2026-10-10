@@ -474,6 +474,115 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.get_parent_status_by_chat_id(VARCHAR) TO anon, authenticated, service_role;
 
--- 13. REFRESH SCHEMA CACHE
+-- 13. INVITATION DETAILS INSPECTOR RPC (SECURITY DEFINER)
+-- Allows the Telegram Bot to safely look up parent details and associated student wards
+-- for confirmation display without exposing service-role keys or modifying data.
+CREATE OR REPLACE FUNCTION public.get_invitation_details_by_token(
+    p_token VARCHAR(64)
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_invitation RECORD;
+    v_parent RECORD;
+    v_parent_id UUID;
+    v_wards jsonb;
+BEGIN
+    -- 1. Locate token in parent_invitations table
+    SELECT * INTO v_invitation
+    FROM public.parent_invitations
+    WHERE token = p_token;
+
+    IF FOUND THEN
+        IF v_invitation.linking_status = 'linked' THEN
+            RETURN jsonb_build_object(
+                'valid', false,
+                'status', 'already_linked',
+                'error', 'This invitation token has already been used and cannot be reused.'
+            );
+        END IF;
+
+        IF v_invitation.expires_at < now() THEN
+            RETURN jsonb_build_object(
+                'valid', false,
+                'status', 'expired',
+                'error', 'This invitation token has expired. Please request a fresh invitation link.'
+            );
+        END IF;
+
+        v_parent_id := v_invitation.parent_id;
+    ELSE
+        -- Fallback: check parents.linking_token
+        SELECT id, full_name, linking_token_expires_at INTO v_parent
+        FROM public.parents
+        WHERE linking_token = p_token;
+
+        IF NOT FOUND THEN
+            RETURN jsonb_build_object(
+                'valid', false,
+                'status', 'not_found',
+                'error', 'Invalid invitation token. Please check that you opened the complete link.'
+            );
+        END IF;
+
+        IF v_parent.linking_token_expires_at IS NOT NULL AND v_parent.linking_token_expires_at < now() THEN
+            RETURN jsonb_build_object(
+                'valid', false,
+                'status', 'expired',
+                'error', 'This invitation token has expired. Please request a fresh invitation link.'
+            );
+        END IF;
+
+        v_parent_id := v_parent.id;
+    END IF;
+
+    -- 2. Fetch parent details
+    SELECT id, full_name, phone, telegram_chat_id, is_verified INTO v_parent
+    FROM public.parents
+    WHERE id = v_parent_id;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object(
+            'valid', false,
+            'status', 'parent_not_found',
+            'error', 'Parent record associated with this token was not found.'
+        );
+    END IF;
+
+    -- 3. Fetch ONLY the student wards associated with this parent
+    SELECT coalesce(jsonb_agg(
+        jsonb_build_object(
+            'student_id', s.id,
+            'full_name', s.full_name,
+            'admission_no', s.admission_no,
+            'batch_code', b.code,
+            'batch_name', b.name
+        )
+    ), '[]'::jsonb) INTO v_wards
+    FROM public.parent_students ps
+    JOIN public.students s ON s.id = ps.student_id
+    LEFT JOIN public.batches b ON b.id = s.batch_id
+    WHERE ps.parent_id = v_parent_id;
+
+    RETURN jsonb_build_object(
+        'valid', true,
+        'status', 'ready',
+        'parent_id', v_parent.id,
+        'parent_name', v_parent.full_name,
+        'phone', v_parent.phone,
+        'telegram_chat_id', v_parent.telegram_chat_id,
+        'is_verified', v_parent.is_verified,
+        'wards', v_wards
+    );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_invitation_details_by_token(VARCHAR) TO anon, authenticated, service_role;
+
+-- 14. REFRESH SCHEMA CACHE
 -- Signals PostgREST to immediately reload schema cache
 NOTIFY pgrst, 'reload schema';
+

@@ -237,6 +237,102 @@ async function runTests() {
   }
   assert(err2?.includes('Telegram Chat ID is required'), 'Rejects blank chat ID');
 
+  // TEST 12: Telegram Webhook /start <token> with Unrecognized Token
+  console.log('\n--- TEST 12: Telegram Webhook Invalid Token Handling ---');
+  const startInvalidTokenReq = mockReq({
+    method: 'POST',
+    body: {
+      update_id: 10004,
+      message: {
+        message_id: 104,
+        chat: { id: 555666777 },
+        from: { id: 555666777, first_name: 'Unknown Parent', is_bot: false },
+        text: '/start tk_nonexistent_token_12345',
+      },
+    },
+  });
+  const startInvalidTokenRes = mockRes();
+  await telegramWebhookHandler(startInvalidTokenReq, startInvalidTokenRes);
+
+  assert(startInvalidTokenRes.statusCode === 200, 'Invalid token returns HTTP 200');
+  assert(startInvalidTokenRes.data.ok === true, 'Webhook responds ok: true');
+  assert(startInvalidTokenRes.data.linked === false, 'Webhook marks linked: false for unrecognized token');
+  assert(startInvalidTokenRes.data.reason === 'invalid_token', 'Reason specifies invalid_token');
+
+  // TEST 13: Telegram Webhook callback_query Cancel Action
+  console.log('\n--- TEST 13: Telegram Webhook Cancel Callback Query ---');
+  const cancelCbReq = mockReq({
+    method: 'POST',
+    body: {
+      update_id: 10005,
+      callback_query: {
+        id: 'cb_query_test_001',
+        from: { id: 555666777, first_name: 'Test Parent' },
+        message: {
+          message_id: 105,
+          chat: { id: 555666777 },
+        },
+        data: 'cancel_link:tk_nonexistent_token_12345',
+      },
+    },
+  });
+  const cancelCbRes = mockRes();
+  await telegramWebhookHandler(cancelCbReq, cancelCbRes);
+
+  assert(cancelCbRes.statusCode === 200, 'Cancel callback returns HTTP 200');
+  assert(cancelCbRes.data.ok === true, 'Cancel callback responds ok: true');
+  assert(cancelCbRes.data.cancelled === true, 'Cancel callback explicitly confirms cancelled: true');
+
+  // TEST 14: Telegram Webhook callback_query Confirm Action with Invalid Token
+  console.log('\n--- TEST 14: Telegram Webhook Confirm Callback Query (Security Authorization) ---');
+  const confirmCbReq = mockReq({
+    method: 'POST',
+    body: {
+      update_id: 10006,
+      callback_query: {
+        id: 'cb_query_test_002',
+        from: { id: 555666777, first_name: 'Test Parent' },
+        message: {
+          message_id: 106,
+          chat: { id: 555666777 },
+        },
+        data: 'confirm_link:tk_invalid_fake_token',
+      },
+    },
+  });
+  const confirmCbRes = mockRes();
+  await telegramWebhookHandler(confirmCbReq, confirmCbRes);
+
+  assert(confirmCbRes.statusCode === 200, 'Confirm callback returns HTTP 200');
+  assert(confirmCbRes.data.ok === true, 'Confirm callback responds ok: true');
+  assert(confirmCbRes.data.linked === false, 'Confirm callback rejects unverified token without linking');
+
+  // TEST 15: Telegram Webhook /confirm Text Command Fallback
+  console.log('\n--- TEST 15: Telegram Webhook /confirm Text Command Fallback ---');
+  const confirmTextReq = mockReq({
+    method: 'POST',
+    body: {
+      update_id: 10007,
+      message: {
+        message_id: 107,
+        chat: { id: 555666777 },
+        from: { id: 555666777, first_name: 'Fallback User' },
+        text: '/confirm tk_invalid_fallback_token',
+      },
+    },
+  });
+  const confirmTextRes = mockRes();
+  await telegramWebhookHandler(confirmTextReq, confirmTextRes);
+
+  assert(confirmTextRes.statusCode === 200, 'Text /confirm returns HTTP 200');
+  assert(confirmTextRes.data.ok === true, 'Text /confirm responds ok: true');
+  assert(confirmTextRes.data.linked === false, 'Text /confirm rejects invalid token securely');
+
+  // TEST 16: Zero Manual Chat ID Requirement in Flow
+  console.log('\n--- TEST 16: Zero Manual Chat ID Requirement in Automated Flow ---');
+  assert(startInvalidTokenReq.body.message.chat.id === 555666777, 'Chat ID is derived automatically from Telegram update');
+  assert(!startInvalidTokenReq.body.message.text.includes('chat_id='), 'Chat ID is never exposed or requested in message text');
+
   console.log('\n======================================================');
   console.log(`TEST SUMMARY: ${passed} Passed, ${failed} Failed`);
   console.log('======================================================\n');

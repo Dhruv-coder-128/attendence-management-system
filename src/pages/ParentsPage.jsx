@@ -20,6 +20,10 @@ import {
   AlertCircle,
   Share2,
   Clock,
+  ChevronDown,
+  ChevronUp,
+  Zap,
+  Key,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -73,6 +77,7 @@ export default function ParentsPage({ onRefreshCounts }) {
   const [telegramChatIdInput, setTelegramChatIdInput] = useState('');
   const [isLinkingTelegram, setIsLinkingTelegram] = useState(false);
   const [telegramLinkMessage, setTelegramLinkMessage] = useState(null);
+  const [showManualOverride, setShowManualOverride] = useState(false);
 
   // Form State
   const initialForm = {
@@ -367,6 +372,7 @@ export default function ParentsPage({ onRefreshCounts }) {
     setTelegramModalParent(parent);
     setTelegramChatIdInput(parent.telegram_chat_id || '');
     setTelegramLinkMessage(null);
+    setShowManualOverride(false);
 
     // Auto-generate a secure token if neither table has one
     const activeInv = invitationsMap[parent.id] || (parent.linking_token ? { token: parent.linking_token, expires_at: parent.linking_token_expires_at } : null);
@@ -433,6 +439,41 @@ export default function ParentsPage({ onRefreshCounts }) {
       }
     } catch (err) {
       setTelegramLinkMessage({ error: err.message || 'Linking failed.' });
+    } finally {
+      setIsLinkingTelegram(false);
+    }
+  };
+
+  const handleUnlinkTelegram = async () => {
+    if (!telegramModalParent) return;
+    if (!window.confirm(`Are you sure you want to unlink Telegram for ${telegramModalParent.full_name}? They will stop receiving attendance alerts until reconnected.`)) return;
+
+    setIsLinkingTelegram(true);
+    setTelegramLinkMessage(null);
+    try {
+      const { error } = await supabase
+        .from('parents')
+        .update({
+          telegram_chat_id: null,
+          is_verified: false,
+          invitation_status: 'uninvited',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', telegramModalParent.id);
+
+      if (error) throw error;
+
+      showToast(`Telegram unlinked for ${telegramModalParent.full_name}.`);
+      setTelegramModalParent((prev) => ({
+        ...prev,
+        telegram_chat_id: null,
+        is_verified: false,
+        invitation_status: 'uninvited',
+      }));
+      setTelegramChatIdInput('');
+      await fetchData();
+    } catch (err) {
+      setTelegramLinkMessage({ error: 'Failed to unlink: ' + err.message });
     } finally {
       setIsLinkingTelegram(false);
     }
@@ -1173,9 +1214,10 @@ export default function ParentsPage({ onRefreshCounts }) {
           onClose={() => {
             setTelegramModalParent(null);
             setTelegramLinkMessage(null);
+            setShowManualOverride(false);
           }}
           title={`Telegram Linking — ${telegramModalParent.full_name}`}
-          subtitle="Generate deep link or manually verify guardian Telegram Chat ID"
+          subtitle="Automated 1-click invitation flow — no Chat ID entry required"
           footer={
             <Button
               variant="outline"
@@ -1183,6 +1225,7 @@ export default function ParentsPage({ onRefreshCounts }) {
               onClick={() => {
                 setTelegramModalParent(null);
                 setTelegramLinkMessage(null);
+                setShowManualOverride(false);
               }}
             >
               Close
@@ -1201,6 +1244,7 @@ export default function ParentsPage({ onRefreshCounts }) {
 
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Guardian Summary Card */}
                 <div
                   style={{
                     padding: '12px 14px',
@@ -1211,53 +1255,81 @@ export default function ParentsPage({ onRefreshCounts }) {
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Guardian Name:</span>
-                    <strong>{telegramModalParent.full_name}</strong>
+                    <span style={{ color: 'var(--text-muted)' }}>Guardian:</span>
+                    <strong>{telegramModalParent.full_name} ({telegramModalParent.phone})</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Phone Number:</span>
-                    <strong>{telegramModalParent.phone}</strong>
+                    <span style={{ color: 'var(--text-muted)' }}>Student Ward(s):</span>
+                    <strong style={{ color: 'var(--navy-900)' }}>
+                      {wardNames || 'No wards linked'}
+                    </strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>Current Status:</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Telegram Status:</span>
                     {telegramModalParent.is_verified && telegramModalParent.telegram_chat_id ? (
-                      <span style={{ color: 'var(--status-present)', fontWeight: 600 }}>
-                        ✓ Linked &amp; Verified (Chat ID: {telegramModalParent.telegram_chat_id})
+                      <span style={{ color: 'var(--status-present)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <CheckCircle2 size={13} /> Linked &amp; Verified (Chat ID: {telegramModalParent.telegram_chat_id})
                       </span>
                     ) : (
-                      <span style={{ color: 'var(--status-absent)', fontWeight: 600 }}>
-                        Not Linked
+                      <span style={{ color: '#d97706', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <Clock size={13} /> Awaiting Parent Connection
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* Step 1: Deep Link & WhatsApp Share */}
+                {/* Primary Automated 1-Click Link Card */}
                 <div
                   style={{
-                    padding: '14px',
+                    padding: '16px',
                     border: '1px solid var(--gold-border)',
-                    borderRadius: '6px',
+                    borderRadius: '8px',
                     backgroundColor: 'var(--gold-subtle-bg)',
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--navy-950)' }}>
-                      1. One-Time Telegram Bot Deep Link
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Zap size={15} color="var(--gold-dark)" />
+                      Automated 1-Click Telegram Invitation
                     </div>
                     <button
                       type="button"
                       onClick={handleRegenerateToken}
                       className="btn btn-outline"
-                      style={{ padding: '2px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                      title="Generate a brand new single-use 7-day token"
+                      style={{ padding: '3px 8px', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      title="Generate a fresh single-use 7-day token"
                     >
-                      <RefreshCw size={11} /> New Token
+                      <RefreshCw size={11} /> Fresh Token
                     </button>
                   </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
-                    Share this unique link with the parent. When clicked, Telegram opens the academy bot and links their account securely upon pressing Start.
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '12px', lineHeight: 1.4 }}>
+                    Share this unique invitation link with <strong>{telegramModalParent.full_name}</strong>. When opened, Telegram presents their child's name (<strong>{wardNames || 'ward'}</strong>) and links their account automatically upon tapping <em>Confirm &amp; Connect</em>. <u>The parent never needs to find or send their Chat ID.</u>
                   </div>
+
+                  {/* Visual 3-step indicator */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      gap: '8px',
+                      marginBottom: '12px',
+                      fontSize: '11px',
+                    }}
+                  >
+                    <div style={{ padding: '8px', background: 'rgba(255,255,255,0.7)', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      <strong>1. Send Link</strong>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>Share via WhatsApp or SMS</div>
+                    </div>
+                    <div style={{ padding: '8px', background: 'rgba(255,255,255,0.7)', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      <strong>2. Tap Start</strong>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>Bot detects chat automatically</div>
+                    </div>
+                    <div style={{ padding: '8px', background: 'rgba(255,255,255,0.7)', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      <strong>3. Tap Confirm</strong>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>Instant link in Supabase</div>
+                    </div>
+                  </div>
+
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <input
                       type="text"
@@ -1280,7 +1352,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                         showToast('Telegram deep link copied to clipboard!');
                       }}
                     >
-                      Copy
+                      Copy Link
                     </Button>
                     <a
                       href={deepLinkUrl}
@@ -1289,7 +1361,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                       className="btn btn-sm btn-primary"
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
                     >
-                      Open <ExternalLink size={12} />
+                      Open Bot <ExternalLink size={12} />
                     </a>
                     <a
                       href={waUrl}
@@ -1303,6 +1375,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                         color: '#15803d',
                         borderColor: '#bbf7d0',
                         textDecoration: 'none',
+                        backgroundColor: '#f0fdf4',
                       }}
                       title="Share directly to parent on WhatsApp"
                     >
@@ -1311,40 +1384,81 @@ export default function ParentsPage({ onRefreshCounts }) {
                   </div>
                 </div>
 
-                {/* Step 2: Manual Chat ID Verification */}
+                {/* Collapsible Admin Emergency Override */}
                 <div
                   style={{
-                    padding: '14px',
                     border: '1px solid var(--border-subtle)',
                     borderRadius: '6px',
                     backgroundColor: '#ffffff',
+                    overflow: 'hidden',
                   }}
                 >
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--navy-950)', marginBottom: '4px' }}>
-                    2. Manual Telegram Chat ID Verification (Admin Override)
-                  </div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
-                    Alternatively, manually enter the numeric Chat ID provided by the parent or retrieved via <code>@userinfobot</code>.
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <input
-                      type="text"
-                      placeholder="e.g. 987654321"
-                      value={telegramChatIdInput}
-                      onChange={(e) => setTelegramChatIdInput(e.target.value)}
-                      className="form-input"
-                      style={{ fontFamily: 'var(--font-mono)' }}
-                    />
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      icon={ShieldCheck}
-                      onClick={handleSaveTelegramChatId}
-                      disabled={isLinkingTelegram}
+                  <button
+                    type="button"
+                    onClick={() => setShowManualOverride(!showManualOverride)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      background: 'none',
+                      border: 'none',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      color: 'var(--text-secondary)',
+                    }}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <Key size={13} />
+                      Advanced Administrator Recovery: Manual Chat ID Override
+                    </span>
+                    {showManualOverride ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
+
+                  {showManualOverride && (
+                    <div
+                      style={{
+                        padding: '14px',
+                        borderTop: '1px solid var(--border-subtle)',
+                        backgroundColor: 'var(--bg-subtle)',
+                      }}
                     >
-                      {isLinkingTelegram ? 'Verifying...' : 'Verify & Save'}
-                    </Button>
-                  </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                        Emergency recovery option only. Use this if the parent is unable to use the automated 1-click link above.
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <input
+                          type="text"
+                          placeholder="e.g. 987654321"
+                          value={telegramChatIdInput}
+                          onChange={(e) => setTelegramChatIdInput(e.target.value)}
+                          className="form-input"
+                          style={{ fontFamily: 'var(--font-mono)', flex: '1 1 180px' }}
+                        />
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          icon={ShieldCheck}
+                          onClick={handleSaveTelegramChatId}
+                          disabled={isLinkingTelegram}
+                        >
+                          {isLinkingTelegram ? 'Saving...' : 'Save Chat ID'}
+                        </Button>
+                        {telegramModalParent.telegram_chat_id && (
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={handleUnlinkTelegram}
+                            disabled={isLinkingTelegram}
+                          >
+                            Unlink
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Messages */}
