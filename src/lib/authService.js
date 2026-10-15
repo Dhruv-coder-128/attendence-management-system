@@ -19,8 +19,51 @@ export const MODULE_PERMISSIONS = [
   { key: 'manage_settings', label: 'System Settings', module: 'Settings', desc: 'Configure institute profile and gateway' },
 ];
 
+export const OWNER_EMAIL = 'dushah2007@gmail.com';
+
 /**
- * Fallback Owner Profile (Auto-provisioned fail-safe to guarantee zero lockouts)
+ * Standard Granular Permission Presets
+ */
+export function getModeratorPermissions(custom = {}) {
+  return {
+    view_students: true,
+    view_attendance: true,
+    mark_attendance: true,
+    edit_students: false,
+    delete_students: false,
+    manage_batches: false,
+    manage_fees: false,
+    manage_exams: false,
+    manage_parents: false,
+    send_notifications: false,
+    export_data: false,
+    manage_users: false,
+    manage_settings: false,
+    ...custom,
+  };
+}
+
+export function getAdminPermissions(custom = {}) {
+  return {
+    view_students: true,
+    edit_students: true,
+    delete_students: false,
+    view_attendance: true,
+    mark_attendance: true,
+    manage_batches: true,
+    manage_fees: true,
+    manage_exams: true,
+    manage_parents: true,
+    send_notifications: true,
+    export_data: true,
+    manage_users: false,
+    manage_settings: false,
+    ...custom,
+  };
+}
+
+/**
+ * Fallback Owner Profile (Restricted strictly to verified system owner)
  */
 export function getFallbackOwnerProfile(user) {
   const allPerms = {};
@@ -30,8 +73,8 @@ export function getFallbackOwnerProfile(user) {
 
   return {
     id: user?.id || 'owner-session',
-    email: user?.email || 'admin@ruparel.edu',
-    full_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'System Owner',
+    email: user?.email || OWNER_EMAIL,
+    full_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Institution Owner',
     role: 'owner',
     permissions: allPerms,
     is_active: true,
@@ -39,16 +82,35 @@ export function getFallbackOwnerProfile(user) {
 }
 
 /**
- * Fetches the user profile from public.user_profiles
+ * Fallback Staff Profile for Moderators and Admins
+ */
+export function getFallbackStaffProfile(user, role = 'moderator', permissions = null) {
+  const cleanRole = ['owner', 'admin', 'moderator'].includes(role) ? role : 'moderator';
+  return {
+    id: user?.id || 'staff-session',
+    email: user?.email || '',
+    full_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Staff Member',
+    role: cleanRole,
+    permissions: permissions || (cleanRole === 'owner' ? getFallbackOwnerProfile(user).permissions : (cleanRole === 'admin' ? getAdminPermissions() : getModeratorPermissions())),
+    is_active: user?.app_metadata?.is_active ?? true,
+  };
+}
+
+/**
+ * Fetches the user profile from public.user_profiles with strict owner verification
  */
 export async function fetchUserProfile(user) {
-  if (!user || !user.id || !supabase || !isSupabaseConfigured) {
-    return getFallbackOwnerProfile(user);
+  if (!user || !user.id) {
+    return null;
   }
 
-  // Trusted server-side claim in app_metadata (never trust client-supplied user_metadata)
-  if (user.app_metadata?.role === 'owner') {
-    return getFallbackOwnerProfile(user);
+  const cleanEmail = (user.email || '').trim().toLowerCase();
+  const isExplicitOwner = cleanEmail === OWNER_EMAIL || user.app_metadata?.role === 'owner';
+  const appRole = isExplicitOwner ? 'owner' : (user.app_metadata?.role || 'moderator');
+  const appPermissions = user.app_metadata?.permissions;
+
+  if (!supabase || !isSupabaseConfigured) {
+    return isExplicitOwner ? getFallbackOwnerProfile(user) : getFallbackStaffProfile(user, appRole, appPermissions);
   }
 
   try {
@@ -58,67 +120,30 @@ export async function fetchUserProfile(user) {
       .eq('id', user.id)
       .maybeSingle();
 
-    // 1. If database profile exists, use it directly
+    // 1. If database profile exists, use it directly (guaranteeing owner role for Dhruv)
     if (!error && profile) {
+      if (isExplicitOwner && profile.role !== 'owner') {
+        profile.role = 'owner';
+        profile.permissions = getFallbackOwnerProfile(user).permissions;
+      } else if (!isExplicitOwner && profile.role === 'owner') {
+        profile.role = 'moderator';
+        profile.permissions = getModeratorPermissions();
+      }
       return profile;
     }
 
-    // 2. If table is missing, inaccessible, or pending migration (e.g. PGRST205),
-    // automatically grant Owner privileges to prevent locking out the institution administrator.
-    if (error) {
-      console.warn('user_profiles query note (migration may be pending):', error.message || error);
+    // 2. If table is missing (PGRST205), inaccessible, or row doesn't exist
+    if (isExplicitOwner) {
       return getFallbackOwnerProfile(user);
     }
 
-    // 3. If table exists but has no records yet, the first user is guaranteed Owner
-    const { count, error: countErr } = await supabase
-      .from('user_profiles')
-      .select('id', { count: 'exact', head: true });
-
-    if (countErr || count === 0 || count === null) {
-      return getFallbackOwnerProfile(user);
-    }
-
-    // 4. Check user metadata or app metadata for Administrator role
-    const userMetaRole = String(user.user_metadata?.role || '').toLowerCase();
-    const appRole = String(user.app_metadata?.role || '').toLowerCase();
-
-    if (
-      appRole === 'owner' ||
-      appRole === 'admin' ||
-      userMetaRole === 'administrator' ||
-      userMetaRole === 'admin' ||
-      userMetaRole === 'owner'
-    ) {
-      return getFallbackOwnerProfile(user);
-    }
-
-    // 5. Default fallback for standard staff members
-    return {
-      id: user.id,
-      email: user.email,
-      full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Staff User',
-      role: 'moderator',
-      permissions: {
-        view_students: true,
-        view_attendance: true,
-        mark_attendance: true,
-        edit_students: false,
-        delete_students: false,
-        manage_batches: false,
-        manage_fees: false,
-        manage_exams: false,
-        manage_parents: false,
-        send_notifications: false,
-        export_data: false,
-        manage_users: false,
-        manage_settings: false,
-      },
-      is_active: true,
-    };
+    return getFallbackStaffProfile(user, appRole, appPermissions);
   } catch (err) {
-    console.warn('Error fetching user profile, using safe owner fail-safe:', err);
-    return getFallbackOwnerProfile(user);
+    console.warn('Error fetching user profile:', err);
+    if (isExplicitOwner) {
+      return getFallbackOwnerProfile(user);
+    }
+    return getFallbackStaffProfile(user, appRole, appPermissions);
   }
 }
 

@@ -193,41 +193,19 @@ export default async function handler(req, res) {
   // TRUSTED SERVER-SIDE OWNER VERIFICATION
   // -------------------------------------------------------------
   // 1. Explicit server environment variable OWNER_EMAIL (trusted server config)
-  const serverOwnerEmail = (process.env.OWNER_EMAIL || '').trim().toLowerCase();
-  const isServerOwnerEmail = Boolean(serverOwnerEmail && callerUser.email?.trim().toLowerCase() === serverOwnerEmail);
+  const serverOwnerEmail = (process.env.OWNER_EMAIL || 'dushah2007@gmail.com').trim().toLowerCase();
+  const isServerOwnerEmail = Boolean(callerUser.email?.trim().toLowerCase() === serverOwnerEmail);
 
   // 2. Cryptographically signed app_metadata claim (set ONLY via Supabase Admin API with service_role)
-  const isAppMetadataOwner = callerUser.app_metadata?.role === 'owner';
+  const isAppMetadataOwner = callerUser.app_metadata?.role === 'owner' && isServerOwnerEmail;
 
   // 3. Verified database record in public.user_profiles with role 'owner'
-  const isDatabaseOwner = callerProfile?.role === 'owner';
+  const isDatabaseOwner = callerProfile?.role === 'owner' && isServerOwnerEmail;
 
-  // 4. Initial Root Creator check (used ONLY if user_profiles table is not yet populated AND adminClient is present)
-  let isRootAdminAccount = false;
-  if (!callerProfile && adminClient && !isDatabaseOwner) {
-    try {
-      const { data: userPage } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1 });
-      if (userPage?.users?.length > 0 && userPage.users[0].id === callerUser.id) {
-        // If OWNER_EMAIL is defined, root account must match it; if not defined, earliest creator is recognized
-        if (!serverOwnerEmail || isServerOwnerEmail) {
-          isRootAdminAccount = true;
-        }
-      }
-    } catch (rootCheckErr) {
-      console.warn('Error checking root admin account:', rootCheckErr.message);
-    }
-  }
+  // Sole owner is Dhruv Shah
+  const isCallerOwner = isServerOwnerEmail || isAppMetadataOwner || isDatabaseOwner;
 
-  // 5. Fallback in development or un-migrated database setup to prevent locking out the creator
-  const isDevOrInitialAdmin = (!adminClient || !callerProfile) && (
-    (callerUser.email && callerUser.email.toLowerCase().includes('admin')) ||
-    ['owner', 'admin', 'administrator'].includes(String(callerUser.user_metadata?.role || '').toLowerCase()) ||
-    !serverOwnerEmail
-  );
-
-  const isCallerOwner = isServerOwnerEmail || isAppMetadataOwner || isDatabaseOwner || isRootAdminAccount || isDevOrInitialAdmin;
-
-  // If caller is verified as Owner, ensure their callerProfile is fully populated and synced
+  // If caller is verified as Owner, ensure callerProfile is fully populated and synced
   if (isCallerOwner) {
     if (!callerProfile) {
       callerProfile = {
@@ -239,34 +217,33 @@ export default async function handler(req, res) {
         is_active: true,
       };
 
-      // Persist profile to public.user_profiles
+      // Persist profile to public.user_profiles if table exists
       try {
         await dbClient.from('user_profiles').upsert(callerProfile, { onConflict: 'id' });
       } catch (upsertErr) {
-        console.warn('Could not auto-provision owner profile record:', upsertErr.message);
+        // Table doesn't exist, safely stored in auth
       }
     } else if (callerProfile.role !== 'owner') {
       callerProfile.role = 'owner';
       callerProfile.permissions = getOwnerPermissions();
       try {
         await dbClient.from('user_profiles').update({ role: 'owner', permissions: getOwnerPermissions() }).eq('id', callerProfile.id);
-      } catch (updErr) {
-        console.warn('Could not update profile to owner:', updErr.message);
-      }
+      } catch (updErr) {}
     }
 
-    // Ensure app_metadata has role: 'owner'
+    // Ensure app_metadata has role: 'owner' in Supabase Auth
     if (adminClient && callerUser.app_metadata?.role !== 'owner') {
       try {
         await adminClient.auth.admin.updateUserById(callerUser.id, {
-          app_metadata: { role: 'owner' },
+          app_metadata: { role: 'owner', permissions: getOwnerPermissions(), is_active: true },
+          user_metadata: { role: 'owner' },
         });
       } catch (metaErr) {
         console.warn('Could not sync app_metadata owner role:', metaErr.message);
       }
     }
   } else {
-    // If not verified as Owner, callerProfile defaults to their database record or a safe moderator profile
+    // Non-owner caller
     if (!callerProfile) {
       const assignedRole = callerUser.app_metadata?.role === 'admin' ? 'admin' : 'moderator';
       callerProfile = {
@@ -274,8 +251,8 @@ export default async function handler(req, res) {
         email: callerUser.email,
         full_name: callerUser.user_metadata?.full_name || callerUser.email?.split('@')[0] || 'Staff Member',
         role: assignedRole,
-        permissions: assignedRole === 'admin' ? getAdminPermissions() : getModeratorPermissions(),
-        is_active: true,
+        permissions: assignedRole === 'admin' ? getAdminPermissions(callerUser.app_metadata?.permissions) : getModeratorPermissions(callerUser.app_metadata?.permissions),
+        is_active: callerUser.app_metadata?.is_active ?? true,
       };
     }
   }
@@ -298,54 +275,92 @@ export default async function handler(req, res) {
     // ACTION 1: LIST USERS
     // -------------------------------------------------------------
     if (action === 'list') {
-      const { data: users, error: listErr } = await dbClient
-        .from('user_profiles')
-        .select('*')
-        .order('role', { ascending: true })
-        .order('created_at', { ascending: true });
+      let dbUsers = null;
+      let dbErr = null;
+      try {
+        const res = await dbClient
+          .from('user_profiles')
+          .select('*')
+          .order('role', { ascending: true })
+          .order('created_at', { ascending: true });
+        dbUsers = res.data;
+        dbErr = res.error;
+      } catch (err) {
+        dbErr = err;
+      }
 
-      if (listErr || !users || users.length === 0) {
-        // If table is unpopulated or missing, attempt to list via adminClient or return caller profile
-        if (adminClient) {
-          try {
-            const { data: authList, error: authListErr } = await adminClient.auth.admin.listUsers();
-            if (!authListErr && authList?.users?.length > 0) {
-              const mappedUsers = authList.users.map((u) => {
-                const isUOwner = u.id === callerUser.id && isCallerOwner;
-                const uRole = isUOwner ? 'owner' : (u.app_metadata?.role || u.user_metadata?.role || 'moderator');
-                return {
-                  id: u.id,
-                  email: u.email,
-                  full_name: u.user_metadata?.full_name || u.email?.split('@')[0] || 'Staff Member',
-                  role: uRole,
-                  permissions: uRole === 'owner' ? getOwnerPermissions() : (uRole === 'admin' ? getAdminPermissions() : getModeratorPermissions()),
-                  is_active: true,
-                  created_at: u.created_at,
-                };
-              });
-
-              return res.status(200).json({
-                ok: true,
-                users: mappedUsers,
-                callerRole: callerProfile?.role || 'owner',
-              });
-            }
-          } catch (listUsersErr) {
-            console.warn('Could not list auth users:', listUsersErr);
+      // If user_profiles table exists and has rows
+      if (!dbErr && dbUsers && dbUsers.length > 0) {
+        const sanitized = dbUsers.map((u) => {
+          const isUOwner = (u.email || '').trim().toLowerCase() === serverOwnerEmail;
+          if (isUOwner) {
+            return { ...u, role: 'owner', permissions: getOwnerPermissions() };
           }
-        }
+          if (u.role === 'owner' && !isUOwner) {
+            return { ...u, role: 'moderator', permissions: getModeratorPermissions() };
+          }
+          return u;
+        });
+
+        sanitized.sort((a, b) => {
+          if (a.role === 'owner' && b.role !== 'owner') return -1;
+          if (b.role === 'owner' && a.role !== 'owner') return 1;
+          return (a.email || '').localeCompare(b.email || '');
+        });
 
         return res.status(200).json({
           ok: true,
-          users: [callerProfile],
-          callerRole: callerProfile?.role || 'owner',
-          notice: 'Loaded authenticated owner profile.',
+          users: sanitized,
+          callerRole: callerProfile?.role || (isCallerOwner ? 'owner' : 'moderator'),
         });
+      }
+
+      // If user_profiles is missing (PGRST205) or empty, fetch directly from Supabase Auth
+      if (adminClient) {
+        try {
+          const { data: authList, error: authListErr } = await adminClient.auth.admin.listUsers();
+          if (!authListErr && authList?.users?.length > 0) {
+            const mappedUsers = authList.users.map((u) => {
+              const cleanUEmail = (u.email || '').trim().toLowerCase();
+              const isUOwner = cleanUEmail === serverOwnerEmail;
+              const uRole = isUOwner ? 'owner' : (u.app_metadata?.role === 'admin' ? 'admin' : 'moderator');
+              const uPerms = isUOwner
+                ? getOwnerPermissions()
+                : (u.app_metadata?.permissions || (uRole === 'admin' ? getAdminPermissions() : getModeratorPermissions()));
+              const uActive = u.app_metadata?.is_active ?? (!u.banned_until);
+
+              return {
+                id: u.id,
+                email: u.email,
+                full_name: u.user_metadata?.full_name || u.email?.split('@')[0] || 'Staff Member',
+                role: uRole,
+                permissions: uPerms,
+                is_active: uActive,
+                created_at: u.created_at,
+              };
+            });
+
+            // Sort: Owner first, then alphabetical
+            mappedUsers.sort((a, b) => {
+              if (a.role === 'owner' && b.role !== 'owner') return -1;
+              if (b.role === 'owner' && a.role !== 'owner') return 1;
+              return (a.email || '').localeCompare(b.email || '');
+            });
+
+            return res.status(200).json({
+              ok: true,
+              users: mappedUsers,
+              callerRole: callerProfile?.role || (isCallerOwner ? 'owner' : 'moderator'),
+            });
+          }
+        } catch (listUsersErr) {
+          console.warn('Could not list auth users:', listUsersErr);
+        }
       }
 
       return res.status(200).json({
         ok: true,
-        users: users || [],
+        users: [callerProfile],
         callerRole: callerProfile?.role || 'owner',
       });
     }
@@ -372,7 +387,7 @@ export default async function handler(req, res) {
       const cleanRole = ['owner', 'admin', 'moderator'].includes(role) ? role : 'moderator';
 
       // Anti-Privilege Escalation:
-      // Only an Owner can create 'admin' or 'owner' accounts.
+      // Only the System Owner can create 'admin' or 'owner' accounts.
       if ((cleanRole === 'owner' || cleanRole === 'admin') && !isCallerOwner) {
         return res.status(403).json({
           ok: false,
@@ -383,11 +398,16 @@ export default async function handler(req, res) {
       if (!adminClient) {
         return res.status(500).json({
           ok: false,
-          error: 'SUPABASE_SERVICE_ROLE_KEY missing in .env.local: To create staff accounts from this modal, add your Supabase service_role key to .env.local (Supabase Dashboard > Settings > API > service_role). Alternatively, the staff member can sign up directly via the Login page.',
+          error: 'SUPABASE_SERVICE_ROLE_KEY missing in .env.local: To create staff accounts, ensure service_role key is configured.',
         });
       }
 
       const cleanFullName = full_name?.trim() || cleanEmail.split('@')[0];
+      const assignedPerms = cleanRole === 'owner'
+        ? getOwnerPermissions()
+        : cleanRole === 'admin'
+        ? getAdminPermissions(permissions)
+        : getModeratorPermissions(permissions);
 
       // Step 1: Create user in Supabase Auth
       const { data: authCreated, error: createAuthErr } = await adminClient.auth.admin.createUser({
@@ -396,13 +416,15 @@ export default async function handler(req, res) {
         email_confirm: true,
         user_metadata: {
           full_name: cleanFullName,
+          role: cleanRole,
         },
         app_metadata: {
           role: cleanRole,
+          permissions: assignedPerms,
+          is_active: true,
         },
       });
 
-      // Handle duplicate email or auth creation error
       if (createAuthErr) {
         const errorMsg = createAuthErr.message || '';
         if (
@@ -420,18 +442,9 @@ export default async function handler(req, res) {
 
       const newUserId = authCreated.user.id;
 
-      // Step 2: Compute role permissions
-      const assignedPerms = cleanRole === 'owner'
-        ? getOwnerPermissions()
-        : cleanRole === 'admin'
-        ? getAdminPermissions(permissions)
-        : getModeratorPermissions(permissions);
-
-      // Step 3: Insert profile into public.user_profiles if table exists
-      let profileData = null;
-      let profileErr = null;
+      // Step 2: Try to insert into public.user_profiles if table exists
       try {
-        const res = await dbClient
+        await dbClient
           .from('user_profiles')
           .upsert({
             id: newUserId,
@@ -440,38 +453,14 @@ export default async function handler(req, res) {
             role: cleanRole,
             permissions: assignedPerms,
             is_active: true,
-          }, { onConflict: 'id' })
-          .select()
-          .maybeSingle();
-        profileData = res.data;
-        profileErr = res.error;
+          }, { onConflict: 'id' });
       } catch (err) {
-        profileErr = err;
-      }
-
-      // Step 4: Handle profile insertion issues (distinguish missing table from critical errors)
-      if (profileErr) {
-        const isTableMissing = profileErr.code === 'PGRST205' ||
-          String(profileErr.message || '').includes('user_profiles');
-
-        if (!isTableMissing) {
-          console.error('Failed to create staff profile record, rolling back auth account:', profileErr);
-          try {
-            await adminClient.auth.admin.deleteUser(newUserId);
-          } catch (delErr) {
-            console.error('Failed to rollback orphaned auth user:', delErr);
-          }
-          return res.status(500).json({
-            ok: false,
-            error: `Failed to initialize staff profile record: ${profileErr.message}. Incomplete account was safely rolled back.`,
-          });
-        }
-        console.warn('user_profiles table is pending migration. Staff account provisioned securely in Supabase Auth with app_metadata.');
+        // Table not migrated yet; safely persisted in app_metadata
       }
 
       return res.status(200).json({
         ok: true,
-        user: profileData || {
+        user: {
           id: newUserId,
           email: cleanEmail,
           full_name: cleanFullName,
@@ -505,99 +494,56 @@ export default async function handler(req, res) {
         });
       }
 
-      // Fetch target user's current profile
-      let targetProfile = null;
-      try {
-        const { data, error: targetErr } = await dbClient
-          .from('user_profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
-        if (!targetErr && data) {
-          targetProfile = data;
-        }
-      } catch (tErr) {
-        console.warn('Error fetching target profile from user_profiles:', tErr);
-      }
-
-      // If user_profiles is missing or target not found, fall back to auth lookup
-      if (!targetProfile && adminClient) {
+      // Lookup target email in Auth
+      let targetEmail = '';
+      if (adminClient) {
         try {
           const { data: { user: aUser } } = await adminClient.auth.admin.getUserById(userId);
-          if (aUser) {
-            targetProfile = {
-              id: aUser.id,
-              email: aUser.email,
-              full_name: aUser.user_metadata?.full_name || aUser.email?.split('@')[0],
-              role: aUser.app_metadata?.role || aUser.user_metadata?.role || 'moderator',
-              permissions: getModeratorPermissions(),
-              is_active: !aUser.banned_until,
-            };
-          }
-        } catch (authLookErr) {
-          console.warn('Error looking up target user in auth:', authLookErr);
-        }
-      }
-
-      if (!targetProfile) {
-        return res.status(404).json({ ok: false, error: 'Target user profile not found.' });
-      }
-
-      // OWNER DEMOTION PROTECTION:
-      // If target is currently an owner and new role is not owner, check active owner count
-      if (targetProfile.role === 'owner' && newRole !== 'owner') {
-        let activeOwnersCount = 1;
-        try {
-          const { count } = await dbClient
-            .from('user_profiles')
-            .select('id', { count: 'exact', head: true })
-            .eq('role', 'owner')
-            .eq('is_active', true);
-          if (count !== null) activeOwnersCount = count;
+          if (aUser) targetEmail = (aUser.email || '').trim().toLowerCase();
         } catch {}
-
-        if (activeOwnersCount <= 1) {
-          return res.status(400).json({
-            ok: false,
-            error: 'Action blocked: Cannot demote the last remaining active system Owner.',
-          });
-        }
       }
 
-      // Prepare updated permissions based on new role
-      const updateData = {
-        role: newRole,
-        permissions: newRole === 'owner'
-          ? getOwnerPermissions()
-          : newRole === 'admin'
-          ? getAdminPermissions(targetProfile.permissions)
-          : getModeratorPermissions(targetProfile.permissions),
-        updated_at: new Date().toISOString(),
-      };
-
-      try {
-        await dbClient
-          .from('user_profiles')
-          .update(updateData)
-          .eq('id', userId);
-      } catch (updErr) {
-        console.warn('user_profiles update ignored:', updErr.message);
+      // Protect primary owner from demotion
+      if (targetEmail === serverOwnerEmail && newRole !== 'owner') {
+        return res.status(400).json({
+          ok: false,
+          error: 'Action blocked: The primary System Owner cannot be demoted.',
+        });
       }
 
-      // Sync role into auth metadata if adminClient is available
+      const updatePerms = newRole === 'owner'
+        ? getOwnerPermissions()
+        : newRole === 'admin'
+        ? getAdminPermissions()
+        : getModeratorPermissions();
+
+      // 1. Sync role into Supabase Auth app_metadata
       if (adminClient) {
         try {
           await adminClient.auth.admin.updateUserById(userId, {
-            app_metadata: { role: newRole },
+            app_metadata: { role: newRole, permissions: updatePerms },
+            user_metadata: { role: newRole },
           });
         } catch (syncErr) {
           console.warn('Syncing role to auth metadata issue:', syncErr);
         }
       }
 
+      // 2. Sync to user_profiles table if present
+      try {
+        await dbClient
+          .from('user_profiles')
+          .update({
+            role: newRole,
+            permissions: updatePerms,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', userId);
+      } catch (updErr) {}
+
       return res.status(200).json({
         ok: true,
-        user: { ...targetProfile, ...updateData },
+        user: { id: userId, role: newRole, permissions: updatePerms },
         message: `Role updated to ${newRole.toUpperCase()}.`,
       });
     }
@@ -620,37 +566,49 @@ export default async function handler(req, res) {
         });
       }
 
-      // Fetch target user's current profile
-      const { data: targetProfile } = await dbClient
-        .from('user_profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      // Lookup target email
+      let targetEmail = '';
+      if (adminClient) {
+        try {
+          const { data: { user: aUser } } = await adminClient.auth.admin.getUserById(userId);
+          if (aUser) targetEmail = (aUser.email || '').trim().toLowerCase();
+        } catch {}
+      }
 
-      if (targetProfile?.role === 'owner') {
+      if (targetEmail === serverOwnerEmail) {
         return res.status(400).json({
           ok: false,
           error: 'Action blocked: The Owner account retains full system permissions at all times.',
         });
       }
 
-      const { data: updated, error: updateErr } = await dbClient
-        .from('user_profiles')
-        .update({
-          permissions,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userId)
-        .select()
-        .single();
+      // 1. Update in Auth app_metadata
+      if (adminClient) {
+        try {
+          await adminClient.auth.admin.updateUserById(userId, {
+            app_metadata: { permissions },
+          });
+        } catch (metaErr) {
+          console.warn('Error syncing permissions to auth app_metadata:', metaErr);
+        }
+      }
 
-      if (updateErr) {
-        return res.status(500).json({ ok: false, error: updateErr.message });
+      // 2. Sync to user_profiles if present
+      try {
+        await dbClient
+          .from('user_profiles')
+          .update({
+            permissions,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', userId);
+      } catch (updateErr) {
+        console.warn('user_profiles update ignored (table pending migration):', updateErr?.message);
       }
 
       return res.status(200).json({
         ok: true,
-        user: updated,
+        permissions,
         message: 'Staff permissions updated successfully.',
       });
     }
@@ -672,46 +630,50 @@ export default async function handler(req, res) {
         });
       }
 
-      // Fetch target profile
-      const { data: targetProfile } = await dbClient
-        .from('user_profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      // Lookup target email
+      let targetEmail = '';
+      if (adminClient) {
+        try {
+          const { data: { user: aUser } } = await adminClient.auth.admin.getUserById(userId);
+          if (aUser) targetEmail = (aUser.email || '').trim().toLowerCase();
+        } catch {}
+      }
 
-      // PROTECT LAST OWNER FROM DEACTIVATION
-      if (targetProfile?.role === 'owner' && !is_active) {
-        const { count: activeOwnersCount } = await dbClient
-          .from('user_profiles')
-          .select('id', { count: 'exact', head: true })
-          .eq('role', 'owner')
-          .eq('is_active', true);
+      if (targetEmail === serverOwnerEmail && !is_active) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Action blocked: Cannot deactivate the primary system Owner account.',
+        });
+      }
 
-        if ((activeOwnersCount || 1) <= 1) {
-          return res.status(400).json({
-            ok: false,
-            error: 'Action blocked: Cannot deactivate the last remaining active system Owner.',
+      // 1. Update in Auth app_metadata & ban duration
+      if (adminClient) {
+        try {
+          await adminClient.auth.admin.updateUserById(userId, {
+            app_metadata: { is_active },
+            ban_duration: is_active ? 'none' : '876000h',
           });
+        } catch (authErr) {
+          console.warn('Error setting auth ban/active status:', authErr);
         }
       }
 
-      const { data: updated, error: updateErr } = await dbClient
-        .from('user_profiles')
-        .update({
-          is_active,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', userId)
-        .select()
-        .single();
-
-      if (updateErr) {
-        return res.status(500).json({ ok: false, error: updateErr.message });
+      // 2. Sync to user_profiles if present
+      try {
+        await dbClient
+          .from('user_profiles')
+          .update({
+            is_active,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', userId);
+      } catch (updateErr) {
+        console.warn('user_profiles active toggle ignored (table pending migration):', updateErr?.message);
       }
 
       return res.status(200).json({
         ok: true,
-        user: updated,
+        is_active,
         message: is_active ? 'Staff account activated.' : 'Staff account deactivated.',
       });
     }
@@ -733,38 +695,32 @@ export default async function handler(req, res) {
         });
       }
 
-      // Check target
-      let isTargetOwner = false;
-      try {
-        const { data: targetProfile } = await dbClient
-          .from('user_profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
-        if (targetProfile?.role === 'owner') isTargetOwner = true;
-      } catch {}
-
-      if (!isTargetOwner && adminClient) {
+      // Lookup target email
+      let targetEmail = '';
+      if (adminClient) {
         try {
           const { data: { user: targetUser } } = await adminClient.auth.admin.getUserById(userId);
-          if (targetUser?.app_metadata?.role === 'owner' || targetUser?.id === callerUser.id) {
-            isTargetOwner = true;
-          }
+          if (targetUser) targetEmail = (targetUser.email || '').trim().toLowerCase();
         } catch {}
       }
 
       // NEVER DELETE AN OWNER
-      if (isTargetOwner) {
+      if (userId === callerUser.id || targetEmail === serverOwnerEmail) {
         return res.status(400).json({
           ok: false,
-          error: 'Action blocked: Owner accounts cannot be deleted.',
+          error: 'Action blocked: The system Owner account cannot be deleted.',
         });
       }
 
+      // 1. Delete from Supabase Auth
       if (adminClient) {
-        await adminClient.auth.admin.deleteUser(userId);
+        const { error: delAuthErr } = await adminClient.auth.admin.deleteUser(userId);
+        if (delAuthErr) {
+          return res.status(400).json({ ok: false, error: delAuthErr.message });
+        }
       }
 
+      // 2. Delete from user_profiles if table exists
       try {
         await dbClient
           .from('user_profiles')

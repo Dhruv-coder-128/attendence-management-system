@@ -12,7 +12,7 @@ import NotificationsPage from './pages/NotificationsPage';
 import SettingsPage from './pages/SettingsPage';
 import BulkImportPage from './pages/BulkImportPage';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
-import { fetchUserProfile, hasPermission, getFallbackOwnerProfile } from './lib/authService';
+import { fetchUserProfile, hasPermission, getFallbackOwnerProfile, getFallbackStaffProfile, OWNER_EMAIL } from './lib/authService';
 import { RefreshCw, GraduationCap } from 'lucide-react';
 
 /**
@@ -104,8 +104,9 @@ export default function App() {
       const profile = await fetchUserProfile(authUser);
       setCurrentUserProfile(profile);
     } catch (err) {
-      console.warn('Error loading user profile, falling back to owner session:', err);
-      setCurrentUserProfile(getFallbackOwnerProfile(authUser));
+      console.warn('Error loading user profile:', err);
+      const isOwnerAccount = (authUser.email || '').toLowerCase() === OWNER_EMAIL || authUser.app_metadata?.role === 'owner';
+      setCurrentUserProfile(isOwnerAccount ? getFallbackOwnerProfile(authUser) : getFallbackStaffProfile(authUser));
     }
   }, []);
 

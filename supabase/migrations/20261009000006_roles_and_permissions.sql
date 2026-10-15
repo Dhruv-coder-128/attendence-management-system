@@ -116,36 +116,30 @@ CREATE TRIGGER on_auth_user_created
 DO $$
 DECLARE
     r RECORD;
-    v_first BOOLEAN := true;
-    v_has_owner BOOLEAN := false;
 BEGIN
-    SELECT EXISTS (SELECT 1 FROM public.user_profiles WHERE role = 'owner') INTO v_has_owner;
-
-    FOR r IN SELECT id, email, raw_user_meta_data FROM auth.users ORDER BY created_at ASC LOOP
-        IF NOT v_has_owner AND v_first THEN
+    FOR r IN SELECT id, email, raw_user_meta_data, raw_app_meta_data FROM auth.users LOOP
+        IF lower(r.email) = 'dushah2007@gmail.com' OR coalesce(r.raw_app_meta_data->>'role', '') = 'owner' THEN
             INSERT INTO public.user_profiles (id, email, full_name, role, permissions, is_active)
             VALUES (
                 r.id,
                 r.email,
-                coalesce(r.raw_user_meta_data->>'full_name', 'System Owner'),
+                coalesce(r.raw_user_meta_data->>'full_name', 'Dhruv Shah'),
                 'owner',
                 '{"view_students": true, "edit_students": true, "delete_students": true, "view_attendance": true, "mark_attendance": true, "manage_batches": true, "manage_fees": true, "manage_exams": true, "manage_parents": true, "send_notifications": true, "export_data": true, "manage_users": true, "manage_settings": true}'::jsonb,
                 true
             )
-            ON CONFLICT (id) DO UPDATE SET role = 'owner';
-            v_first := false;
-            v_has_owner := true;
+            ON CONFLICT (id) DO UPDATE SET role = 'owner', permissions = EXCLUDED.permissions;
         ELSE
             INSERT INTO public.user_profiles (id, email, full_name, role, permissions, is_active)
             VALUES (
                 r.id,
                 r.email,
-                coalesce(r.raw_user_meta_data->>'full_name', 'Staff Member'),
-                'moderator',
+                coalesce(r.raw_user_meta_data->>'full_name', split_part(r.email, '@', 1)),
+                coalesce(r.raw_app_meta_data->>'role', 'moderator'),
                 '{"view_students": true, "edit_students": false, "delete_students": false, "view_attendance": true, "mark_attendance": true, "manage_batches": false, "manage_fees": false, "manage_exams": false, "manage_parents": false, "send_notifications": false, "export_data": false, "manage_users": false, "manage_settings": false}'::jsonb,
                 true
             )
-            ON CONFLICT (id) DO NOTHING;
+            ON CONFLICT (id) DO UPDATE SET role = EXCLUDED.role;
         END IF;
     END LOOP;
 END $$;
