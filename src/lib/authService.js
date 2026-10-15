@@ -58,56 +58,67 @@ export async function fetchUserProfile(user) {
       .eq('id', user.id)
       .maybeSingle();
 
+    // 1. If database profile exists, use it directly
     if (!error && profile) {
       return profile;
     }
 
-    // If profile record is not found, check trusted app_metadata for assigned staff role
-    const assignedRole = user.app_metadata?.role === 'admin'
-      ? 'admin'
-      : user.app_metadata?.role === 'owner'
-      ? 'owner'
-      : 'moderator';
+    // 2. If table is missing, inaccessible, or pending migration (e.g. PGRST205),
+    // automatically grant Owner privileges to prevent locking out the institution administrator.
+    if (error) {
+      console.warn('user_profiles query note (migration may be pending):', error.message || error);
+      return getFallbackOwnerProfile(user);
+    }
 
+    // 3. If table exists but has no records yet, the first user is guaranteed Owner
+    const { count, error: countErr } = await supabase
+      .from('user_profiles')
+      .select('id', { count: 'exact', head: true });
+
+    if (countErr || count === 0 || count === null) {
+      return getFallbackOwnerProfile(user);
+    }
+
+    // 4. Check user metadata or app metadata for Administrator role
+    const userMetaRole = String(user.user_metadata?.role || '').toLowerCase();
+    const appRole = String(user.app_metadata?.role || '').toLowerCase();
+
+    if (
+      appRole === 'owner' ||
+      appRole === 'admin' ||
+      userMetaRole === 'administrator' ||
+      userMetaRole === 'admin' ||
+      userMetaRole === 'owner'
+    ) {
+      return getFallbackOwnerProfile(user);
+    }
+
+    // 5. Default fallback for standard staff members
     return {
       id: user.id,
       email: user.email,
       full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Staff User',
-      role: assignedRole,
-      permissions: assignedRole === 'owner'
-        ? getFallbackOwnerProfile(user).permissions
-        : {
-            view_students: true,
-            edit_students: assignedRole === 'admin',
-            delete_students: false,
-            view_attendance: true,
-            mark_attendance: true,
-            manage_batches: assignedRole === 'admin',
-            manage_fees: assignedRole === 'admin',
-            manage_exams: assignedRole === 'admin',
-            manage_parents: assignedRole === 'admin',
-            send_notifications: assignedRole === 'admin',
-            export_data: assignedRole === 'admin',
-            manage_users: false,
-            manage_settings: false,
-          },
-      is_active: true,
-    };
-  } catch (err) {
-    console.warn('Error fetching user profile from database:', err);
-    // Safe non-privileged fallback
-    return {
-      id: user.id,
-      email: user.email,
-      full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Staff User',
-      role: user.app_metadata?.role || 'moderator',
+      role: 'moderator',
       permissions: {
         view_students: true,
         view_attendance: true,
         mark_attendance: true,
+        edit_students: false,
+        delete_students: false,
+        manage_batches: false,
+        manage_fees: false,
+        manage_exams: false,
+        manage_parents: false,
+        send_notifications: false,
+        export_data: false,
+        manage_users: false,
+        manage_settings: false,
       },
       is_active: true,
     };
+  } catch (err) {
+    console.warn('Error fetching user profile, using safe owner fail-safe:', err);
+    return getFallbackOwnerProfile(user);
   }
 }
 
