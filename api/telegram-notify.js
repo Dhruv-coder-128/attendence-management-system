@@ -224,7 +224,7 @@ export default async function handler(req, res) {
         const statusText = isOverdue ? 'OVERDUE' : pendingAmt === 0 ? 'CLEARED' : 'INSTALLMENT SCHEDULED';
 
         const messageHtml = `
-${statusEmoji} <b>Ruparel Attendance ERP — Tuition Fee Schedule Notice</b>
+${statusEmoji} <b>SMS — Student Management System — Tuition Fee Notice</b>
 
 Namaste <b>${escapeHtml(parent.full_name)}</b>,
 This is an official communication regarding the tuition fee schedule for your ward:
@@ -242,7 +242,7 @@ This is an official communication regarding the tuition fee schedule for your wa
 
 Kindly ensure the pending installment is cleared at the academy accounts desk. If you have already completed this payment, kindly share the receipt with reception to reconcile records.
 
-<i>Ruparel Tuition & Academy Management System</i>
+<i>SMS — Student Management System</i>
 `.trim();
 
         const sendRes = await sendTelegramAlert(botToken, parent.telegram_chat_id, messageHtml);
@@ -479,7 +479,7 @@ Kindly ensure the pending installment is cleared at the academy accounts desk. I
           const statusDisplay = isAbsent ? 'ABSENT' : isPass ? 'PASSED ✅' : 'NEEDS ATTENTION ⚠️';
 
           const messageHtml = `
-🎓 <b>RUPAREL ACADEMY — EXAMINATION RESULTS</b>
+🎓 <b>SMS — EXAMINATION RESULTS</b>
 
 Namaste <b>${escapeHtml(parent.full_name)}</b>,
 Academic evaluation report for your ward:
@@ -498,7 +498,7 @@ Academic evaluation report for your ward:
 🎖️ <b>Final Status:</b> <b>${statusDisplay}</b>
 ${mark.remarks ? `\n📝 <i>Faculty Remarks: ${escapeHtml(mark.remarks)}</i>` : ''}
 
-<i>Ruparel Attendance &amp; Academic ERP &bull; Official Telegram Notification</i>
+<i>SMS — Student Management System &bull; Official Telegram Notification</i>
 `.trim();
 
           const sendRes = await sendTelegramAlert(botToken, parent.telegram_chat_id, messageHtml);
@@ -775,7 +775,7 @@ ${mark.remarks ? `\n📝 <i>Faculty Remarks: ${escapeHtml(mark.remarks)}</i>` : 
           }
 
           const messageHtml = `
-${statusEmoji} <b>Ruparel Attendance ERP — Roll Call Notice</b>
+${statusEmoji} <b>SMS — Student Management System — Roll Call Notice</b>
 
 Dear <b>${escapeHtml(parent.full_name)}</b>,
 Your ward <b>${escapeHtml(student.full_name)}</b> (Adm No: <code>${escapeHtml(student.admission_no)}</code>, Roll No: <code>${escapeHtml(student.roll_no || '—')}</code>) has been marked <b>${escapeHtml(record.status.toUpperCase())}</b> for today's session.
@@ -784,7 +784,7 @@ Your ward <b>${escapeHtml(student.full_name)}</b> (Adm No: <code>${escapeHtml(st
 🏫 <b>Cohort:</b> ${escapeHtml(batchData.name)} (${escapeHtml(batchData.code)})
 ⏱️ <b>Time Logged:</b> ${escapeHtml(record.time_in || new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }))}
 
-<i>This is an official automated alert from Ruparel Attendance Management System.</i>
+<i>This is an official automated alert from SMS — Student Management System.</i>
 `.trim();
 
           const sendResult = await sendTelegramAlert(botToken, parent.telegram_chat_id, messageHtml);
@@ -903,7 +903,7 @@ Your ward <b>${escapeHtml(student.full_name)}</b> (Adm No: <code>${escapeHtml(st
       const statusEmoji = singleStatus === 'Present' ? '✅' : singleStatus === 'Absent' ? '🚨' : singleStatus === 'Late' ? '⚠️' : 'ℹ️';
 
       const messageHtml = `
-${statusEmoji} <b>Ruparel Attendance ERP — Roll Call Notice</b>
+${statusEmoji} <b>SMS — Student Management System — Roll Call Notice</b>
 
 Dear <b>${escapeHtml(parent.full_name)}</b>,
 Your ward <b>${escapeHtml(student.full_name)}</b> (Adm No: <code>${escapeHtml(student.admission_no)}</code>) has been marked <b>${escapeHtml((singleStatus || 'Absent').toUpperCase())}</b> for today's session.
@@ -912,7 +912,7 @@ Your ward <b>${escapeHtml(student.full_name)}</b> (Adm No: <code>${escapeHtml(st
 🏫 <b>Cohort:</b> ${escapeHtml(singleBatchName || 'Regular Session')}
 ⏱️ <b>Time Logged:</b> ${escapeHtml(new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' }))}
 
-<i>This is an official automated alert from Ruparel Attendance Management System.</i>
+<i>This is an official automated alert from SMS — Student Management System.</i>
 `.trim();
 
       const sendResult = await sendTelegramAlert(botToken, parent.telegram_chat_id, messageHtml);

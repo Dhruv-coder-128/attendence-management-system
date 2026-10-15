@@ -307,7 +307,7 @@ export default function StudentsPage({ onRefreshCounts }) {
         return;
       }
       const branding = getStoredAcademySettings();
-      const academyName = branding?.academy_name || 'Ruparel Attendance ERP';
+      const academyName = branding?.academy_name || 'SMS — Student Management System';
 
       if (format === 'excel') {
         const file = await exportStudentsToExcel(listToExport, academyName);

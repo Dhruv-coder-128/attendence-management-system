@@ -1,5 +1,5 @@
 /**
- * Ruparel Attendance ERP — Attendance Export Engine
+ * SMS — Student Management System — Attendance Export Engine
  * Generates formatted Excel (.xlsx) and CSV reports for Daily & Monthly Registers
  */
 
@@ -45,7 +45,7 @@ export async function exportMonthlyRegisterToExcel({
   students = [],
   monthlyAttendanceMap = {}, // { [studentId]: { [dateStr]: status } }
   threshold = 75,
-  academyName = 'Ruparel Attendance ERP Academy',
+  academyName = 'SMS — Student Management System',
 }) {
   const XLSX = await import('xlsx');
 
@@ -308,7 +308,7 @@ export async function exportDailyRegisterToExcel({
   date,
   students = [],
   attendanceMap = {},
-  academyName = 'Ruparel Attendance ERP Academy',
+  academyName = 'SMS — Student Management System',
 }) {
   const XLSX = await import('xlsx');
 

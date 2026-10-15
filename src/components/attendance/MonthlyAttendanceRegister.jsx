@@ -68,7 +68,7 @@ export default function MonthlyAttendanceRegister({
   }, []);
 
   const instituteName = useMemo(() => {
-    return localStorage.getItem('erp_institute_name') || 'Ruparel Attendance ERP Academy';
+    return localStorage.getItem('erp_institute_name') || 'SMS — Student Management System';
   }, []);
 
   // Compute number of days in selected month and year

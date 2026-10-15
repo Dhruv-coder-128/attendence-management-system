@@ -4,11 +4,11 @@ import { supabase, isSupabaseConfigured } from './supabase';
  * Default Academy Branding & Configuration
  */
 export const DEFAULT_ACADEMY_SETTINGS = {
-  academy_name: 'Ruparel Attendance ERP Academy',
+  academy_name: 'SMS — Student Management System',
   branch_name: 'Central Campus — Main Wing',
   address: '123 Education Hub, MG Road, Mumbai, Maharashtra 400001',
   phone: '+91 98765 43210',
-  email: 'contact@ruparel.edu',
+  email: 'contact@sms.edu',
   logo_url: '',
   tagline: 'Excellence in Higher Secondary & College Education • Estd. 2018',
   academic_year: 'AY 2026-27 (Term 1)',

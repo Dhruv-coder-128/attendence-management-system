@@ -472,7 +472,7 @@ export default function ReportCardModal({
               <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '10px' }}>
                 Generated: {todayStr}
                 <br />
-                Ruparel Attendance ERP &bull; Verified Copy
+                SMS — Student Management System &bull; Verified Copy
               </div>
 
               <div style={{ textAlign: 'center', minWidth: '160px' }}>

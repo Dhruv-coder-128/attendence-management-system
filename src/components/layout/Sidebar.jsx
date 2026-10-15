@@ -133,15 +133,15 @@ export default function Sidebar({
               <GraduationCap size={22} />
             </div>
             <div>
-              <div className="brand-title">Ruparel Attendance ERP</div>
-              <div className="brand-subtitle">Tuition &amp; Academy System</div>
+              <div className="brand-title">SMS</div>
+              <div className="brand-subtitle">Student Management System</div>
             </div>
           </div>
 
           <div className="sidebar-badge-strip">
             <span>Academic Portal</span>
             <span style={{ fontWeight: 600 }}>
-              {counts.students ? `${counts.students} Students` : 'Ruparel ERP'}
+              {counts.students ? `${counts.students} Students` : 'SMS Portal'}
             </span>
           </div>
         </div>

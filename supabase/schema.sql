@@ -1,5 +1,5 @@
 -- =====================================================================
--- RUPAREL ATTENDANCE ERP — COMPLETE SUPABASE DATABASE SCHEMA
+-- SMS — STUDENT MANAGEMENT SYSTEM — COMPLETE SUPABASE DATABASE SCHEMA
 -- Path: supabase/schema.sql
 -- Run this in your Supabase Dashboard -> SQL Editor -> New Query
 -- =====================================================================
@@ -897,11 +897,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_profiles TO authenticated, s
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS public.academy_settings (
     id VARCHAR(50) PRIMARY KEY DEFAULT 'default',
-    academy_name VARCHAR(255) NOT NULL DEFAULT 'Ruparel Attendance ERP Academy',
+    academy_name VARCHAR(255) NOT NULL DEFAULT 'SMS — Student Management System',
     branch_name VARCHAR(255) NOT NULL DEFAULT 'Central Campus — Main Wing',
     address TEXT DEFAULT '123 Education Hub, MG Road, Mumbai, Maharashtra 400001',
     phone VARCHAR(50) DEFAULT '+91 98765 43210',
-    email VARCHAR(255) DEFAULT 'contact@ruparel.edu',
+    email VARCHAR(255) DEFAULT 'contact@sms.edu',
     logo_url TEXT DEFAULT '',
     tagline VARCHAR(255) DEFAULT 'Excellence in Higher Secondary & College Education • Estd. 2018',
     academic_year VARCHAR(50) DEFAULT 'AY 2026-27 (Term 1)',
@@ -940,11 +940,11 @@ GRANT SELECT, INSERT, UPDATE ON public.academy_settings TO anon, authenticated, 
 INSERT INTO public.academy_settings (id, academy_name, branch_name, address, phone, email, tagline)
 VALUES (
     'default',
-    'Ruparel Attendance ERP Academy',
+    'SMS — Student Management System',
     'Central Campus — Main Wing',
     '123 Education Hub, MG Road, Mumbai, Maharashtra 400001',
     '+91 98765 43210',
-    'contact@ruparel.edu',
+    'contact@sms.edu',
     'Excellence in Higher Secondary & College Education • Estd. 2018'
 )
 ON CONFLICT (id) DO NOTHING;

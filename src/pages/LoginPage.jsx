@@ -144,7 +144,7 @@ export default function LoginPage({ onLoginSuccess }) {
               textTransform: 'uppercase',
             }}
           >
-            Ruparel Attendance ERP
+            SMS — Student Management System
           </h1>
           <p style={{ fontSize: '12px', color: 'var(--gold-light)', marginTop: '4px' }}>
             Administrative Console &bull; Supabase Authentication
@@ -271,7 +271,7 @@ export default function LoginPage({ onLoginSuccess }) {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="admin@ruparel.edu"
+            placeholder="admin@sms.edu"
             required
             autoComplete="email"
           />

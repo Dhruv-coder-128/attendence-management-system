@@ -16,7 +16,7 @@ import { fetchUserProfile, hasPermission, getFallbackOwnerProfile, getFallbackSt
 import { RefreshCw, GraduationCap } from 'lucide-react';
 
 /**
- * Ruparel Attendance ERP Root Application Component
+ * SMS — Student Management System Root Application Component
  * 100% Real Database Connected — Zero Mock Data Dependencies
  * Integrates RBAC (Owner, Admin, Moderator) and Phase 5 Exams & Fees
  */

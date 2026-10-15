@@ -86,7 +86,7 @@ function convertToCSV(records) {
 /**
  * Exports students list to Excel (.xlsx) file
  */
-export async function exportStudentsToExcel(students, academyName = 'Ruparel Attendance ERP') {
+export async function exportStudentsToExcel(students, academyName = 'SMS — Student Management System') {
   if (!students || students.length === 0) {
     throw new Error('No student records available to export.');
   }
@@ -131,7 +131,7 @@ export async function exportStudentsToExcel(students, academyName = 'Ruparel Att
 /**
  * Exports students list to CSV (.csv) file
  */
-export async function exportStudentsToCSV(students, academyName = 'Ruparel Attendance ERP') {
+export async function exportStudentsToCSV(students, academyName = 'SMS — Student Management System') {
   if (!students || students.length === 0) {
     throw new Error('No student records available to export.');
   }

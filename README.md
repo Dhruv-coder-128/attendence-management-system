@@ -1,6 +1,6 @@
-# Ruparel Tuition & Academy Management ERP
+# SMS — Student Management System
 
-A premium enterprise Tuition Management ERP designed specifically for coaching academies and tuition centers with 400–500 students.
+A premium enterprise Student Management System (SMS) designed specifically for coaching academies, colleges, tuition centers, and educational institutions.
 
 ## 🛠 Technology Stack
 

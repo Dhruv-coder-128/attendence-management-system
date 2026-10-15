@@ -1,7 +1,7 @@
 import { ENTITY_SCHEMAS } from './entitySchemas';
 
 /**
- * Official Reference Courses in Ruparel Attendance ERP database (public.courses)
+ * Official Reference Courses in SMS — Student Management System database (public.courses)
  */
 export const OFFICIAL_COURSES_REFERENCE = [
   {
@@ -261,7 +261,7 @@ export async function downloadSampleTemplate(entityId, format = 'xlsx') {
     throw new Error(`Unknown entity template: ${entityId}`);
   }
 
-  const baseFilename = `ruparel_erp_${entityId}_sample_template`;
+  const baseFilename = `sms_${entityId}_sample_template`;
 
   if (format === 'csv') {
     const csvContent = convertToCSV(records);

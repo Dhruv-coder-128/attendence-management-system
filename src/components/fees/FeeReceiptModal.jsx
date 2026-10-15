@@ -385,7 +385,7 @@ export default function FeeReceiptModal({
             >
               <div>
                 <p style={{ margin: '0 0 4px 0' }}>
-                  &bull; This is an authentic computer-generated tuition fee receipt from Ruparel Attendance ERP.
+                  &bull; This is an authentic computer-generated tuition fee receipt from SMS — Student Management System.
                 </p>
                 <p style={{ margin: 0 }}>
                   &bull; Retain this receipt for academic verification and semester examination clearance.
@@ -402,7 +402,7 @@ export default function FeeReceiptModal({
                   }}
                 />
                 <strong style={{ color: '#0f172a', fontSize: '12px' }}>Authorized Signatory</strong>
-                <div style={{ fontSize: '10px' }}>Ruparel Accounts Department</div>
+                <div style={{ fontSize: '10px' }}>SMS Accounts Department</div>
               </div>
             </div>
           </div>

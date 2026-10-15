@@ -291,7 +291,7 @@ export default function SettingsPage({ currentUserProfile }) {
               label="Academy Name"
               value={instituteName}
               onChange={(e) => setInstituteName(e.target.value)}
-              placeholder="e.g. Ruparel Tuition Academy"
+              placeholder="e.g. SMS Academy"
             />
 
             <Input
@@ -319,7 +319,7 @@ export default function SettingsPage({ currentUserProfile }) {
                 label="Official Contact Email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="contact@ruparel.edu"
+                placeholder="contact@sms.edu"
               />
             </div>
 

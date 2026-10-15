@@ -26,7 +26,7 @@ function escapeHtml(str) {
 export default async function handler(req, res) {
   // Telegram sends POST requests with update object
   if (req.method !== 'POST') {
-    return res.status(200).send('Ruparel Attendance ERP Telegram Webhook Active (POST expected).');
+    return res.status(200).send('SMS — Student Management System Telegram Webhook Active (POST expected).');
   }
 
   const rawToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -377,9 +377,9 @@ No changes were made to your account. You can tap your personalized invitation l
       const linkResult = await executeParentLinking(tokenParam, chatId);
 
       if (!linkResult.success) {
-        let errorMsg = '❌ <b>Invalid Invitation Link</b>\n\nThis invitation link was not recognized. Please request a fresh link from Ruparel Academy.';
+        let errorMsg = '❌ <b>Invalid Invitation Link</b>\n\nThis invitation link was not recognized. Please request a fresh link from academy administration.';
         if (linkResult.errorCode === 'EXPIRED_TOKEN') {
-          errorMsg = '⚠️ <b>Invitation Link Expired</b>\n\nThis invitation link has expired (links are valid for 7 days). Please contact Ruparel Academy administration to receive a fresh invitation link.';
+          errorMsg = '⚠️ <b>Invitation Link Expired</b>\n\nThis invitation link has expired (links are valid for 7 days). Please contact academy administration to receive a fresh invitation link.';
         } else if (linkResult.errorCode === 'ALREADY_LINKED') {
           errorMsg = 'ℹ️ <b>Link Already Used</b>\n\nThis invitation link has already been used and cannot be reused. Your account may already be linked.\n\n<i>Type /status to verify your current connection.</i>';
         }
@@ -396,7 +396,7 @@ No changes were made to your account. You can tap your personalized invitation l
 🎉 <b>Account Successfully Connected!</b>
 
 Namaste <b>${escapeHtml(linkResult.parent.full_name)}</b>,
-Your Telegram account has been securely verified and linked to <b>Ruparel Attendance ERP</b>.
+Your Telegram account has been securely verified and linked to <b>SMS — Student Management System</b>.
 
 👥 <b>Connected Student Ward(s):</b>
 ${wardsList}
@@ -429,7 +429,7 @@ You will automatically receive official daily roll call notices directly in this
     const linkResult = await executeParentLinking(param, chatId);
     if (!linkResult.success) {
       if (linkResult.errorCode === 'EXPIRED_TOKEN') {
-        await sendTelegramMessage(chatId, '⚠️ <b>Invitation Link Expired</b>\n\nThis invitation link has expired. Please request a fresh invitation link from Ruparel Academy.');
+        await sendTelegramMessage(chatId, '⚠️ <b>Invitation Link Expired</b>\n\nThis invitation link has expired. Please request a fresh invitation link from academy administration.');
       } else if (linkResult.errorCode === 'ALREADY_LINKED') {
         await sendTelegramMessage(chatId, 'ℹ️ <b>Link Already Used</b>\n\nThis invitation token has already been used.');
       } else {
@@ -445,7 +445,7 @@ You will automatically receive official daily roll call notices directly in this
 🎉 <b>Account Successfully Connected!</b>
 
 Namaste <b>${escapeHtml(linkResult.parent.full_name)}</b>,
-Your Telegram account has been securely verified and linked to <b>Ruparel Attendance ERP</b>.
+Your Telegram account has been securely verified and linked to <b>SMS — Student Management System</b>.
 
 👥 <b>Connected Student Ward(s):</b>
 ${wardsList}
@@ -494,7 +494,7 @@ You will automatically receive official daily attendance notices in this chat.
 ✅ <b>Account Already Connected!</b>
 
 Namaste <b>${escapeHtml(alreadyLinked.parent_name)}</b>,
-Your Telegram account is already verified and connected to Ruparel Attendance ERP.${wardsList}
+Your Telegram account is already verified and connected to SMS — Student Management System.${wardsList}
 
 You will receive real-time roll call notifications whenever attendance is marked.
 
@@ -584,14 +584,14 @@ You will receive real-time roll call notifications whenever attendance is marked
       // Handle invalid / expired / already used invitations
       if (!invDetails || !invDetails.valid) {
         if (invDetails?.status === 'expired') {
-          await sendTelegramMessage(chatId, '⚠️ <b>Invitation Link Expired</b>\n\nThis linking link has expired (links are valid for 7 days). Please contact Ruparel Academy administration to receive a fresh invitation link.');
+          await sendTelegramMessage(chatId, '⚠️ <b>Invitation Link Expired</b>\n\nThis linking link has expired (links are valid for 7 days). Please contact academy administration to receive a fresh invitation link.');
           return res.status(200).json({ ok: true, linked: false, reason: 'expired' });
         }
         if (invDetails?.status === 'already_linked') {
           await sendTelegramMessage(chatId, 'ℹ️ <b>Link Already Used</b>\n\nThis invitation token has already been used and cannot be reused. Your account may already be linked.\n\n<i>Type /status to verify your current connection.</i>');
           return res.status(200).json({ ok: true, linked: false, reason: 'already_used' });
         }
-        await sendTelegramMessage(chatId, '❌ <b>Invalid Invitation Link</b>\n\nThis invitation link was not recognized. Please make sure you clicked the full link provided by Ruparel Academy.');
+        await sendTelegramMessage(chatId, '❌ <b>Invalid Invitation Link</b>\n\nThis invitation link was not recognized. Please make sure you clicked the full link provided by academy administration.');
         return res.status(200).json({ ok: true, linked: false, reason: 'invalid_token' });
       }
 
@@ -602,7 +602,7 @@ You will receive real-time roll call notifications whenever attendance is marked
       const confirmPromptMessage = `
 👋 <b>Namaste ${escapeHtml(invDetails.parent_name)}!</b>
 
-Welcome to <b>Ruparel Attendance ERP</b>.
+Welcome to <b>SMS — Student Management System</b>.
 
 You are connecting your Telegram account to receive official daily roll call attendance alerts for your student ward(s):
 
@@ -676,9 +676,9 @@ ${wardItems.length > 0 ? `Connected Wards:\n${wardItems.join('\n')}\n\n` : ''}Yo
         await sendTelegramMessage(chatId, `
 ℹ️ <b>Account Status: Unlinked</b>
 
-This Telegram chat is not currently connected to any student ward in Ruparel Attendance ERP.
+This Telegram chat is not currently connected to any student ward in SMS — Student Management System.
 
-Please click the personalized invitation link sent to you by Ruparel Academy to connect.
+Please click the personalized invitation link sent to you by academy administration to connect.
 `.trim());
       }
       return res.status(200).json({ ok: true });
@@ -692,12 +692,12 @@ Please click the personalized invitation link sent to you by Ruparel Academy to 
   await sendTelegramMessage(chatId, `
 👋 Namaste <b>${escapeHtml(senderName)}</b>,
 
-Welcome to <b>Ruparel Attendance ERP Academy Bot</b>.
+Welcome to <b>SMS — Student Management System Bot</b>.
 
 This bot sends official daily attendance alerts to verified parents.
 
 👉 <b>How to connect your account:</b>
-1. Open the personal invitation link provided by Ruparel Academy (via WhatsApp or SMS).
+1. Open the personal invitation link provided by academy administration (via WhatsApp or SMS).
 2. Tap the link and press <b>START</b>.
 3. Review your child's details and tap <b>Confirm & Connect</b>.
 

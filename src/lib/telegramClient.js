@@ -2,7 +2,7 @@ import { supabase } from './supabase.js';
 
 /**
  * Client-Side Telegram & Parent Communications Service
- * Ruparel Attendance ERP
+ * SMS — Student Management System
  * 
  * Strict Security Principles:
  * - Never fabricates delivery success.
@@ -381,7 +381,7 @@ export function getWhatsAppShareUrl(parent, studentNames = '', deepLinkUrl = '')
   const messageText = `
 Namaste *${parent.full_name || 'Guardian'}*,
 
-This is an official invitation from *Ruparel Attendance ERP Academy*${wardText}.
+This is an official invitation from *SMS — Student Management System*${wardText}.
 
 To receive instant daily roll call attendance notifications directly on your phone:
 👉 *Click here to connect:* ${deepLinkUrl}
@@ -391,7 +391,7 @@ To receive instant daily roll call attendance notifications directly on your pho
 2. Press *START* in the Telegram bot.
 3. Your account will be linked instantly to receive real-time roll call alerts.
 
-_Ruparel Attendance Management System_
+_SMS — Student Management System_
 `.trim();
 
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messageText)}`;

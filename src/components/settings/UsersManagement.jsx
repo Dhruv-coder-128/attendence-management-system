@@ -540,7 +540,7 @@ export default function UsersManagement({ currentUserProfile }) {
           <Input
             label="Email Address"
             type="email"
-            placeholder="e.g. rahul@ruparel.edu"
+            placeholder="e.g. rahul@sms.edu"
             value={newUserData.email}
             onChange={(e) => setNewUserData({ ...newUserData, email: e.target.value })}
             required
