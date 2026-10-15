@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
 
 /**
@@ -90,8 +91,30 @@ export default async function handler(req, res) {
   }
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  let serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const anonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+  // Dynamically resolve serviceRoleKey from .env.local in local dev if not yet in process.env
+  if (!serviceRoleKey) {
+    try {
+      for (const envFile of ['.env.local', '.env']) {
+        if (fs.existsSync(envFile)) {
+          const content = fs.readFileSync(envFile, 'utf8');
+          for (const line of content.split('\n')) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('SUPABASE_SERVICE_ROLE_KEY=')) {
+              serviceRoleKey = trimmed.replace('SUPABASE_SERVICE_ROLE_KEY=', '').trim().replace(/^["']|["']$/g, '');
+              process.env.SUPABASE_SERVICE_ROLE_KEY = serviceRoleKey;
+              break;
+            }
+          }
+          if (serviceRoleKey) break;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
 
   if (!supabaseUrl) {
     return res.status(500).json({ ok: false, error: 'VITE_SUPABASE_URL is not configured.' });
@@ -116,22 +139,31 @@ export default async function handler(req, res) {
     });
   }
 
-  // Verify caller identity via JWT
+  // Verify caller identity via JWT (attempt with verify client and fallback client)
   let callerUser = null;
   try {
     const { data: { user }, error: userErr } = await authVerifyClient.auth.getUser(token);
-    if (userErr || !user) {
-      return res.status(401).json({
-        ok: false,
-        error: 'Invalid or expired session. Please sign in again.',
-      });
+    if (!userErr && user) {
+      callerUser = user;
+    } else {
+      // Fallback verification with anon key client
+      const anonClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } });
+      const { data: { user: fallbackUser }, error: fallbackErr } = await anonClient.auth.getUser(token);
+      if (!fallbackErr && fallbackUser) {
+        callerUser = fallbackUser;
+      } else {
+        console.warn('Caller authentication token verification issue:', userErr || fallbackErr);
+        return res.status(401).json({
+          ok: false,
+          error: 'Your session has expired. Please sign out (bottom-left) and sign back in to refresh your admin token.',
+        });
+      }
     }
-    callerUser = user;
   } catch (authErr) {
     console.error('Caller authentication token verification issue:', authErr);
     return res.status(401).json({
       ok: false,
-      error: 'Failed to authenticate user session.',
+      error: 'Failed to authenticate user session. Please sign out and sign in again.',
     });
   }
 

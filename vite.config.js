@@ -38,6 +38,25 @@ function apiDevPlugin() {
           const endpoint = urlPath.replace('/api/', '')
           const handlerPath = path.resolve(process.cwd(), `api/${endpoint}.js`)
 
+          // Dynamically sync process.env with .env.local on each local API call
+          for (const envFile of ['.env.local', '.env']) {
+            const envFilePath = path.resolve(process.cwd(), envFile)
+            if (fs.existsSync(envFilePath)) {
+              const lines = fs.readFileSync(envFilePath, 'utf-8').split('\n')
+              for (const line of lines) {
+                const trimmed = line.trim()
+                if (trimmed && !trimmed.startsWith('#')) {
+                  const eqIdx = trimmed.indexOf('=')
+                  if (eqIdx !== -1) {
+                    const key = trimmed.slice(0, eqIdx).trim()
+                    const val = trimmed.slice(eqIdx + 1).trim().replace(/^["']|["']$/g, '')
+                    process.env[key] = val
+                  }
+                }
+              }
+            }
+          }
+
           if (fs.existsSync(handlerPath)) {
             try {
               const handlerModule = await server.ssrLoadModule(`./api/${endpoint}.js`)

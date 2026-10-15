@@ -57,13 +57,20 @@ export default function UsersManagement({ currentUserProfile }) {
 
   const isCallerOwner = currentUserProfile?.role === 'owner';
 
-  // Get current session token
+  // Get current session token (proactively refresh if expired or near expiry)
   const getAuthToken = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token) return session.access_token;
-      const { data: refreshData } = await supabase.auth.refreshSession();
-      return refreshData?.session?.access_token || '';
+      const now = Math.floor(Date.now() / 1000);
+
+      // If token is missing, expired, or expiring within 60 seconds, refresh it
+      if (!session || !session.access_token || (session.expires_at && session.expires_at <= now + 60)) {
+        const { data: refreshData, error: refErr } = await supabase.auth.refreshSession();
+        if (!refErr && refreshData?.session?.access_token) {
+          return refreshData.session.access_token;
+        }
+      }
+      return session?.access_token || '';
     } catch {
       return '';
     }
