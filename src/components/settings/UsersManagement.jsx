@@ -221,8 +221,9 @@ export default function UsersManagement({ currentUserProfile }) {
 
   // Handle Delete User
   const handleDeleteUser = async (user) => {
-    if (user.role === 'owner') {
-      alert('The Owner account is protected and cannot be deleted.');
+    const isPrimary = (user.email || '').trim().toLowerCase() === 'dushah2007@gmail.com';
+    if (isPrimary) {
+      alert('The Primary Owner account is protected and cannot be deleted.');
       return;
     }
     if (!window.confirm(`Are you sure you want to remove user ${user.email}? This action cannot be undone.`)) {
@@ -363,7 +364,8 @@ export default function UsersManagement({ currentUserProfile }) {
               </tr>
             ) : (
               users.map((u) => {
-                const isOwnerAccount = u.role === 'owner';
+                // ONLY Dhruv Shah (primary system owner) is permanently protected
+                const isPrimaryOwner = (u.email || '').trim().toLowerCase() === 'dushah2007@gmail.com';
                 const grantedPermsCount = Object.values(u.permissions || {}).filter(Boolean).length;
 
                 return (
@@ -380,7 +382,7 @@ export default function UsersManagement({ currentUserProfile }) {
                     </td>
 
                     <td>
-                      {isOwnerAccount ? (
+                      {isPrimaryOwner ? (
                         <span
                           style={{
                             display: 'inline-flex',
@@ -395,7 +397,7 @@ export default function UsersManagement({ currentUserProfile }) {
                             letterSpacing: '0.02em',
                           }}
                         >
-                          <ShieldCheck size={12} /> Owner (Full Access)
+                          <ShieldCheck size={12} /> Primary Owner (Full Access)
                         </span>
                       ) : (
                         <select
@@ -405,16 +407,16 @@ export default function UsersManagement({ currentUserProfile }) {
                             padding: '4px 8px',
                             fontSize: '12px',
                             borderRadius: '4px',
-                            border: '1px solid var(--border-subtle)',
-                            backgroundColor: '#ffffff',
-                            color: 'var(--navy-950)',
-                            fontWeight: 500,
+                            border: u.role === 'owner' ? '1px solid var(--gold-border)' : '1px solid var(--border-subtle)',
+                            backgroundColor: u.role === 'owner' ? 'var(--navy-900)' : '#ffffff',
+                            color: u.role === 'owner' ? 'var(--gold-primary)' : 'var(--navy-950)',
+                            fontWeight: 600,
                             cursor: 'pointer',
                           }}
                         >
-                          <option value="moderator">Moderator</option>
-                          <option value="admin">Admin</option>
-                          {isCallerOwner && <option value="owner">Owner</option>}
+                          <option value="moderator" style={{ background: '#fff', color: '#000' }}>Moderator</option>
+                          <option value="admin" style={{ background: '#fff', color: '#000' }}>Admin</option>
+                          {isCallerOwner && <option value="owner" style={{ background: '#fff', color: '#000' }}>Owner</option>}
                         </select>
                       )}
                     </td>
@@ -437,7 +439,7 @@ export default function UsersManagement({ currentUserProfile }) {
                     </td>
 
                     <td>
-                      {isOwnerAccount ? (
+                      {isPrimaryOwner ? (
                         <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                           All 13 Modules Granted
                         </span>
@@ -464,7 +466,7 @@ export default function UsersManagement({ currentUserProfile }) {
                     </td>
 
                     <td style={{ textAlign: 'right' }}>
-                      {isOwnerAccount ? (
+                      {isPrimaryOwner ? (
                         <span
                           style={{
                             fontSize: '11px',

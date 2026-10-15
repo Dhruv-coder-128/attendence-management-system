@@ -477,9 +477,9 @@ export async function sendVerifiedFeeReminder({
  * Dispatches verified examination results to linked guardians via the serverless Telegram Bot API,
  * strictly respecting each guardian's notification preference (all vs emergency_only).
  */
-export async function sendExamResultsTelegram({ examId, studentId = null }) {
-  if (!examId) {
-    return { success: false, error: 'Valid examId is required.' };
+export async function sendExamResultsTelegram({ examId, studentId = null, examData = null, marksData = null }) {
+  if (!examId && !examData) {
+    return { success: false, error: 'Valid examId or examData is required.' };
   }
 
   try {
@@ -489,8 +489,10 @@ export async function sendExamResultsTelegram({ examId, studentId = null }) {
       headers,
       body: JSON.stringify({
         action: 'exam_results',
-        examId,
+        examId: examId || examData?.id,
         studentId,
+        examData,
+        marksData,
       }),
     });
 

@@ -271,14 +271,24 @@ export default function ExamsPage() {
     }
     setIsDispatchingTelegram(true);
     try {
-      const res = await sendExamResultsTelegram({ examId: exam.id });
+      let currentMarks = marksRows;
+      if (!activeMarksExam || activeMarksExam.id !== exam.id || currentMarks.length === 0) {
+        currentMarks = await fetchExamBatchMarks(exam.id, exam.batch_id, exam.course_id);
+      }
+
+      const res = await sendExamResultsTelegram({
+        examId: exam.id,
+        examData: exam,
+        marksData: currentMarks,
+      });
+
       if (res.success) {
         showToast(res.message);
       } else {
-        alert('Telegram dispatch notice: ' + res.error);
+        showToast(res.error || 'Failed to dispatch exam notifications.');
       }
     } catch (err) {
-      alert('Error dispatching notifications: ' + err.message);
+      showToast('Error dispatching notifications: ' + err.message);
     } finally {
       setIsDispatchingTelegram(false);
     }
