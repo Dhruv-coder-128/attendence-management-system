@@ -23,12 +23,16 @@ import {
   Sparkles,
   ChevronRight,
   Share2,
+  Award,
+  Printer,
+  ChevronDown,
 } from 'lucide-react';
 import Button from '../common/Button';
 import Badge from '../common/Badge';
 import Modal from '../common/Modal';
 import Input from '../common/Input';
 import Select from '../common/Select';
+import ReportCardModal from '../exams/ReportCardModal';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import {
   getStudentFeeRecord,
@@ -37,14 +41,20 @@ import {
   getStandardCoursePolicy,
 } from '../../lib/feeService';
 import { sendVerifiedFeeReminder } from '../../lib/telegramClient';
+import { fetchStudentExamResults } from '../../lib/examService';
 
+/**
+ * Simplified, Clean Student Academic Dossier (Phase 4 + Phase 5 + UI Simplification)
+ * Features a compact vertical section navigation on desktop and clean segmented control on mobile.
+ */
 export default function StudentAcademicDossier({
   student,
   isOpen,
   onClose,
   onUpdateStudent,
 }) {
-  const [activeTab, setActiveTab] = useState('profile'); // 'profile' | 'attendance' | 'fees' | 'guardians'
+  // Navigation sections: 'overview' | 'attendance' | 'fees' | 'guardians' | 'results'
+  const [activeSection, setActiveSection] = useState('overview');
 
   // Fee state
   const [feeRecord, setFeeRecord] = useState(null);
@@ -61,7 +71,6 @@ export default function StudentAcademicDossier({
 
   // Telegram Fee Reminder State
   const [isSendingReminder, setIsSendingReminder] = useState(false);
-  const [reminderNotice, setReminderNotice] = useState(null);
 
   // Attendance state
   const [attendanceRecords, setAttendanceRecords] = useState([]);
@@ -80,6 +89,11 @@ export default function StudentAcademicDossier({
   });
   const [isSavingGuardian, setIsSavingGuardian] = useState(false);
 
+  // Exam Results state (Phase 5)
+  const [examResults, setExamResults] = useState([]);
+  const [examsLoading, setExamsLoading] = useState(true);
+  const [selectedReportExam, setSelectedReportExam] = useState(null);
+
   const [toastMessage, setToastMessage] = useState('');
 
   const showToast = (msg) => {
@@ -87,7 +101,7 @@ export default function StudentAcademicDossier({
     setTimeout(() => setToastMessage(''), 4000);
   };
 
-  // 1. Fetch Tuition Fee Details
+  // 1. Fetch Fee Record
   const fetchFeeData = useCallback(async () => {
     if (!student) return;
     setFeeLoading(true);
@@ -101,7 +115,7 @@ export default function StudentAcademicDossier({
     }
   }, [student]);
 
-  // 2. Fetch Cumulative & Monthly Attendance Records
+  // 2. Fetch Attendance Records
   const fetchAttendanceData = useCallback(async () => {
     if (!student || !supabase || !isSupabaseConfigured) {
       setAttendanceLoading(false);
@@ -124,7 +138,7 @@ export default function StudentAcademicDossier({
     }
   }, [student]);
 
-  // 3. Fetch Linked Guardians with Multi-Guardian Preferences
+  // 3. Fetch Guardians Data
   const fetchGuardiansData = useCallback(async () => {
     if (!student || !supabase || !isSupabaseConfigured) {
       setGuardiansLoading(false);
@@ -156,7 +170,6 @@ export default function StudentAcademicDossier({
       if (!error && data) {
         setGuardians(data);
       } else {
-        // Fallback to student's embedded parent_students if available
         setGuardians(student.parent_students || []);
       }
     } catch (err) {
@@ -167,13 +180,28 @@ export default function StudentAcademicDossier({
     }
   }, [student]);
 
+  // 4. Fetch Exam Results (Phase 5)
+  const fetchExamsData = useCallback(async () => {
+    if (!student) return;
+    setExamsLoading(true);
+    try {
+      const results = await fetchStudentExamResults(student.id);
+      setExamResults(results);
+    } catch (err) {
+      console.warn('Error fetching exam results:', err);
+    } finally {
+      setExamsLoading(false);
+    }
+  }, [student]);
+
   useEffect(() => {
     if (student && isOpen) {
       fetchFeeData();
       fetchAttendanceData();
       fetchGuardiansData();
+      fetchExamsData();
     }
-  }, [student, isOpen, fetchFeeData, fetchAttendanceData, fetchGuardiansData]);
+  }, [student, isOpen, fetchFeeData, fetchAttendanceData, fetchGuardiansData, fetchExamsData]);
 
   // Attendance Metrics Computation
   const attendanceMetrics = useMemo(() => {
@@ -181,14 +209,13 @@ export default function StudentAcademicDossier({
     const present = attendanceRecords.filter((r) => r.status === 'Present').length;
     const late = attendanceRecords.filter((r) => r.status === 'Late').length;
     const absent = attendanceRecords.filter((r) => r.status === 'Absent').length;
-    const excused = attendanceRecords.filter((r) => r.status === 'Excused').length;
     const attended = present + late;
     const rate = total > 0 ? Math.round((attended / total) * 100) : 100;
 
     // Monthly breakdown
     const monthlyMap = {};
     attendanceRecords.forEach((r) => {
-      const monthKey = r.date.substring(0, 7); // YYYY-MM
+      const monthKey = r.date.substring(0, 7);
       if (!monthlyMap[monthKey]) {
         monthlyMap[monthKey] = { total: 0, present: 0, absent: 0, late: 0 };
       }
@@ -202,20 +229,16 @@ export default function StudentAcademicDossier({
       .sort()
       .reverse()
       .slice(0, 6)
-      .map((mKey) => {
-        const item = monthlyMap[mKey];
-        const [year, month] = mKey.split('-');
-        const monthName = new Date(parseInt(year, 10), parseInt(month, 10) - 1, 1).toLocaleString('en-IN', {
-          month: 'short',
-          year: 'numeric',
-        });
-        const mAttended = item.present + item.late;
-        const mRate = item.total > 0 ? Math.round((mAttended / item.total) * 100) : 100;
+      .map((key) => {
+        const item = monthlyMap[key];
+        const monthRate = item.total > 0 ? Math.round(((item.present + item.late) / item.total) * 100) : 100;
         return {
-          monthKey: mKey,
-          label: monthName,
-          ...item,
-          rate: mRate,
+          month: key,
+          rate: monthRate,
+          total: item.total,
+          present: item.present,
+          absent: item.absent,
+          late: item.late,
         };
       });
 
@@ -224,129 +247,113 @@ export default function StudentAcademicDossier({
       present,
       late,
       absent,
-      excused,
       rate,
-      isDefaulter: total > 0 && rate < 75,
+      isDefaulter: total >= 5 && rate < 75,
       monthlyTrends,
     };
   }, [attendanceRecords]);
 
-  // Fee Status Computation
+  // Fee computation
   const computedFee = useMemo(() => {
-    if (!feeRecord) {
-      return {
-        total: 45000,
-        paid: 0,
-        pending: 45000,
-        status: 'pending',
-        isOverdue: false,
-        daysOverdue: 0,
-        badgeStatus: 'Pending',
-        label: 'Pending',
-      };
-    }
-
-    const total = Number(feeRecord.total_amount || 0);
-    const paid = Number(feeRecord.paid_amount || 0);
-    const schedule = feeRecord.installment_schedule || [];
-    const info = computeFeeStatus(total, paid, schedule, feeRecord.next_due_date);
-
+    const policy = getStandardCoursePolicy(student?.courses);
+    const total = Number(feeRecord?.total_amount) || Number(student?.tuition_fee) || policy.total;
+    const paid = Number(feeRecord?.paid_amount) || Number(student?.fee_paid) || 0;
+    const schedule = feeRecord?.installment_schedule || [];
+    const dueDate = feeRecord?.next_due_date || student?.fee_due_date || null;
     return {
       total,
       paid,
       pending: Math.max(0, total - paid),
-      ...info,
+      dueDate,
+      ...computeFeeStatus(total, paid, schedule, dueDate),
     };
-  }, [feeRecord]);
+  }, [feeRecord, student]);
 
-  // Record Payment Handler
-  const handleOpenPayment = (installment = null) => {
-    setPaymentForm({
-      amount: installment ? String(installment.amount) : String(computedFee.pending),
-      paymentMethod: 'UPI',
-      referenceNo: '',
-      notes: '',
-      installmentNo: installment ? installment.installment_no : null,
+  // Exam Statistics
+  const examStats = useMemo(() => {
+    const total = examResults.length;
+    if (total === 0) return { total: 0, passed: 0, failed: 0, absent: 0, avgPct: 0 };
+    let passed = 0;
+    let failed = 0;
+    let absent = 0;
+    let totalScore = 0;
+    let totalMax = 0;
+
+    examResults.forEach((r) => {
+      if (r.is_absent) absent++;
+      else if (r.isPass) passed++;
+      else failed++;
+
+      if (!r.is_absent && r.marks_obtained !== null) {
+        totalScore += Number(r.marks_obtained);
+        totalMax += Number(r.total_marks || 100);
+      }
     });
-    setIsPaymentModalOpen(true);
-  };
 
-  const handleSavePayment = async (e) => {
+    const avgPct = totalMax > 0 ? Math.round((totalScore / totalMax) * 100) : 0;
+    return { total, passed, failed, absent, avgPct };
+  }, [examResults]);
+
+  // Handle Record Payment
+  const handleRecordPaymentSubmit = async (e) => {
     e.preventDefault();
+    const amount = Number(paymentForm.amount);
+    if (!amount || amount <= 0) {
+      alert('Please enter a valid payment amount.');
+      return;
+    }
+
     setIsRecordingPayment(true);
     try {
-      const res = await recordFeePayment({
-        studentId: student.id,
-        amount: paymentForm.amount,
-        paymentMethod: paymentForm.paymentMethod,
-        referenceNo: paymentForm.referenceNo,
-        notes: paymentForm.notes,
-        existingFeeRecord: feeRecord,
-        installmentNumber: paymentForm.installmentNo,
-      });
-
-      if (res.success) {
-        showToast(res.message);
-        setFeeRecord(res.feeRecord);
-        setIsPaymentModalOpen(false);
-        if (onUpdateStudent) onUpdateStudent();
-      }
+      const updated = await recordFeePayment(
+        student.id,
+        amount,
+        paymentForm.paymentMethod,
+        paymentForm.referenceNo,
+        paymentForm.notes,
+        paymentForm.installmentNo
+      );
+      setFeeRecord(updated);
+      showToast(`Recorded payment of ₹${amount.toLocaleString('en-IN')} successfully!`);
+      setIsPaymentModalOpen(false);
+      setPaymentForm({ amount: '', paymentMethod: 'UPI', referenceNo: '', notes: '', installmentNo: null });
+      if (onUpdateStudent) onUpdateStudent();
     } catch (err) {
-      alert('Error recording payment: ' + err.message);
+      alert('Payment processing failed: ' + err.message);
     } finally {
       setIsRecordingPayment(false);
     }
   };
 
-  // Send Telegram Fee Reminder
-  const handleSendFeeReminder = async () => {
+  // Dispatch Fee Reminder via Telegram
+  const handleSendFeeReminder = async (targetParentId = null) => {
     setIsSendingReminder(true);
-    setReminderNotice(null);
     try {
-      const result = await sendVerifiedFeeReminder({
+      const res = await sendVerifiedFeeReminder({
         student,
-        feeRecord: {
-          ...feeRecord,
-          ...computedFee,
-        },
+        feeRecord: computedFee,
+        targetParentId,
       });
 
-      if (result.success) {
-        setReminderNotice({
-          ok: true,
-          message: `Official Telegram tuition fee schedule reminder dispatched to linked guardian(s)!`,
-        });
-        showToast('Fee reminder dispatched via Telegram!');
-        // Update last reminder timestamp
-        setFeeRecord((prev) => ({
-          ...prev,
-          last_reminder_sent_at: new Date().toISOString(),
-        }));
+      if (res.success) {
+        showToast(res.message);
       } else {
-        setReminderNotice({
-          ok: false,
-          error: result.error || 'Failed to dispatch Telegram reminder.',
-        });
+        alert('Notice: ' + res.error);
       }
     } catch (err) {
-      setReminderNotice({
-        ok: false,
-        error: err.message || 'Network error communicating with Telegram dispatcher.',
-      });
+      alert('Failed to dispatch reminder: ' + err.message);
     } finally {
       setIsSendingReminder(false);
     }
   };
 
-  // Update Guardian Alert Preferences
-  const handleUpdateGuardianPreference = async (parentStudentId, newPref) => {
+  // Update Guardian Alert Preference
+  const handleUpdateGuardianPref = async (parentStudentId, newPref) => {
     try {
-      const { error } = await supabase
+      await supabase
         .from('parent_students')
         .update({ alert_preference: newPref })
         .eq('id', parentStudentId);
-
-      if (error) throw error;
 
       showToast(`Guardian alert preference updated to: ${newPref === 'all' ? 'All Alerts' : 'Emergency Only'}`);
       setGuardians((prev) =>
@@ -360,20 +367,17 @@ export default function StudentAcademicDossier({
   // Set Guardian as Primary Contact
   const handleSetPrimaryGuardian = async (parentStudentId) => {
     try {
-      // 1. Unset current primary
       await supabase
         .from('parent_students')
         .update({ is_primary_contact: false, contact_priority: 'secondary' })
         .eq('student_id', student.id);
 
-      // 2. Set new primary
       const { error } = await supabase
         .from('parent_students')
         .update({ is_primary_contact: true, contact_priority: 'primary' })
         .eq('id', parentStudentId);
 
       if (error) throw error;
-
       showToast('Primary guardian updated successfully!');
       fetchGuardiansData();
     } catch (err) {
@@ -381,12 +385,11 @@ export default function StudentAcademicDossier({
     }
   };
 
-  // Link New Guardian Handler
+  // Add New Guardian Handler
   const handleSaveNewGuardian = async (e) => {
     e.preventDefault();
     setIsSavingGuardian(true);
     try {
-      // 1. Insert or find parent in public.parents
       const { data: parentData, error: pErr } = await supabase
         .from('parents')
         .insert([
@@ -402,8 +405,7 @@ export default function StudentAcademicDossier({
 
       if (pErr) throw pErr;
 
-      // 2. Link in public.parent_students
-      const { error: plErr } = await supabase.from('parent_students').insert([
+      await supabase.from('parent_students').insert([
         {
           parent_id: parentData.id,
           student_id: student.id,
@@ -415,9 +417,7 @@ export default function StudentAcademicDossier({
         },
       ]);
 
-      if (plErr) throw plErr;
-
-      showToast(`Added ${newGuardianForm.relationship} (${newGuardianForm.fullName}) to student record!`);
+      showToast(`Added ${newGuardianForm.relationship} (${newGuardianForm.fullName})!`);
       setIsLinkGuardianModalOpen(false);
       fetchGuardiansData();
       if (onUpdateStudent) onUpdateStudent();
@@ -430,13 +430,21 @@ export default function StudentAcademicDossier({
 
   if (!isOpen || !student) return null;
 
+  const sections = [
+    { id: 'overview', label: 'Overview', icon: User },
+    { id: 'attendance', label: `Attendance (${attendanceMetrics.rate}%)`, icon: TrendingUp },
+    { id: 'fees', label: 'Fees & Dues', icon: CreditCard },
+    { id: 'guardians', label: `Guardians (${guardians.length})`, icon: ShieldCheck },
+    { id: 'results', label: `Results (${examResults.length})`, icon: Award },
+  ];
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       title="Student Academic Dossier"
       subtitle={`${student.full_name} • Adm No: ${student.admission_no} • Ruparel Tuition Management`}
-      size="lg"
+      maxWidth="920px"
       footer={
         <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
           <Button variant="outline" size="sm" onClick={onClose}>
@@ -467,25 +475,25 @@ export default function StudentAcademicDossier({
           </div>
         )}
 
-        {/* 1. Master Header Card */}
+        {/* 1. Clean, Uncluttered Student Header */}
         <div
           style={{
-            padding: '16px 20px',
+            padding: '14px 18px',
             backgroundColor: 'var(--navy-900)',
             borderRadius: '8px',
             color: '#ffffff',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: '16px',
+            gap: '14px',
             flexWrap: 'wrap',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <div
               style={{
-                width: '56px',
-                height: '56px',
+                width: '48px',
+                height: '48px',
                 borderRadius: '50%',
                 backgroundColor: 'var(--navy-800)',
                 color: 'var(--gold-light)',
@@ -493,7 +501,7 @@ export default function StudentAcademicDossier({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '20px',
+                fontSize: '18px',
                 fontWeight: 700,
                 flexShrink: 0,
               }}
@@ -507,19 +515,19 @@ export default function StudentAcademicDossier({
             </div>
 
             <div>
-              <div style={{ fontSize: '18px', fontWeight: 700, color: '#ffffff' }}>
+              <div style={{ fontSize: '17px', fontWeight: 700, color: '#ffffff' }}>
                 {student.full_name}
               </div>
-              <div style={{ fontSize: '12px', color: 'var(--gold-light)', marginTop: '2px' }}>
-                {student.courses?.name || 'Academic Stream'} &bull; {student.batches?.name || 'Cohort Batch'}
+              <div style={{ fontSize: '12px', color: 'var(--gold-light)' }}>
+                {student.courses?.name || 'Academic Stream'} &bull; {student.batches?.name || 'Cohort'}
               </div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
-                Adm No: {student.admission_no} &bull; Roll: {student.roll_no || '—'}
+              <div style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'var(--font-mono)' }}>
+                Adm No: {student.admission_no} {student.roll_no ? `• Roll: ${student.roll_no}` : ''}
               </div>
             </div>
           </div>
 
-          {/* Badges strip */}
+          {/* Key Indicators */}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             <Badge status={student.status === 'active' ? 'Present' : 'Pending'}>
               {student.status.toUpperCase()}
@@ -531,22 +539,11 @@ export default function StudentAcademicDossier({
                 fontWeight: 700,
                 padding: '3px 8px',
                 borderRadius: '4px',
-                backgroundColor:
-                  computedFee.status === 'paid'
-                    ? 'var(--status-present-bg)'
-                    : computedFee.status === 'overdue'
-                    ? 'var(--status-absent-bg)'
-                    : 'var(--status-late-bg)',
-                color:
-                  computedFee.status === 'paid'
-                    ? 'var(--status-present)'
-                    : computedFee.status === 'overdue'
-                    ? 'var(--status-absent)'
-                    : 'var(--status-late)',
-                border: '1px solid currentColor',
+                backgroundColor: attendanceMetrics.isDefaulter ? '#fee2e2' : '#dcfce7',
+                color: attendanceMetrics.isDefaulter ? '#991b1b' : '#166534',
               }}
             >
-              FEE: {computedFee.label.toUpperCase()}
+              ATTENDANCE: {attendanceMetrics.rate}%
             </span>
 
             <span
@@ -555,819 +552,700 @@ export default function StudentAcademicDossier({
                 fontWeight: 700,
                 padding: '3px 8px',
                 borderRadius: '4px',
-                backgroundColor: attendanceMetrics.isDefaulter ? 'var(--status-absent-bg)' : 'var(--status-present-bg)',
-                color: attendanceMetrics.isDefaulter ? 'var(--status-absent)' : 'var(--status-present)',
-                border: '1px solid currentColor',
+                backgroundColor:
+                  computedFee.status === 'paid'
+                    ? '#dcfce7'
+                    : computedFee.status === 'overdue'
+                    ? '#fee2e2'
+                    : '#fef3c7',
+                color:
+                  computedFee.status === 'paid'
+                    ? '#166534'
+                    : computedFee.status === 'overdue'
+                    ? '#991b1b'
+                    : '#92400e',
               }}
             >
-              ATTENDANCE: {attendanceMetrics.rate}%
+              FEE: {computedFee.label.toUpperCase()}
             </span>
           </div>
         </div>
 
-        {/* 2. Navigation Tabs */}
+        {/* 2. Responsive Layout: Section Menu + Section Content */}
         <div
           style={{
             display: 'flex',
-            gap: '8px',
-            borderBottom: '1px solid var(--border-subtle)',
-            overflowX: 'auto',
+            flexDirection: 'row',
+            gap: '16px',
+            minHeight: '420px',
+            alignItems: 'stretch',
           }}
+          className="dossier-container"
         >
-          <button
-            type="button"
-            onClick={() => setActiveTab('profile')}
+          {/* Left Vertical Section Menu (Clean, no clipped labels) */}
+          <div
             style={{
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontWeight: 600,
-              border: 'none',
-              background: 'none',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'profile' ? '2px solid var(--navy-900)' : '2px solid transparent',
-              color: activeTab === 'profile' ? 'var(--navy-950)' : 'var(--text-muted)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
+              width: '180px',
+              flexShrink: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+              borderRight: '1px solid var(--border-subtle)',
+              paddingRight: '12px',
             }}
+            className="dossier-menu"
           >
-            <User size={15} /> Academic Profile
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('attendance')}
-            style={{
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontWeight: 600,
-              border: 'none',
-              background: 'none',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'attendance' ? '2px solid var(--navy-900)' : '2px solid transparent',
-              color: activeTab === 'attendance' ? 'var(--navy-950)' : 'var(--text-muted)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <TrendingUp size={15} /> Attendance Trends ({attendanceMetrics.rate}%)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('fees')}
-            style={{
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontWeight: 600,
-              border: 'none',
-              background: 'none',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'fees' ? '2px solid var(--navy-900)' : '2px solid transparent',
-              color: activeTab === 'fees' ? 'var(--navy-950)' : 'var(--text-muted)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <CreditCard size={15} /> Tuition Fees &amp; Installments
-            {computedFee.isOverdue && (
-              <span
-                style={{
-                  fontSize: '9px',
-                  fontWeight: 800,
-                  backgroundColor: 'var(--status-absent)',
-                  color: '#ffffff',
-                  padding: '1px 5px',
-                  borderRadius: '10px',
-                }}
-              >
-                OVERDUE
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('guardians')}
-            style={{
-              padding: '10px 16px',
-              fontSize: '13px',
-              fontWeight: 600,
-              border: 'none',
-              background: 'none',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'guardians' ? '2px solid var(--navy-900)' : '2px solid transparent',
-              color: activeTab === 'guardians' ? 'var(--navy-950)' : 'var(--text-muted)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <ShieldCheck size={15} /> Multi-Guardian &amp; Telegram ({guardians.length})
-          </button>
-        </div>
-
-        {/* 3. TAB CONTENT */}
-
-        {/* TAB 1: ACADEMIC PROFILE */}
-        {activeTab === 'profile' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: '14px',
-                backgroundColor: 'var(--bg-subtle)',
-                padding: '16px',
-                borderRadius: '6px',
-                border: '1px solid var(--border-subtle)',
-                fontSize: '13px',
-              }}
-            >
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Course Stream</span>
-                <strong style={{ color: 'var(--navy-950)' }}>{student.courses?.name || 'Standard'}</strong>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Level: {student.courses?.level || '11th/12th'}</div>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Assigned Batch &amp; Timing</span>
-                <strong style={{ color: 'var(--navy-950)' }}>{student.batches?.name || 'Default Cohort'}</strong>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {student.batches?.timing || 'Standard Timings'} ({student.batches?.classroom || 'Main Wing'})
-                </div>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Primary Phone</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                  <Phone size={13} color="var(--navy-700)" />
-                  <span>{student.phone || 'No phone recorded'}</span>
-                </div>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Student Email</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                  <Mail size={13} color="var(--navy-700)" />
-                  <span>{student.email || 'No email recorded'}</span>
-                </div>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Gender &amp; Date of Birth</span>
-                <span>{student.gender || '—'} {student.dob ? `(${student.dob})` : ''}</span>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Admission Date &amp; Blood Group</span>
-                <span>{student.enrollment_date || '—'} &bull; {student.blood_group || 'O+'}</span>
-              </div>
-
-              <div style={{ gridColumn: 'span 2' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>Residential Address</span>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', marginTop: '2px' }}>
-                  <MapPin size={13} color="var(--navy-700)" style={{ marginTop: '3px', flexShrink: 0 }} />
-                  <span>{student.address || 'Not provided'}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 2: ATTENDANCE TRENDS & ANALYSIS */}
-        {activeTab === 'attendance' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {/* Defaulter Alert */}
-            {attendanceMetrics.isDefaulter && (
-              <div
-                style={{
-                  padding: '12px 16px',
-                  backgroundColor: 'var(--status-absent-bg)',
-                  border: '1px solid var(--status-absent-border)',
-                  borderRadius: '6px',
-                  color: 'var(--status-absent)',
-                  fontSize: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                }}
-              >
-                <AlertTriangle size={18} style={{ flexShrink: 0 }} />
-                <span>
-                  <strong>Academic Defaulter Notice:</strong> This student&apos;s cumulative attendance is currently{' '}
-                  <strong>{attendanceMetrics.rate}%</strong>, which is below the mandatory 75% academy threshold. Guardian counseling recommended.
-                </span>
-              </div>
-            )}
-
-            {/* Attendance KPI Strip */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(5, 1fr)',
-                gap: '10px',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ padding: '12px', backgroundColor: '#ffffff', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Sessions Held</div>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--navy-950)' }}>{attendanceMetrics.total}</div>
-              </div>
-              <div style={{ padding: '12px', backgroundColor: '#ffffff', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Present</div>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--status-present)' }}>{attendanceMetrics.present}</div>
-              </div>
-              <div style={{ padding: '12px', backgroundColor: '#ffffff', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Late</div>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--status-late)' }}>{attendanceMetrics.late}</div>
-              </div>
-              <div style={{ padding: '12px', backgroundColor: '#ffffff', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Absent</div>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--status-absent)' }}>{attendanceMetrics.absent}</div>
-              </div>
-              <div style={{ padding: '12px', backgroundColor: '#ffffff', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Rate %</div>
-                <div
+            {sections.map((sec) => {
+              const Icon = sec.icon;
+              const isActive = activeSection === sec.id;
+              return (
+                <button
+                  key={sec.id}
+                  type="button"
+                  onClick={() => setActiveSection(sec.id)}
                   style={{
-                    fontSize: '20px',
-                    fontWeight: 700,
-                    color: attendanceMetrics.isDefaulter ? 'var(--status-absent)' : 'var(--status-present)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '9px 12px',
+                    fontSize: '12px',
+                    fontWeight: isActive ? 700 : 500,
+                    borderRadius: '6px',
+                    border: 'none',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    backgroundColor: isActive ? 'var(--navy-900)' : 'transparent',
+                    color: isActive ? '#ffffff' : 'var(--navy-950)',
+                    transition: 'all 0.15s ease',
                   }}
                 >
-                  {attendanceMetrics.rate}%
-                </div>
-              </div>
-            </div>
+                  <Icon size={15} color={isActive ? 'var(--gold-light)' : 'var(--navy-700)'} />
+                  <span>{sec.label}</span>
+                </button>
+              );
+            })}
+          </div>
 
-            {/* Monthly Trend Breakdown */}
-            <div>
-              <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '10px' }}>
-                Monthly Attendance Velocity (Recent Terms)
-              </h4>
+          {/* Right Section Content */}
+          <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+            {/* SECTION 1: OVERVIEW */}
+            {activeSection === 'overview' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    gap: '14px',
+                    padding: '16px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                  }}
+                >
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
+                      Admission Number / Student ID
+                    </span>
+                    <strong style={{ fontFamily: 'var(--font-mono)', fontSize: '13px' }}>
+                      {student.admission_no}
+                    </strong>
+                  </div>
 
-              {attendanceMetrics.monthlyTrends.length === 0 ? (
-                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-                  No historical roll call records found for this student.
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
+                      Roll Number
+                    </span>
+                    <span>{student.roll_no || 'Not assigned'}</span>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
+                      Course Stream
+                    </span>
+                    <strong>{student.courses?.name || '—'}</strong>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
+                      Cohort Batch &amp; Timings
+                    </span>
+                    <span>
+                      {student.batches?.name || '—'} ({student.batches?.timing || 'Standard'})
+                    </span>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
+                      Student Phone
+                    </span>
+                    <span>{student.phone || '—'}</span>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
+                      Student Email
+                    </span>
+                    <span>{student.email || '—'}</span>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
+                      Gender &amp; Date of Birth
+                    </span>
+                    <span>
+                      {student.gender || '—'} {student.dob ? `(${student.dob})` : ''}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
+                      Admission Date &amp; Blood Group
+                    </span>
+                    <span>
+                      {student.enrollment_date || '—'} &bull; {student.blood_group || 'O+'}
+                    </span>
+                  </div>
+
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
+                      Residential Address
+                    </span>
+                    <span>{student.address || 'Not provided'}</span>
+                  </div>
                 </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {attendanceMetrics.monthlyTrends.map((trend) => (
+
+                {/* Quick Academic Snapshot */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '12px',
+                    fontSize: '12px',
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: '12px',
+                      backgroundColor: '#f8fafc',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-subtle)',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Classroom Attendance</span>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--navy-950)', marginTop: '4px' }}>
+                      {attendanceMetrics.rate}%
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      {attendanceMetrics.present} Present / {attendanceMetrics.total} Sessions
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: '12px',
+                      backgroundColor: '#f8fafc',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-subtle)',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Tuition Balance</span>
                     <div
-                      key={trend.monthKey}
                       style={{
-                        padding: '10px 14px',
-                        backgroundColor: '#ffffff',
-                        border: '1px solid var(--border-subtle)',
-                        borderRadius: '6px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '12px',
+                        fontSize: '18px',
+                        fontWeight: 700,
+                        color: computedFee.pending > 0 ? '#92400e' : '#15803d',
+                        marginTop: '4px',
                       }}
                     >
-                      <div style={{ width: '130px', fontWeight: 600, color: 'var(--navy-950)', fontSize: '13px' }}>
-                        {trend.label}
-                      </div>
-
-                      {/* Progress bar */}
-                      <div style={{ flex: 1, backgroundColor: '#f1f5f9', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
-                        <div
-                          style={{
-                            width: `${trend.rate}%`,
-                            height: '100%',
-                            backgroundColor: trend.rate >= 75 ? 'var(--status-present)' : 'var(--status-absent)',
-                            borderRadius: '4px',
-                          }}
-                        />
-                      </div>
-
-                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', width: '140px', textAlign: 'right' }}>
-                        {trend.present + trend.late} / {trend.total} sessions ({trend.rate}%)
-                      </div>
+                      ₹{computedFee.pending.toLocaleString('en-IN')}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      ₹{computedFee.paid.toLocaleString('en-IN')} of ₹{computedFee.total.toLocaleString('en-IN')} Paid
+                    </div>
+                  </div>
 
-        {/* TAB 3: TUITION FEES & INSTALLMENTS */}
-        {activeTab === 'fees' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {/* Reminder Feedback banner */}
-            {reminderNotice && (
-              <div
-                style={{
-                  padding: '10px 14px',
-                  backgroundColor: reminderNotice.ok ? 'var(--status-present-bg)' : 'var(--status-absent-bg)',
-                  border: `1px solid ${reminderNotice.ok ? 'var(--status-present-border)' : 'var(--status-absent-border)'}`,
-                  borderRadius: '6px',
-                  color: reminderNotice.ok ? 'var(--status-present)' : 'var(--status-absent)',
-                  fontSize: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}
-              >
-                {reminderNotice.ok ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-                <span>{reminderNotice.ok ? reminderNotice.message : reminderNotice.error}</span>
+                  <div
+                    style={{
+                      padding: '12px',
+                      backgroundColor: '#f8fafc',
+                      borderRadius: '6px',
+                      border: '1px solid var(--border-subtle)',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Exam Evaluations</span>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--navy-950)', marginTop: '4px' }}>
+                      {examStats.avgPct}%
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      {examStats.passed} Passed / {examStats.total} Exams Taken
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* Overdue Banner */}
-            {computedFee.isOverdue && (
-              <div
-                style={{
-                  padding: '12px 16px',
-                  backgroundColor: 'var(--status-absent-bg)',
-                  border: '1px solid var(--status-absent-border)',
-                  borderRadius: '6px',
-                  color: 'var(--status-absent)',
-                  fontSize: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '10px',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <AlertCircle size={18} />
-                  <span>
-                    <strong>Fee Overdue Warning:</strong> Outstanding balance of ₹{computedFee.pending.toLocaleString('en-IN')} is overdue by {computedFee.daysOverdue} days (Due: {feeRecord?.next_due_date || 'Past'}).
-                  </span>
-                </div>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  icon={Send}
-                  onClick={handleSendFeeReminder}
-                  disabled={isSendingReminder}
-                >
-                  {isSendingReminder ? 'Dispatching...' : 'Alert Guardians via Telegram'}
-                </Button>
-              </div>
-            )}
+            {/* SECTION 2: ATTENDANCE */}
+            {activeSection === 'attendance' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* Defaulter Warning Banner */}
+                {attendanceMetrics.isDefaulter && (
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      backgroundColor: 'var(--status-absent-bg)',
+                      border: '1px solid var(--status-absent-border)',
+                      borderRadius: '6px',
+                      color: 'var(--status-absent)',
+                      fontSize: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <AlertTriangle size={16} />
+                    <span>
+                      <strong>Regulatory Warning:</strong> Student attendance ({attendanceMetrics.rate}%) is below the
+                      mandated 75% threshold.
+                    </span>
+                  </div>
+                )}
 
-            {/* Fee KPI Cards */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(4, 1fr)',
-                gap: '12px',
-              }}
-            >
-              <div style={{ padding: '12px 16px', backgroundColor: '#ffffff', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Tuition Fee</div>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--navy-950)', marginTop: '2px' }}>
-                  ₹{computedFee.total.toLocaleString('en-IN')}
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Academic Year 2026-27</div>
-              </div>
-
-              <div style={{ padding: '12px 16px', backgroundColor: '#ffffff', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Amount Paid</div>
-                <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--status-present)', marginTop: '2px' }}>
-                  ₹{computedFee.paid.toLocaleString('en-IN')}
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {computedFee.total > 0 ? Math.round((computedFee.paid / computedFee.total) * 100) : 0}% cleared
-                </div>
-              </div>
-
-              <div style={{ padding: '12px 16px', backgroundColor: '#ffffff', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Pending Balance</div>
+                {/* Metrics row */}
                 <div
                   style={{
-                    fontSize: '20px',
-                    fontWeight: 700,
-                    color: computedFee.pending > 0 ? 'var(--status-absent)' : 'var(--navy-950)',
-                    marginTop: '2px',
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(4, 1fr)',
+                    gap: '10px',
+                    fontSize: '12px',
                   }}
                 >
-                  ₹{computedFee.pending.toLocaleString('en-IN')}
+                  <div style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '6px', textAlign: 'center' }}>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>Total Held</div>
+                    <div style={{ fontSize: '16px', fontWeight: 700 }}>{attendanceMetrics.total}</div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '6px', textAlign: 'center' }}>
+                    <div style={{ color: 'var(--status-present)', fontSize: '10px' }}>Present</div>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--status-present)' }}>
+                      {attendanceMetrics.present}
+                    </div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '6px', textAlign: 'center' }}>
+                    <div style={{ color: 'var(--status-absent)', fontSize: '10px' }}>Absent</div>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--status-absent)' }}>
+                      {attendanceMetrics.absent}
+                    </div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: '#f8fafc', borderRadius: '6px', textAlign: 'center' }}>
+                    <div style={{ color: 'var(--status-late)', fontSize: '10px' }}>Late</div>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--status-late)' }}>
+                      {attendanceMetrics.late}
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Next Due: {feeRecord?.next_due_date || 'All Cleared'}
-                </div>
-              </div>
 
-              <div style={{ padding: '12px 16px', backgroundColor: '#ffffff', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Account Status</div>
-                <div style={{ marginTop: '6px' }}>
-                  <Badge status={computedFee.badgeStatus}>{computedFee.label}</Badge>
-                </div>
-                {feeRecord?.last_reminder_sent_at && (
-                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                    Reminded: {new Date(feeRecord.last_reminder_sent_at).toLocaleDateString('en-IN')}
+                {/* Monthly breakdown */}
+                {attendanceMetrics.monthlyTrends.length > 0 && (
+                  <div style={{ border: '1px solid var(--border-subtle)', borderRadius: '6px', padding: '12px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)', marginBottom: '8px' }}>
+                      Monthly Attendance Progression
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {attendanceMetrics.monthlyTrends.map((m) => (
+                        <div key={m.month} style={{ fontSize: '11px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+                            <span><strong>{m.month}</strong> ({m.present}P / {m.absent}A / {m.total} total)</span>
+                            <span style={{ fontWeight: 700, color: m.rate < 75 ? '#dc2626' : '#15803d' }}>
+                              {m.rate}%
+                            </span>
+                          </div>
+                          <div style={{ width: '100%', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div
+                              style={{
+                                width: `${m.rate}%`,
+                                height: '100%',
+                                backgroundColor: m.rate < 75 ? 'var(--status-absent)' : 'var(--status-present)',
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
-            </div>
+            )}
 
-            {/* Action Buttons Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)' }}>
-                Term Installment Schedule &amp; Receipts
-              </h4>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  icon={Send}
-                  onClick={handleSendFeeReminder}
-                  disabled={isSendingReminder || computedFee.pending === 0}
-                  title="Dispatch fee reminder via Telegram to verified guardians"
+            {/* SECTION 3: FEES */}
+            {activeSection === 'fees' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* Fee Summary Strip */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '10px',
+                    padding: '12px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    textAlign: 'center',
+                  }}
                 >
-                  {isSendingReminder ? 'Sending...' : 'Send Telegram Reminder'}
-                </Button>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>Total Tuition</span>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--navy-950)' }}>
+                      ₹{computedFee.total.toLocaleString('en-IN')}
+                    </div>
+                  </div>
 
-                <Button
-                  variant="gold"
-                  size="sm"
-                  icon={DollarSign}
-                  onClick={() => handleOpenPayment()}
-                  disabled={computedFee.pending === 0}
-                >
-                  Record Payment
-                </Button>
-              </div>
-            </div>
+                  <div>
+                    <span style={{ color: 'var(--status-present)', fontSize: '10px' }}>Amount Paid</span>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--status-present)' }}>
+                      ₹{computedFee.paid.toLocaleString('en-IN')}
+                    </div>
+                  </div>
 
-            {/* Installments Table */}
-            <div className="table-container">
-              <table className="erp-table" style={{ fontSize: '12px' }}>
-                <thead>
-                  <tr>
-                    <th>Installment #</th>
-                    <th>Milestone Details</th>
-                    <th>Scheduled Due Date</th>
-                    <th>Amount</th>
-                    <th>Payment Status</th>
-                    <th>Payment Details</th>
-                    <th style={{ textAlign: 'right' }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(feeRecord?.installment_schedule || []).map((inst, idx) => (
-                    <tr key={idx}>
-                      <td style={{ fontWeight: 600, color: 'var(--navy-900)' }}>#{inst.installment_no}</td>
-                      <td>
-                        <strong>{inst.label}</strong>
-                      </td>
-                      <td style={{ fontFamily: 'var(--font-mono)' }}>{inst.due_date || '—'}</td>
-                      <td style={{ fontWeight: 700, color: 'var(--navy-950)' }}>
-                        ₹{inst.amount.toLocaleString('en-IN')}
-                      </td>
-                      <td>
-                        {inst.status === 'paid' ? (
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              color: 'var(--status-present)',
-                              backgroundColor: 'var(--status-present-bg)',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                            }}
-                          >
-                            ✓ Paid
-                          </span>
-                        ) : inst.due_date && inst.due_date < new Date().toISOString().split('T')[0] ? (
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              color: 'var(--status-absent)',
-                              backgroundColor: 'var(--status-absent-bg)',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                            }}
-                          >
-                            ! Overdue
-                          </span>
-                        ) : (
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              color: 'var(--text-muted)',
-                              backgroundColor: '#f1f5f9',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                            }}
-                          >
-                            Pending
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        {inst.status === 'paid' ? (
-                          <span>
-                            {inst.payment_method} &bull; {inst.reference_no || 'Receipt'}
-                          </span>
-                        ) : (
-                          'Awaiting clearance'
-                        )}
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        {inst.status !== 'paid' && (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenPayment(inst)}
-                            className="btn btn-sm btn-outline"
-                            style={{ padding: '2px 8px', fontSize: '11px' }}
-                          >
-                            Pay Installment
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 4: MULTI-GUARDIAN & ALERT ROUTING */}
-        {activeTab === 'guardians' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)' }}>
-                  Family Guardian Registry &amp; Alert Routing
-                </h4>
-                <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Configure individual alert preferences for Mother, Father, and Local Guardians.
-                </p>
-              </div>
-
-              <Button
-                variant="primary"
-                size="sm"
-                icon={Plus}
-                onClick={() => {
-                  setNewGuardianForm({
-                    fullName: '',
-                    phone: '',
-                    relationship: 'Mother',
-                    contactPriority: 'secondary',
-                    alertPreference: 'all',
-                  });
-                  setIsLinkGuardianModalOpen(true);
-                }}
-              >
-                Add / Link Guardian
-              </Button>
-            </div>
-
-            {guardians.length === 0 ? (
-              <div
-                style={{
-                  padding: '36px',
-                  textAlign: 'center',
-                  backgroundColor: 'var(--bg-subtle)',
-                  borderRadius: '6px',
-                  border: '1px dashed var(--border-subtle)',
-                }}
-              >
-                <UserCheck size={32} color="var(--gold-dark)" style={{ marginBottom: '8px' }} />
-                <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--navy-950)' }}>
-                  No Guardians Linked Yet
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Link a Father, Mother, or Local Guardian to enable automated Telegram attendance and fee alerts.
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {guardians.map((g) => {
-                  const parent = g.parents || {};
-                  const isPrimary = g.is_primary_contact;
-                  const pref = g.alert_preference || 'all';
-
-                  return (
+                  <div>
+                    <span style={{ color: computedFee.pending > 0 ? '#d97706' : 'var(--status-present)', fontSize: '10px' }}>
+                      Pending Balance
+                    </span>
                     <div
-                      key={g.id}
                       style={{
-                        padding: '16px',
-                        backgroundColor: '#ffffff',
-                        border: `1px solid ${isPrimary ? 'var(--navy-700)' : 'var(--border-subtle)'}`,
-                        borderRadius: '6px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '16px',
-                        flexWrap: 'wrap',
+                        fontSize: '16px',
+                        fontWeight: 700,
+                        color: computedFee.pending > 0 ? '#92400e' : 'var(--status-present)',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      ₹{computedFee.pending.toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions Toolbar */}
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={Send}
+                    onClick={() => handleSendFeeReminder()}
+                    disabled={isSendingReminder || computedFee.pending === 0}
+                  >
+                    {isSendingReminder ? 'Sending...' : 'Send Telegram Fee Reminder'}
+                  </Button>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={DollarSign}
+                    onClick={() => setIsPaymentModalOpen(true)}
+                    disabled={computedFee.pending === 0}
+                  >
+                    Record Payment
+                  </Button>
+                </div>
+
+                {/* Installment Schedule Table */}
+                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: '6px', overflow: 'hidden' }}>
+                  <table className="erp-table" style={{ margin: 0 }}>
+                    <thead>
+                      <tr>
+                        <th>Inst #</th>
+                        <th>Milestone</th>
+                        <th>Due Date</th>
+                        <th>Amount</th>
+                        <th style={{ textAlign: 'right' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(feeRecord?.installment_schedule || []).map((inst, idx) => (
+                        <tr key={idx}>
+                          <td style={{ fontWeight: 600 }}>#{inst.installment_no}</td>
+                          <td>{inst.label}</td>
+                          <td style={{ fontSize: '11px', fontFamily: 'var(--font-mono)' }}>{inst.due_date}</td>
+                          <td style={{ fontWeight: 600 }}>₹{Number(inst.amount).toLocaleString('en-IN')}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            <Badge status={inst.status === 'paid' ? 'Present' : 'Pending'}>
+                              {inst.status}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* SECTION 4: GUARDIANS */}
+            {activeSection === 'guardians' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--navy-950)' }}>
+                    Linked Parents &amp; Guardians
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={Plus}
+                    onClick={() => setIsLinkGuardianModalOpen(true)}
+                  >
+                    Add / Link Guardian
+                  </Button>
+                </div>
+
+                {guardiansLoading ? (
+                  <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                    <RefreshCw size={18} className="animate-spin" />
+                  </div>
+                ) : guardians.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)', fontSize: '12px' }}>
+                    No guardians linked to this student yet. Click "Add / Link Guardian" above.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {guardians.map((g) => {
+                      const parent = g.parents || {};
+                      const isLinked = parent.is_verified && parent.telegram_chat_id;
+                      const isPrimary = g.is_primary_contact;
+
+                      return (
                         <div
+                          key={g.id}
                           style={{
-                            width: '42px',
-                            height: '42px',
-                            borderRadius: '50%',
-                            backgroundColor: isPrimary ? 'var(--navy-900)' : '#f1f5f9',
-                            color: isPrimary ? 'var(--gold-light)' : 'var(--navy-800)',
+                            padding: '12px',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: '6px',
                             display: 'flex',
+                            justifyContent: 'space-between',
                             alignItems: 'center',
-                            justifyContent: 'center',
-                            fontWeight: 700,
-                            fontSize: '14px',
+                            backgroundColor: '#ffffff',
                           }}
                         >
-                          {g.relationship ? g.relationship[0] : 'G'}
-                        </div>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <strong style={{ fontSize: '13px', color: 'var(--navy-950)' }}>
+                                {parent.full_name || 'Guardian'}
+                              </strong>
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                ({g.relationship || parent.relationship || 'Guardian'})
+                              </span>
+                              {isPrimary && (
+                                <span style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '3px', backgroundColor: 'var(--navy-900)', color: '#ffffff' }}>
+                                  Primary Contact
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                              Phone: {parent.phone} &bull; Telegram:{' '}
+                              {isLinked ? (
+                                <span style={{ color: 'var(--status-present)', fontWeight: 600 }}>Linked ({parent.telegram_chat_id})</span>
+                              ) : (
+                                <span style={{ color: '#d97706' }}>Not Linked</span>
+                              )}
+                            </div>
+                          </div>
 
-                        <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <strong style={{ fontSize: '14px', color: 'var(--navy-950)' }}>
-                              {parent.full_name || 'Guardian'}
-                            </strong>
-                            <span
-                              style={{
-                                fontSize: '10px',
-                                fontWeight: 700,
-                                padding: '1px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: 'var(--gold-subtle-bg)',
-                                color: 'var(--gold-dark)',
-                              }}
+                            <select
+                              value={g.alert_preference || 'all'}
+                              onChange={(e) => handleUpdateGuardianPref(g.id, e.target.value)}
+                              className="form-select"
+                              style={{ padding: '3px 6px', fontSize: '11px', width: '130px' }}
                             >
-                              {g.relationship || 'Guardian'}
-                            </span>
-                            {isPrimary && (
-                              <span
-                                style={{
-                                  fontSize: '10px',
-                                  fontWeight: 700,
-                                  padding: '1px 6px',
-                                  borderRadius: '4px',
-                                  backgroundColor: '#dbeafe',
-                                  color: '#1d4ed8',
-                                }}
+                              <option value="all">All Alerts</option>
+                              <option value="emergency_only">Emergency Only</option>
+                              <option value="none">Muted</option>
+                            </select>
+
+                            {!isPrimary && (
+                              <button
+                                type="button"
+                                onClick={() => handleSetPrimaryGuardian(g.id)}
+                                className="btn btn-outline"
+                                style={{ padding: '3px 8px', fontSize: '10px' }}
                               >
-                                Primary Contact
-                              </span>
-                            )}
-                          </div>
-
-                          <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <Phone size={12} /> {parent.phone || 'No phone'}
-                            </span>
-                            {parent.email && (
-                              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <Mail size={12} /> {parent.email}
-                              </span>
+                                Make Primary
+                              </button>
                             )}
                           </div>
                         </div>
-                      </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
-                      {/* Telegram status & Alert Preference Controls */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                        {/* Telegram Link Status */}
-                        <div>
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block' }}>
-                            Telegram Integration
-                          </span>
-                          {parent.is_verified && parent.telegram_chat_id ? (
-                            <span
-                              style={{
-                                fontSize: '11px',
-                                fontWeight: 600,
-                                color: 'var(--status-present)',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                              }}
-                            >
-                              <ShieldCheck size={13} /> Linked ({parent.telegram_chat_id})
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                              Not Linked
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Alert Preference Dropdown */}
-                        <div>
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'block' }}>
-                            Notification Route
-                          </span>
-                          <select
-                            value={pref}
-                            onChange={(e) => handleUpdateGuardianPreference(g.id, e.target.value)}
-                            className="form-select"
-                            style={{ height: '30px', fontSize: '11px', padding: '2px 8px' }}
-                          >
-                            <option value="all">All Alerts (Roll Call + Fees)</option>
-                            <option value="emergency_only">Emergency Only (Critical Absences)</option>
-                            <option value="none">Muted / No Alerts</option>
-                          </select>
-                        </div>
-
-                        {/* Make Primary Button */}
-                        {!isPrimary && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleSetPrimaryGuardian(g.id)}
-                            style={{ height: '30px', fontSize: '11px' }}
-                          >
-                            Set as Primary
-                          </Button>
-                        )}
-                      </div>
+            {/* SECTION 5: RESULTS (PHASE 5 INTEGRATION) */}
+            {activeSection === 'results' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* Summary Strip */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(4, 1fr)',
+                    gap: '10px',
+                    padding: '12px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>Exams Evaluated</span>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--navy-950)' }}>
+                      {examStats.total}
                     </div>
-                  );
-                })}
+                  </div>
+
+                  <div>
+                    <span style={{ color: 'var(--status-present)', fontSize: '10px' }}>Passed</span>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--status-present)' }}>
+                      {examStats.passed}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span style={{ color: 'var(--status-absent)', fontSize: '10px' }}>Failed</span>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--status-absent)' }}>
+                      {examStats.failed}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span style={{ color: 'var(--navy-900)', fontSize: '10px' }}>Overall Average</span>
+                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--navy-900)' }}>
+                      {examStats.avgPct}%
+                    </div>
+                  </div>
+                </div>
+
+                {/* Exam Records Table */}
+                {examsLoading ? (
+                  <div style={{ textAlign: 'center', padding: '24px', color: 'var(--text-muted)' }}>
+                    <RefreshCw size={18} className="animate-spin" />
+                  </div>
+                ) : examResults.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)', fontSize: '12px' }}>
+                    <Award size={32} style={{ marginBottom: '8px', opacity: 0.5 }} />
+                    <div>No examination marks recorded for this student yet.</div>
+                  </div>
+                ) : (
+                  <div style={{ border: '1px solid var(--border-subtle)', borderRadius: '6px', overflow: 'hidden' }}>
+                    <table className="erp-table" style={{ margin: 0 }}>
+                      <thead>
+                        <tr>
+                          <th>Examination</th>
+                          <th>Subject</th>
+                          <th>Date</th>
+                          <th>Marks Scored</th>
+                          <th>%</th>
+                          <th>Grade</th>
+                          <th>Status</th>
+                          <th style={{ textAlign: 'right' }}>Report</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {examResults.map((ex) => (
+                          <tr key={ex.id}>
+                            <td>
+                              <div style={{ fontWeight: 600, color: 'var(--navy-950)' }}>{ex.exam_name}</div>
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{ex.exam_type}</div>
+                            </td>
+                            <td style={{ fontSize: '12px' }}>{ex.subject}</td>
+                            <td style={{ fontSize: '11px', fontFamily: 'var(--font-mono)' }}>{ex.exam_date}</td>
+                            <td style={{ fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
+                              {ex.is_absent ? 'ABSENT' : `${ex.marks_obtained} / ${ex.total_marks}`}
+                            </td>
+                            <td style={{ fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+                              {ex.percentage !== null ? `${ex.percentage}%` : '—'}
+                            </td>
+                            <td style={{ fontWeight: 700 }}>{ex.grade}</td>
+                            <td>
+                              <Badge status={ex.badge}>{ex.status}</Badge>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                icon={Printer}
+                                onClick={() => setSelectedReportExam(ex)}
+                                title="Print Report Card"
+                              >
+                                Print
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* PAYMENT MODAL */}
+      {/* RECORD PAYMENT MODAL */}
       {isPaymentModalOpen && (
         <Modal
           isOpen={isPaymentModalOpen}
           onClose={() => setIsPaymentModalOpen(false)}
           title="Record Tuition Fee Payment"
-          subtitle={`Student: ${student.full_name} (${student.admission_no}) • Outstanding: ₹${computedFee.pending.toLocaleString('en-IN')}`}
-          size="sm"
+          subtitle={`Student: ${student.full_name} (${student.admission_no})`}
           footer={
             <>
-              <Button variant="outline" size="sm" onClick={() => setIsPaymentModalOpen(false)}>
+              <Button variant="outline" size="sm" onClick={() => setIsPaymentModalOpen(false)} disabled={isRecordingPayment}>
                 Cancel
               </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                icon={CheckCircle2}
-                onClick={handleSavePayment}
-                disabled={isRecordingPayment}
-              >
-                {isRecordingPayment ? 'Recording...' : 'Confirm Payment'}
+              <Button variant="primary" size="sm" onClick={handleRecordPaymentSubmit} disabled={isRecordingPayment}>
+                {isRecordingPayment ? 'Recording...' : 'Confirm Receipt'}
               </Button>
             </>
           }
         >
-          <form onSubmit={handleSavePayment}>
-            <div style={{ marginBottom: '12px' }}>
-              <label className="form-label">Payment Amount (₹)</label>
-              <input
-                type="number"
-                value={paymentForm.amount}
-                onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
-                className="form-input"
-                required
-                min="1"
-                max={computedFee.pending}
-              />
-            </div>
+          <form onSubmit={handleRecordPaymentSubmit}>
+            <Input
+              label="Amount to Credit (₹)"
+              type="number"
+              min="1"
+              max={computedFee.pending}
+              value={paymentForm.amount}
+              onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+              placeholder={`Max pending: ₹${computedFee.pending}`}
+              required
+            />
 
-            <div style={{ marginBottom: '12px' }}>
-              <label className="form-label">Payment Mode</label>
-              <select
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+              <Select
+                label="Payment Method"
                 value={paymentForm.paymentMethod}
                 onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
-                className="form-select"
-              >
-                <option value="UPI">UPI / Google Pay / PhonePe</option>
-                <option value="Cash">Cash at Reception</option>
-                <option value="Bank Transfer">NEFT / RTGS / Bank Transfer</option>
-                <option value="Cheque">Cheque Deposit</option>
-              </select>
-            </div>
+                options={['UPI', 'Cash', 'Cheque', 'Bank Transfer', 'Card']}
+              />
 
-            <div style={{ marginBottom: '12px' }}>
-              <label className="form-label">Receipt / Transaction Reference</label>
-              <input
-                type="text"
-                placeholder="e.g. UPI-TXN-89412 or Receipt #104"
+              <Input
+                label="Reference / Transaction ID"
                 value={paymentForm.referenceNo}
                 onChange={(e) => setPaymentForm({ ...paymentForm, referenceNo: e.target.value })}
-                className="form-input"
+                placeholder="e.g. UPI Ref / Cheque No."
               />
             </div>
 
-            <div>
-              <label className="form-label">Notes</label>
-              <input
-                type="text"
-                placeholder="Optional notes or remarks"
+            <div style={{ marginTop: '12px' }}>
+              <Input
+                label="Notes (Optional)"
                 value={paymentForm.notes}
                 onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
-                className="form-input"
+                placeholder="e.g. Receipt given to mother"
               />
             </div>
           </form>
@@ -1379,95 +1257,90 @@ export default function StudentAcademicDossier({
         <Modal
           isOpen={isLinkGuardianModalOpen}
           onClose={() => setIsLinkGuardianModalOpen(false)}
-          title="Add / Link Guardian"
-          subtitle={`Link Mother, Father, or Local Guardian for ${student.full_name}`}
-          size="md"
+          title="Link Parent / Guardian"
+          subtitle={`For student: ${student.full_name}`}
           footer={
             <>
-              <Button variant="outline" size="sm" onClick={() => setIsLinkGuardianModalOpen(false)}>
+              <Button variant="outline" size="sm" onClick={() => setIsLinkGuardianModalOpen(false)} disabled={isSavingGuardian}>
                 Cancel
               </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                icon={Plus}
-                onClick={handleSaveNewGuardian}
-                disabled={isSavingGuardian}
-              >
-                {isSavingGuardian ? 'Linking...' : 'Save Guardian'}
+              <Button variant="primary" size="sm" onClick={handleSaveNewGuardian} disabled={isSavingGuardian}>
+                {isSavingGuardian ? 'Saving...' : 'Link Guardian'}
               </Button>
             </>
           }
         >
           <form onSubmit={handleSaveNewGuardian}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-              <div>
-                <label className="form-label">Guardian Full Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Smt. Neeta Shah"
-                  value={newGuardianForm.fullName}
-                  onChange={(e) => setNewGuardianForm({ ...newGuardianForm, fullName: e.target.value })}
-                  className="form-input"
-                  required
-                />
-              </div>
+            <Input
+              label="Guardian Full Name"
+              value={newGuardianForm.fullName}
+              onChange={(e) => setNewGuardianForm({ ...newGuardianForm, fullName: e.target.value })}
+              placeholder="e.g. Savita Sharma"
+              required
+            />
 
-              <div>
-                <label className="form-label">Contact Phone (Mobile)</label>
-                <input
-                  type="tel"
-                  placeholder="e.g. 9820112233"
-                  value={newGuardianForm.phone}
-                  onChange={(e) => setNewGuardianForm({ ...newGuardianForm, phone: e.target.value })}
-                  className="form-input"
-                  required
-                />
-              </div>
+            <Input
+              label="Contact Phone"
+              value={newGuardianForm.phone}
+              onChange={(e) => setNewGuardianForm({ ...newGuardianForm, phone: e.target.value })}
+              placeholder="+91 98401 23400"
+              required
+            />
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '12px' }}>
+              <Select
+                label="Relationship"
+                value={newGuardianForm.relationship}
+                onChange={(e) => setNewGuardianForm({ ...newGuardianForm, relationship: e.target.value })}
+                options={['Mother', 'Father', 'Local Guardian', 'Guardian', 'Other']}
+              />
+
+              <Select
+                label="Priority"
+                value={newGuardianForm.contactPriority}
+                onChange={(e) => setNewGuardianForm({ ...newGuardianForm, contactPriority: e.target.value })}
+                options={[
+                  { value: 'primary', label: 'Primary Contact' },
+                  { value: 'secondary', label: 'Secondary Contact' },
+                  { value: 'emergency', label: 'Emergency Contact' },
+                ]}
+              />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-              <div>
-                <label className="form-label">Relationship</label>
-                <select
-                  value={newGuardianForm.relationship}
-                  onChange={(e) => setNewGuardianForm({ ...newGuardianForm, relationship: e.target.value })}
-                  className="form-select"
-                >
-                  <option value="Mother">Mother</option>
-                  <option value="Father">Father</option>
-                  <option value="Local Guardian">Local Guardian</option>
-                  <option value="Guardian">Guardian</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="form-label">Contact Priority</label>
-                <select
-                  value={newGuardianForm.contactPriority}
-                  onChange={(e) => setNewGuardianForm({ ...newGuardianForm, contactPriority: e.target.value })}
-                  className="form-select"
-                >
-                  <option value="secondary">Secondary Contact</option>
-                  <option value="primary">Primary Contact</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="form-label">Alert Routing</label>
-                <select
-                  value={newGuardianForm.alertPreference}
-                  onChange={(e) => setNewGuardianForm({ ...newGuardianForm, alertPreference: e.target.value })}
-                  className="form-select"
-                >
-                  <option value="all">All Alerts</option>
-                  <option value="emergency_only">Emergency Only</option>
-                  <option value="none">None</option>
-                </select>
-              </div>
+            <div style={{ marginTop: '12px' }}>
+              <Select
+                label="Alert Preference"
+                value={newGuardianForm.alertPreference}
+                onChange={(e) => setNewGuardianForm({ ...newGuardianForm, alertPreference: e.target.value })}
+                options={[
+                  { value: 'all', label: 'All Alerts (Roll Call + Fees + Exams)' },
+                  { value: 'emergency_only', label: 'Emergency Only (Absences/Failures/Overdue)' },
+                  { value: 'none', label: 'Muted' },
+                ]}
+              />
             </div>
           </form>
         </Modal>
+      )}
+
+      {/* PRINTABLE REPORT CARD MODAL */}
+      {selectedReportExam && (
+        <ReportCardModal
+          isOpen={Boolean(selectedReportExam)}
+          onClose={() => setSelectedReportExam(null)}
+          student={student}
+          exam={{
+            name: selectedReportExam.exam_name,
+            exam_type: selectedReportExam.exam_type,
+            subject: selectedReportExam.subject,
+            exam_date: selectedReportExam.exam_date,
+            total_marks: selectedReportExam.total_marks,
+            passing_marks: selectedReportExam.passing_marks,
+            academic_year: '2026-27',
+          }}
+          marksRecord={selectedReportExam}
+          attendanceRate={attendanceMetrics.rate}
+        />
       )}
     </Modal>
   );

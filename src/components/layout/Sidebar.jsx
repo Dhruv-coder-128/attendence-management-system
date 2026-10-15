@@ -11,6 +11,7 @@ import {
   GraduationCap,
   ShieldCheck,
   FileSpreadsheet,
+  Award,
 } from 'lucide-react';
 
 /**
@@ -34,7 +35,7 @@ export default function Sidebar({
     .join('')
     .substring(0, 2)
     .toUpperCase();
-  const navItems = [
+  const academicNavItems = [
     { id: 'dashboard', label: 'Executive Dashboard', icon: LayoutDashboard },
     {
       id: 'students',
@@ -49,6 +50,10 @@ export default function Sidebar({
       badge: counts.batches !== undefined ? String(counts.batches) : '0',
     },
     { id: 'attendance', label: 'Attendance Register', icon: CalendarCheck, badge: 'Live' },
+    { id: 'exams', label: 'Exams & Marks', icon: Award },
+  ];
+
+  const adminNavItems = [
     { id: 'parents', label: 'Parent Directory', icon: UserCheck },
     {
       id: 'import',
@@ -99,7 +104,7 @@ export default function Sidebar({
         {/* Navigation Section */}
         <nav className="sidebar-nav">
           <div className="nav-section-title">Academic Modules</div>
-          {navItems.slice(0, 4).map((item) => {
+          {academicNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activePage === item.id;
             return (
@@ -119,7 +124,7 @@ export default function Sidebar({
           <div className="nav-section-title" style={{ marginTop: '12px' }}>
             Communications &amp; Config
           </div>
-          {navItems.slice(4).map((item) => {
+          {adminNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activePage === item.id;
             return (

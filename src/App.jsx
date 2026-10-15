@@ -9,6 +9,7 @@ import ParentsPage from './pages/ParentsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import SettingsPage from './pages/SettingsPage';
 import BulkImportPage from './pages/BulkImportPage';
+import ExamsPage from './pages/ExamsPage';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { RefreshCw, GraduationCap } from 'lucide-react';
 
@@ -218,6 +219,10 @@ export default function App() {
 
       {activePage === 'attendance' && (
         <AttendancePage onRefreshCounts={refreshCounts} />
+      )}
+
+      {activePage === 'exams' && (
+        <ExamsPage />
       )}
 
       {activePage === 'parents' && (

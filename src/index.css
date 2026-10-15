@@ -1154,6 +1154,26 @@ textarea {
     min-height: 40px;
   }
 
+  /* Dossier responsive navigation */
+  .dossier-container {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  .dossier-menu {
+    width: 100% !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border-subtle) !important;
+    padding-right: 0 !important;
+    padding-bottom: 8px !important;
+  }
+
+  .dossier-menu button {
+    flex: 1 1 calc(50% - 6px);
+  }
+
   /* Tables */
   .erp-table th,
   .erp-table td {

@@ -56,6 +56,7 @@ export default function StudentsPage({ onRefreshCounts }) {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalError, setModalError] = useState('');
+  const [showAdvancedFields, setShowAdvancedFields] = useState(false);
 
   // Form State for Add / Edit
   const initialFormState = {
@@ -284,6 +285,7 @@ export default function StudentsPage({ onRefreshCounts }) {
       batch_id: batches[0]?.id || '',
       admission_no: `RUP-2026-${Math.floor(1000 + Math.random() * 9000)}`,
     });
+    setShowAdvancedFields(false);
     setIsAddModalOpen(true);
   };
 
@@ -306,6 +308,7 @@ export default function StudentsPage({ onRefreshCounts }) {
       status: student.status || 'active',
       address: student.address || '',
     });
+    setShowAdvancedFields(Boolean(student.dob || student.blood_group || student.address));
   };
 
   // Save Student (Add or Edit)
@@ -805,7 +808,7 @@ export default function StudentsPage({ onRefreshCounts }) {
         }}
         title={studentToEdit ? 'Edit Student Record' : 'Register New Student Admission'}
         subtitle="Saved directly to Supabase PostgreSQL table (public.students)"
-        maxWidth="640px"
+        maxWidth="680px"
         footer={
           <>
             <Button
@@ -830,11 +833,10 @@ export default function StudentsPage({ onRefreshCounts }) {
           </>
         }
       >
-        <form onSubmit={handleSaveStudent}>
+        <form onSubmit={handleSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
           {modalError && (
             <div
               style={{
-                marginBottom: '14px',
                 padding: '10px 14px',
                 backgroundColor: 'var(--status-absent-bg)',
                 border: '1px solid var(--status-absent-border)',
@@ -851,135 +853,223 @@ export default function StudentsPage({ onRefreshCounts }) {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Input
-              label="Student Full Name"
-              value={formData.full_name}
-              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-              placeholder="e.g. Aarav Karthikeyan"
-              required
-            />
-
-            <Input
-              label="Admission Number / Student ID"
-              value={formData.admission_no}
-              onChange={(e) => setFormData({ ...formData, admission_no: e.target.value })}
-              placeholder="e.g. RUP-2026-0101"
-              required
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Select
-              label="Academic Course"
-              value={formData.course_id}
-              onChange={(e) => {
-                const newCourseId = e.target.value;
-                const matchingBatches = batches.filter((b) => b.course_id === newCourseId);
-                setFormData({
-                  ...formData,
-                  course_id: newCourseId,
-                  batch_id: matchingBatches[0]?.id || (batches[0]?.id || ''),
-                });
+          {/* Section 1: Basic Details */}
+          <div>
+            <div
+              style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                color: 'var(--navy-900)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                marginBottom: '10px',
+                borderBottom: '1px solid var(--border-subtle)',
+                paddingBottom: '4px',
               }}
-              options={courses.map((c) => ({
-                value: c.id,
-                label: `${c.code} — ${c.name}`,
-              }))}
-              required
-            />
+            >
+              1. Basic Information
+            </div>
 
-            <Select
-              label="Assigned Batch"
-              value={formData.batch_id}
-              onChange={(e) => setFormData({ ...formData, batch_id: e.target.value })}
-              options={
-                availableBatchesForCourse.length > 0
-                  ? availableBatchesForCourse.map((b) => ({
-                      value: b.id,
-                      label: `${b.code} — ${b.name}`,
-                    }))
-                  : batches.map((b) => ({
-                      value: b.id,
-                      label: `${b.code} — ${b.name}`,
-                    }))
-              }
-              placeholder={batches.length === 0 ? 'No batches available' : 'Select Batch...'}
-              required
-            />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+              <Input
+                label="Student Full Name"
+                value={formData.full_name}
+                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                placeholder="e.g. Aarav Sharma"
+                required
+              />
+
+              <Input
+                label="Admission Number / Student ID"
+                value={formData.admission_no}
+                onChange={(e) => setFormData({ ...formData, admission_no: e.target.value })}
+                placeholder="e.g. RUP-2026-0101"
+                required
+              />
+
+              <Input
+                label="Roll Number"
+                value={formData.roll_no}
+                onChange={(e) => setFormData({ ...formData, roll_no: e.target.value })}
+                placeholder="e.g. 15 (Optional)"
+              />
+
+              <Select
+                label="Gender"
+                value={formData.gender}
+                onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                options={['Male', 'Female', 'Other']}
+              />
+            </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Input
-              label="Roll Number (Optional)"
-              value={formData.roll_no}
-              onChange={(e) => setFormData({ ...formData, roll_no: e.target.value })}
-              placeholder="e.g. 24"
-            />
+          {/* Section 2: Academic Details */}
+          <div>
+            <div
+              style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                color: 'var(--navy-900)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                marginBottom: '10px',
+                borderBottom: '1px solid var(--border-subtle)',
+                paddingBottom: '4px',
+              }}
+            >
+              2. Academic Stream &amp; Cohort
+            </div>
 
-            <Input
-              label="Contact Phone"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              placeholder="+91 98401 23450"
-            />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+              <Select
+                label="Academic Course"
+                value={formData.course_id}
+                onChange={(e) => {
+                  const newCourseId = e.target.value;
+                  const matchingBatches = batches.filter((b) => b.course_id === newCourseId);
+                  setFormData({
+                    ...formData,
+                    course_id: newCourseId,
+                    batch_id: matchingBatches[0]?.id || (batches[0]?.id || ''),
+                  });
+                }}
+                options={courses.map((c) => ({
+                  value: c.id,
+                  label: `${c.code} — ${c.name}`,
+                }))}
+                required
+              />
+
+              <Select
+                label="Assigned Cohort Batch"
+                value={formData.batch_id}
+                onChange={(e) => setFormData({ ...formData, batch_id: e.target.value })}
+                options={
+                  availableBatchesForCourse.length > 0
+                    ? availableBatchesForCourse.map((b) => ({
+                        value: b.id,
+                        label: `${b.code} — ${b.name}`,
+                      }))
+                    : batches.map((b) => ({
+                        value: b.id,
+                        label: `${b.code} — ${b.name}`,
+                      }))
+                }
+                placeholder={batches.length === 0 ? 'No batches available' : 'Select Batch...'}
+                required
+              />
+
+              <Input
+                label="Admission Date"
+                type="date"
+                value={formData.enrollment_date}
+                onChange={(e) => setFormData({ ...formData, enrollment_date: e.target.value })}
+                required
+              />
+
+              <Select
+                label="Academic Status"
+                value={formData.status}
+                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                options={[
+                  { value: 'active', label: 'Active' },
+                  { value: 'inactive', label: 'Inactive' },
+                  { value: 'suspended', label: 'Suspended' },
+                  { value: 'graduated', label: 'Graduated' },
+                ]}
+              />
+            </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-            <Input
-              label="Student Email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="student@ruparel.edu"
-            />
+          {/* Section 3: Contact Details */}
+          <div>
+            <div
+              style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                color: 'var(--navy-900)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                marginBottom: '10px',
+                borderBottom: '1px solid var(--border-subtle)',
+                paddingBottom: '4px',
+              }}
+            >
+              3. Contact Details
+            </div>
 
-            <Input
-              label="Admission Date"
-              type="date"
-              value={formData.enrollment_date}
-              onChange={(e) => setFormData({ ...formData, enrollment_date: e.target.value })}
-              required
-            />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+              <Input
+                label="Primary Contact Phone"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                placeholder="+91 98401 23450"
+              />
+
+              <Input
+                label="Student Email Address"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="student@domain.com"
+              />
+            </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-            <Select
-              label="Gender"
-              value={formData.gender}
-              onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-              options={['Male', 'Female', 'Other']}
-            />
+          {/* Section 4: Collapsible Optional Details */}
+          <div style={{ borderTop: '1px dashed var(--border-subtle)', paddingTop: '10px' }}>
+            <button
+              type="button"
+              onClick={() => setShowAdvancedFields(!showAdvancedFields)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: '4px 0',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--navy-800)',
+                cursor: 'pointer',
+              }}
+            >
+              <span>{showAdvancedFields ? '▾ Hide Additional Details' : '▸ Add Optional Details (DOB, Blood Group, Address)'}</span>
+            </button>
 
-            <Select
-              label="Blood Group"
-              value={formData.blood_group}
-              onChange={(e) => setFormData({ ...formData, blood_group: e.target.value })}
-              options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']}
-            />
+            {showAdvancedFields && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                  <Input
+                    label="Date of Birth"
+                    type="date"
+                    value={formData.dob}
+                    onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
+                  />
 
-            <Select
-              label="Status"
-              value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-              options={[
-                { value: 'active', label: 'Active' },
-                { value: 'inactive', label: 'Inactive' },
-                { value: 'suspended', label: 'Suspended' },
-                { value: 'graduated', label: 'Graduated' },
-              ]}
-            />
-          </div>
+                  <Select
+                    label="Blood Group"
+                    value={formData.blood_group}
+                    onChange={(e) => setFormData({ ...formData, blood_group: e.target.value })}
+                    options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']}
+                  />
+                </div>
 
-          <div className="form-group">
-            <label className="form-label">Residential Address</label>
-            <textarea
-              className="form-textarea"
-              rows={2}
-              value={formData.address}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              placeholder="e.g. Matunga West, Mumbai"
-            />
+                <div className="form-group">
+                  <label className="form-label" style={{ fontSize: '12px', fontWeight: 600, marginBottom: '4px', display: 'block' }}>
+                    Residential Address
+                  </label>
+                  <textarea
+                    className="form-textarea"
+                    rows={2}
+                    value={formData.address}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    placeholder="e.g. Matunga West, Mumbai"
+                    style={{ width: '100%', resize: 'vertical' }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </form>
       </Modal>

@@ -107,13 +107,14 @@ export default async function handler(req, res) {
     studentId,
     feeRecord,
     targetParentId,
+    examId,
   } = body;
 
-  // Payload guard: require either fee_reminder with studentId, or batchId + date, or studentId
-  if (!batchId && !studentId) {
+  // Payload guard: require either fee_reminder, or examId, or batchId + date, or studentId
+  if (!batchId && !studentId && !examId) {
     return res.status(400).json({
       ok: false,
-      error: 'Invalid request payload. Specify batchId and date, or studentId.',
+      error: 'Invalid request payload. Specify batchId and date, studentId, or examId.',
     });
   }
 
@@ -285,6 +286,198 @@ Kindly ensure the pending installment is cleared at the academy accounts desk. I
     } catch (feeErr) {
       console.error('Fee reminder error:', feeErr);
       return res.status(500).json({ ok: false, error: feeErr.message || 'Error processing fee reminder.' });
+    }
+  }
+
+  // Case E: Exam Results Notification Dispatch
+  if (action === 'exam_results' || notificationType === 'exam_results') {
+    try {
+      if (!examId) {
+        return res.status(400).json({ ok: false, error: 'examId is required for exam results dispatch.' });
+      }
+
+      // 1. Fetch Exam Details
+      const { data: exam, error: exErr } = await supabase
+        .from('exams')
+        .select(`
+          id,
+          name,
+          exam_type,
+          subject,
+          exam_date,
+          total_marks,
+          passing_marks,
+          academic_year,
+          course_id,
+          batch_id,
+          courses:course_id ( name, code ),
+          batches:batch_id ( name, code )
+        `)
+        .eq('id', examId)
+        .single();
+
+      if (exErr || !exam) {
+        return res.status(404).json({ ok: false, error: 'Examination record not found in database.' });
+      }
+
+      // 2. Query Marks for this Exam
+      let marksQuery = supabase
+        .from('exam_marks')
+        .select(`
+          id,
+          student_id,
+          marks_obtained,
+          is_absent,
+          remarks,
+          notified_guardians,
+          students:student_id ( id, full_name, admission_no, roll_no )
+        `)
+        .eq('exam_id', examId);
+
+      if (studentId) {
+        marksQuery = marksQuery.eq('student_id', studentId);
+      }
+
+      const { data: marksData, error: mErr } = await marksQuery;
+      if (mErr) throw mErr;
+
+      if (!marksData || marksData.length === 0) {
+        return res.status(200).json({
+          ok: true,
+          message: 'No student marks recorded for this examination yet.',
+          sentCount: 0,
+        });
+      }
+
+      let sentCount = 0;
+      let failedCount = 0;
+      let skippedCount = 0;
+      const details = [];
+
+      const totalMarks = Number(exam.total_marks) || 100;
+      const passingMarks = Number(exam.passing_marks) || 35;
+
+      for (const mark of marksData) {
+        const student = mark.students;
+        if (!student) continue;
+
+        // Fetch linked guardians
+        const { data: guardians, error: gErr } = await supabase
+          .from('parent_students')
+          .select(`
+            id,
+            relationship,
+            alert_preference,
+            contact_priority,
+            can_receive_alerts,
+            parents:parent_id (
+              id,
+              full_name,
+              telegram_chat_id,
+              is_verified
+            )
+          `)
+          .eq('student_id', student.id);
+
+        if (gErr || !guardians || guardians.length === 0) {
+          skippedCount++;
+          continue;
+        }
+
+        const isAbsent = Boolean(mark.is_absent);
+        const marksVal = isAbsent ? null : mark.marks_obtained;
+        const isPass = !isAbsent && marksVal !== null && Number(marksVal) >= passingMarks;
+        const pct = marksVal !== null && marksVal !== undefined
+          ? Math.round((Number(marksVal) / totalMarks) * 100 * 10) / 10
+          : 0;
+
+        let grade = '—';
+        if (isAbsent) grade = 'AB';
+        else if (pct >= 90) grade = 'A+';
+        else if (pct >= 80) grade = 'A';
+        else if (pct >= 70) grade = 'B';
+        else if (pct >= 60) grade = 'C';
+        else if (pct >= 40) grade = 'D';
+        else grade = 'F';
+
+        for (const g of guardians) {
+          const parent = g.parents;
+          if (!parent?.telegram_chat_id || !parent?.is_verified || g.can_receive_alerts === false) {
+            skippedCount++;
+            continue;
+          }
+
+          // Check alert preferences
+          const pref = g.alert_preference || 'all';
+          if (pref === 'none') {
+            skippedCount++;
+            continue;
+          }
+          if (pref === 'emergency_only' && isPass) {
+            // Guardians wanting only critical alerts are skipped when student passes
+            skippedCount++;
+            continue;
+          }
+
+          const scoreDisplay = isAbsent ? 'ABSENT' : marksVal !== null ? String(marksVal) : 'Pending';
+          const pctDisplay = isAbsent ? 'N/A' : marksVal !== null ? `${pct}%` : 'Pending';
+          const statusDisplay = isAbsent ? 'ABSENT' : isPass ? 'PASSED ✅' : 'NEEDS ATTENTION ⚠️';
+
+          const messageHtml = `
+🎓 <b>RUPAREL ACADEMY — EXAMINATION RESULTS</b>
+
+Namaste <b>${escapeHtml(parent.full_name)}</b>,
+Academic evaluation report for your ward:
+
+👤 <b>Student:</b> ${escapeHtml(student.full_name)}
+🆔 <b>Admission ID:</b> <code>${escapeHtml(student.admission_no)}</code> ${student.roll_no ? `• Roll: ${escapeHtml(student.roll_no)}` : ''}
+🏫 <b>Stream:</b> ${escapeHtml(exam.courses?.name || 'Course')} &bull; ${escapeHtml(exam.batches?.name || 'Cohort')}
+
+📋 <b>Exam:</b> ${escapeHtml(exam.name)}
+📚 <b>Subject:</b> ${escapeHtml(exam.subject || 'All Subjects')}
+📅 <b>Date:</b> ${exam.exam_date} (${escapeHtml(exam.exam_type)})
+
+🎯 <b>Marks Scored:</b> <b>${scoreDisplay} / ${totalMarks}</b> (Pass: ${passingMarks})
+📊 <b>Percentage:</b> <b>${pctDisplay}</b>
+🏆 <b>Grade:</b> <b>${grade}</b>
+🎖️ <b>Final Status:</b> <b>${statusDisplay}</b>
+${mark.remarks ? `\n📝 <i>Faculty Remarks: ${escapeHtml(mark.remarks)}</i>` : ''}
+
+<i>Ruparel Attendance &amp; Academic ERP &bull; Official Telegram Notification</i>
+`.trim();
+
+          const sendRes = await sendTelegramAlert(botToken, parent.telegram_chat_id, messageHtml);
+          if (sendRes.ok) {
+            sentCount++;
+            details.push({ studentName: student.full_name, parentName: parent.full_name, result: 'sent' });
+          } else {
+            failedCount++;
+            details.push({ studentName: student.full_name, parentName: parent.full_name, result: 'failed', error: sendRes.error });
+          }
+        }
+
+        // Mark as notified in database
+        try {
+          await supabase
+            .from('exam_marks')
+            .update({ notified_guardians: true, notified_at: new Date().toISOString() })
+            .eq('id', mark.id);
+        } catch (mUpErr) {
+          console.warn('Could not update exam_marks notified flag:', mUpErr);
+        }
+      }
+
+      return res.status(200).json({
+        ok: true,
+        message: `Examination results dispatched to ${sentCount} guardian account(s)!`,
+        sentCount,
+        failedCount,
+        skippedCount,
+        details,
+      });
+    } catch (examErr) {
+      console.error('Exam results dispatch error:', examErr);
+      return res.status(500).json({ ok: false, error: examErr.message || 'Error dispatching exam results.' });
     }
   }
 

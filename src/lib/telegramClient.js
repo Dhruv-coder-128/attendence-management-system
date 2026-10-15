@@ -473,3 +473,48 @@ export async function sendVerifiedFeeReminder({
   }
 }
 
+/**
+ * Dispatches verified examination results to linked guardians via the serverless Telegram Bot API,
+ * strictly respecting each guardian's notification preference (all vs emergency_only).
+ */
+export async function sendExamResultsTelegram({ examId, studentId = null }) {
+  if (!examId) {
+    return { success: false, error: 'Valid examId is required.' };
+  }
+
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch('/api/telegram-notify', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        action: 'exam_results',
+        examId,
+        studentId,
+      }),
+    });
+
+    const result = await response.json();
+    if (response.ok && result.ok) {
+      return {
+        success: true,
+        message: result.message || 'Exam results dispatched to guardians successfully!',
+        sentCount: result.sentCount || 0,
+        failedCount: result.failedCount || 0,
+        skippedCount: result.skippedCount || 0,
+        details: result.details || [],
+      };
+    }
+
+    return {
+      success: false,
+      error: result.error || `Server responded with HTTP ${response.status}`,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message || 'Network error communicating with exam alert gateway.',
+    };
+  }
+}
+
