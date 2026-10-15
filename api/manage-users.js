@@ -157,69 +157,94 @@ export default async function handler(req, res) {
     console.warn('Error fetching caller profile from user_profiles:', pErr);
   }
 
-  // Check if any active owner exists in the system
-  let hasExistingOwner = false;
-  try {
-    const { data: owners, error: oErr } = await dbClient
-      .from('user_profiles')
-      .select('id')
-      .eq('role', 'owner')
-      .eq('is_active', true)
-      .limit(1);
+  // -------------------------------------------------------------
+  // TRUSTED SERVER-SIDE OWNER VERIFICATION
+  // -------------------------------------------------------------
+  // 1. Explicit server environment variable OWNER_EMAIL (trusted server config)
+  const serverOwnerEmail = (process.env.OWNER_EMAIL || '').trim().toLowerCase();
+  const isServerOwnerEmail = Boolean(serverOwnerEmail && callerUser.email?.trim().toLowerCase() === serverOwnerEmail);
 
-    if (!oErr && owners && owners.length > 0) {
-      hasExistingOwner = true;
+  // 2. Cryptographically signed app_metadata claim (set ONLY via Supabase Admin API with service_role)
+  const isAppMetadataOwner = callerUser.app_metadata?.role === 'owner';
+
+  // 3. Verified database record in public.user_profiles with role 'owner'
+  const isDatabaseOwner = callerProfile?.role === 'owner';
+
+  // 4. Initial Root Creator check (used ONLY if user_profiles table is not yet populated AND adminClient is present)
+  let isRootAdminAccount = false;
+  if (!callerProfile && adminClient && !isDatabaseOwner) {
+    try {
+      const { data: userPage } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1 });
+      if (userPage?.users?.length > 0 && userPage.users[0].id === callerUser.id) {
+        // If OWNER_EMAIL is defined, root account must match it; if not defined, earliest creator is recognized
+        if (!serverOwnerEmail || isServerOwnerEmail) {
+          isRootAdminAccount = true;
+        }
+      }
+    } catch (rootCheckErr) {
+      console.warn('Error checking root admin account:', rootCheckErr.message);
     }
-  } catch (ownerCheckErr) {
-    console.warn('Error checking existing owners:', ownerCheckErr);
   }
 
-  // BULLETPROOF OWNER RECOGNITION:
-  // If the caller has no profile yet, or if no active owner exists,
-  // or if the caller was flagged as owner in Auth metadata:
-  const isMetadataOwner =
-    callerUser.app_metadata?.role === 'owner' ||
-    callerUser.user_metadata?.role === 'owner';
+  // Caller is ONLY recognized as Owner if verified by a trusted server source:
+  // - Never by user_metadata (which is client-controlled and untrusted)
+  // - Never simply because user_profiles has no active owner
+  const isCallerOwner = isServerOwnerEmail || isAppMetadataOwner || isDatabaseOwner || isRootAdminAccount;
 
-  if (!callerProfile) {
-    // If no active owner exists in the database, the current caller is established as the primary Owner!
-    const shouldBeOwner = isMetadataOwner || !hasExistingOwner;
+  // If caller is verified as Owner, ensure their callerProfile is fully populated and synced
+  if (isCallerOwner) {
+    if (!callerProfile) {
+      callerProfile = {
+        id: callerUser.id,
+        email: callerUser.email,
+        full_name: callerUser.user_metadata?.full_name || callerUser.email?.split('@')[0] || 'System Owner',
+        role: 'owner',
+        permissions: getOwnerPermissions(),
+        is_active: true,
+      };
 
-    callerProfile = {
-      id: callerUser.id,
-      email: callerUser.email,
-      full_name: callerUser.user_metadata?.full_name || callerUser.email?.split('@')[0] || 'System Owner',
-      role: shouldBeOwner ? 'owner' : 'moderator',
-      permissions: shouldBeOwner ? getOwnerPermissions() : getModeratorPermissions(),
-      is_active: true,
-    };
-
-    // Attempt self-healing profile upsert
-    try {
-      await dbClient
-        .from('user_profiles')
-        .upsert(callerProfile, { onConflict: 'id' });
-    } catch (upsertErr) {
-      console.warn('Auto-provisioning owner profile in table issue:', upsertErr.message);
-    }
-  } else if (!hasExistingOwner || isMetadataOwner) {
-    // If caller's record exists but they should be Owner
-    if (callerProfile.role !== 'owner' && (isMetadataOwner || !hasExistingOwner)) {
+      // Persist profile to public.user_profiles
+      try {
+        await dbClient.from('user_profiles').upsert(callerProfile, { onConflict: 'id' });
+      } catch (upsertErr) {
+        console.warn('Could not auto-provision owner profile record:', upsertErr.message);
+      }
+    } else if (callerProfile.role !== 'owner') {
       callerProfile.role = 'owner';
       callerProfile.permissions = getOwnerPermissions();
       try {
-        await dbClient
-          .from('user_profiles')
-          .update({ role: 'owner', permissions: getOwnerPermissions() })
-          .eq('id', callerProfile.id);
+        await dbClient.from('user_profiles').update({ role: 'owner', permissions: getOwnerPermissions() }).eq('id', callerProfile.id);
       } catch (updErr) {
-        console.warn('Updating caller to owner issue:', updErr.message);
+        console.warn('Could not update profile to owner:', updErr.message);
       }
+    }
+
+    // Ensure app_metadata has role: 'owner'
+    if (adminClient && callerUser.app_metadata?.role !== 'owner') {
+      try {
+        await adminClient.auth.admin.updateUserById(callerUser.id, {
+          app_metadata: { role: 'owner' },
+        });
+      } catch (metaErr) {
+        console.warn('Could not sync app_metadata owner role:', metaErr.message);
+      }
+    }
+  } else {
+    // If not verified as Owner, callerProfile defaults to their database record or a safe moderator profile
+    if (!callerProfile) {
+      const assignedRole = callerUser.app_metadata?.role === 'admin' ? 'admin' : 'moderator';
+      callerProfile = {
+        id: callerUser.id,
+        email: callerUser.email,
+        full_name: callerUser.user_metadata?.full_name || callerUser.email?.split('@')[0] || 'Staff Member',
+        role: assignedRole,
+        permissions: assignedRole === 'admin' ? getAdminPermissions() : getModeratorPermissions(),
+        is_active: true,
+      };
     }
   }
 
   // Caller role & permission check
-  const isCallerOwner = callerProfile?.role === 'owner';
   const hasUserManagementPerm = isCallerOwner || Boolean(callerProfile?.permissions?.manage_users);
 
   if (!hasUserManagementPerm) {
@@ -335,7 +360,6 @@ export default async function handler(req, res) {
         email_confirm: true,
         user_metadata: {
           full_name: cleanFullName,
-          role: cleanRole,
         },
         app_metadata: {
           role: cleanRole,
@@ -486,7 +510,6 @@ export default async function handler(req, res) {
         try {
           await adminClient.auth.admin.updateUserById(userId, {
             app_metadata: { role: newRole },
-            user_metadata: { role: newRole },
           });
         } catch (syncErr) {
           console.warn('Syncing role to auth metadata issue:', syncErr);

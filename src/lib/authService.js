@@ -46,8 +46,8 @@ export async function fetchUserProfile(user) {
     return getFallbackOwnerProfile(user);
   }
 
-  // Explicit owner in Auth metadata
-  if (user.app_metadata?.role === 'owner' || user.user_metadata?.role === 'owner') {
+  // Trusted server-side claim in app_metadata (never trust client-supplied user_metadata)
+  if (user.app_metadata?.role === 'owner') {
     return getFallbackOwnerProfile(user);
   }
 
@@ -58,52 +58,56 @@ export async function fetchUserProfile(user) {
       .eq('id', user.id)
       .maybeSingle();
 
-    if (error || !profile) {
-      // Check if any active owner exists in the system
-      const { count } = await supabase
-        .from('user_profiles')
-        .select('id', { count: 'exact', head: true })
-        .eq('role', 'owner')
-        .eq('is_active', true);
-
-      if (count === 0 || !count) {
-        // If no active owner exists, the primary user is granted Owner privileges
-        return getFallbackOwnerProfile(user);
-      }
-
-      // Check user metadata for assigned role
-      const assignedRole = user.app_metadata?.role || user.user_metadata?.role || 'moderator';
-
-      return {
-        id: user.id,
-        email: user.email,
-        full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Staff User',
-        role: assignedRole,
-        permissions: assignedRole === 'owner'
-          ? getFallbackOwnerProfile(user).permissions
-          : {
-              view_students: true,
-              edit_students: assignedRole === 'admin',
-              delete_students: false,
-              view_attendance: true,
-              mark_attendance: true,
-              manage_batches: assignedRole === 'admin',
-              manage_fees: assignedRole === 'admin',
-              manage_exams: assignedRole === 'admin',
-              manage_parents: assignedRole === 'admin',
-              send_notifications: assignedRole === 'admin',
-              export_data: assignedRole === 'admin',
-              manage_users: false,
-              manage_settings: false,
-            },
-        is_active: true,
-      };
+    if (!error && profile) {
+      return profile;
     }
 
-    return profile;
+    // If profile record is not found, check trusted app_metadata for assigned staff role
+    const assignedRole = user.app_metadata?.role === 'admin'
+      ? 'admin'
+      : user.app_metadata?.role === 'owner'
+      ? 'owner'
+      : 'moderator';
+
+    return {
+      id: user.id,
+      email: user.email,
+      full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Staff User',
+      role: assignedRole,
+      permissions: assignedRole === 'owner'
+        ? getFallbackOwnerProfile(user).permissions
+        : {
+            view_students: true,
+            edit_students: assignedRole === 'admin',
+            delete_students: false,
+            view_attendance: true,
+            mark_attendance: true,
+            manage_batches: assignedRole === 'admin',
+            manage_fees: assignedRole === 'admin',
+            manage_exams: assignedRole === 'admin',
+            manage_parents: assignedRole === 'admin',
+            send_notifications: assignedRole === 'admin',
+            export_data: assignedRole === 'admin',
+            manage_users: false,
+            manage_settings: false,
+          },
+      is_active: true,
+    };
   } catch (err) {
-    console.warn('Error fetching user profile, using safe fallback:', err);
-    return getFallbackOwnerProfile(user);
+    console.warn('Error fetching user profile from database:', err);
+    // Safe non-privileged fallback
+    return {
+      id: user.id,
+      email: user.email,
+      full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Staff User',
+      role: user.app_metadata?.role || 'moderator',
+      permissions: {
+        view_students: true,
+        view_attendance: true,
+        mark_attendance: true,
+      },
+      is_active: true,
+    };
   }
 }
 
