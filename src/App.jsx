@@ -6,21 +6,25 @@ import StudentsPage from './pages/StudentsPage';
 import BatchesPage from './pages/BatchesPage';
 import AttendancePage from './pages/AttendancePage';
 import ParentsPage from './pages/ParentsPage';
+import FeesPage from './pages/FeesPage';
+import ExamsPage from './pages/ExamsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import SettingsPage from './pages/SettingsPage';
 import BulkImportPage from './pages/BulkImportPage';
-import ExamsPage from './pages/ExamsPage';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
+import { fetchUserProfile, hasPermission, getFallbackOwnerProfile } from './lib/authService';
 import { RefreshCw, GraduationCap } from 'lucide-react';
 
 /**
  * Ruparel Attendance ERP Root Application Component
  * 100% Real Database Connected — Zero Mock Data Dependencies
+ * Integrates RBAC (Owner, Admin, Moderator) and Phase 5 Exams & Fees
  */
 export default function App() {
   // Supabase Auth Session State
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   // Active View / Navigation State
@@ -53,7 +57,7 @@ export default function App() {
         .from('students')
         .select('id', { count: 'exact' });
 
-      // 2. Live Batches Count directly from public.batches (All cohorts in database)
+      // 2. Live Batches Count directly from public.batches
       const { count: batchCount, data: bData, error: bErr } = await supabase
         .from('batches')
         .select('id, is_active', { count: 'exact' });
@@ -76,6 +80,21 @@ export default function App() {
     }
   }, [notifications.length]);
 
+  // Load User Profile & Permissions
+  const loadProfile = useCallback(async (authUser) => {
+    if (!authUser) {
+      setCurrentUserProfile(null);
+      return;
+    }
+    try {
+      const profile = await fetchUserProfile(authUser);
+      setCurrentUserProfile(profile);
+    } catch (err) {
+      console.warn('Error loading user profile, falling back to owner session:', err);
+      setCurrentUserProfile(getFallbackOwnerProfile(authUser));
+    }
+  }, []);
+
   // Initialize and subscribe to Supabase Auth State
   useEffect(() => {
     if (!supabase || !isSupabaseConfigured) {
@@ -88,7 +107,11 @@ export default function App() {
       .getSession()
       .then(({ data: { session: initialSession } }) => {
         setSession(initialSession);
-        setUser(initialSession?.user ?? null);
+        const currentUser = initialSession?.user ?? null;
+        setUser(currentUser);
+        if (currentUser) {
+          loadProfile(currentUser);
+        }
         setAuthLoading(false);
       })
       .catch((err) => {
@@ -96,19 +119,25 @@ export default function App() {
         setAuthLoading(false);
       });
 
-    // 2. Listen for auth state changes (sign in, sign out, token refresh)
+    // 2. Listen for auth state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, currentSession) => {
       setSession(currentSession);
-      setUser(currentSession?.user ?? null);
+      const currentUser = currentSession?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        loadProfile(currentUser);
+      } else {
+        setCurrentUserProfile(null);
+      }
       setAuthLoading(false);
     });
 
     return () => {
       subscription?.unsubscribe();
     };
-  }, []);
+  }, [loadProfile]);
 
   // Refresh counts when user is authenticated or active page changes
   useEffect(() => {
@@ -120,6 +149,7 @@ export default function App() {
   // Authentication Handlers
   const handleLoginSuccess = (authenticatedUser) => {
     setUser(authenticatedUser);
+    loadProfile(authenticatedUser);
     setActivePage('dashboard');
   };
 
@@ -133,6 +163,7 @@ export default function App() {
     } finally {
       setSession(null);
       setUser(null);
+      setCurrentUserProfile(null);
       setActivePage('dashboard');
     }
   };
@@ -188,7 +219,7 @@ export default function App() {
     );
   }
 
-  // 2. Route Protection: If unauthenticated, ONLY render the Login Page!
+  // 2. Route Protection: If unauthenticated, render Login Page
   if (!user) {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
@@ -200,6 +231,7 @@ export default function App() {
       onNavigate={setActivePage}
       onLogout={handleLogout}
       user={user}
+      currentUserProfile={currentUserProfile}
       counts={counts}
     >
       {activePage === 'dashboard' && (
@@ -221,10 +253,6 @@ export default function App() {
         <AttendancePage onRefreshCounts={refreshCounts} />
       )}
 
-      {activePage === 'exams' && (
-        <ExamsPage />
-      )}
-
       {activePage === 'parents' && (
         <ParentsPage
           onSendNotice={() => setActivePage('notifications')}
@@ -232,8 +260,12 @@ export default function App() {
         />
       )}
 
-      {activePage === 'import' && (
-        <BulkImportPage onNavigate={setActivePage} onRefreshCounts={refreshCounts} />
+      {activePage === 'fees' && (
+        <FeesPage onRefreshCounts={refreshCounts} />
+      )}
+
+      {activePage === 'exams' && (
+        <ExamsPage />
       )}
 
       {activePage === 'notifications' && (
@@ -243,8 +275,12 @@ export default function App() {
         />
       )}
 
+      {activePage === 'import' && (
+        <BulkImportPage onNavigate={setActivePage} onRefreshCounts={refreshCounts} />
+      )}
+
       {activePage === 'settings' && (
-        <SettingsPage />
+        <SettingsPage currentUserProfile={currentUserProfile} />
       )}
     </AppLayout>
   );

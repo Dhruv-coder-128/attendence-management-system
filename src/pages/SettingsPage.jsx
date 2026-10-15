@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
+import UsersManagement from '../components/settings/UsersManagement';
 import { isSupabaseConfigured, checkSupabaseConnection, supabaseConfig } from '../lib/supabase';
 import {
   getTelegramBotStatus,
@@ -25,9 +26,9 @@ import {
 } from '../lib/telegramClient';
 
 /**
- * System Settings & Cloud Integration Status Page
+ * System Settings, Cloud Integration Status & Staff Access Page
  */
-export default function SettingsPage() {
+export default function SettingsPage({ currentUserProfile }) {
   const [instituteName, setInstituteName] = useState(() => {
     return localStorage.getItem('erp_institute_name') || 'Ruparel Attendance ERP Academy';
   });
@@ -607,6 +608,9 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Staff & Role-Based Access Control Section */}
+      <UsersManagement currentUserProfile={currentUserProfile} />
     </div>
   );
 }

@@ -13,6 +13,7 @@ export default function AppLayout({
   onLogout,
   counts,
   user,
+  currentUserProfile,
   children,
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -35,6 +36,7 @@ export default function AppLayout({
         onLogout={onLogout}
         counts={counts}
         user={user}
+        currentUserProfile={currentUserProfile}
       />
 
       {/* Main Workspace Area */}

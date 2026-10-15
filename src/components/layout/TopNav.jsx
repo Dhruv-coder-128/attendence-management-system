@@ -15,21 +15,27 @@ export default function TopNav({
   const getPageTitle = (page) => {
     switch (page) {
       case 'dashboard':
-        return 'Executive Dashboard';
+        return 'Dashboard';
       case 'students':
-        return 'Student Directory';
+        return 'Students';
       case 'batches':
-        return 'Courses & Batches';
+        return 'Batches';
       case 'attendance':
-        return 'Daily Attendance Register';
+        return 'Attendance';
       case 'parents':
-        return 'Parent Communication Directory';
+        return 'Parents';
+      case 'fees':
+        return 'Fees';
+      case 'exams':
+        return 'Exams';
       case 'notifications':
-        return 'Notification Broadcasts';
+        return 'Notifications';
       case 'settings':
-        return 'System & Institution Settings';
+        return 'Settings';
+      case 'import':
+        return 'Bulk Import';
       default:
-        return 'Tuition ERP';
+        return 'ERP';
     }
   };
 
@@ -77,7 +83,14 @@ export default function TopNav({
         {/* Campus & Term Chip */}
         <div className="topbar-chip" style={{ display: 'none', md: 'flex' }}>
           <Calendar size={13} color="var(--gold-dark)" />
-          <span>Friday, 09 Oct 2026</span>
+          <span>
+            {new Date().toLocaleDateString('en-IN', {
+              weekday: 'short',
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+            })}
+          </span>
         </div>
 
         {/* Quick Action Button */}

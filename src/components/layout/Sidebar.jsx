@@ -5,18 +5,20 @@ import {
   BookOpen,
   CalendarCheck,
   UserCheck,
+  CreditCard,
+  Award,
   Bell,
   Settings,
   LogOut,
   GraduationCap,
   ShieldCheck,
-  FileSpreadsheet,
-  Award,
+  Shield,
 } from 'lucide-react';
+import { hasPermission } from '../../lib/authService';
 
 /**
- * Enterprise Fixed Sidebar Component
- * Styled in rich deep navy with subtle muted gold accents
+ * Simplified Enterprise Navigation Sidebar
+ * Exact labels: Dashboard, Students, Batches, Attendance, Parents, Fees, Exams, Notifications, Settings
  */
 export default function Sidebar({
   activePage,
@@ -26,49 +28,92 @@ export default function Sidebar({
   onLogout,
   counts = {},
   user,
+  currentUserProfile,
 }) {
-  const adminName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Administrator';
-  const adminRole = user?.user_metadata?.role || (user ? 'Admin Staff' : 'Director');
-  const userInitials = (adminName || 'AD')
+  const staffName =
+    currentUserProfile?.full_name ||
+    user?.user_metadata?.full_name ||
+    user?.email?.split('@')[0] ||
+    'Staff User';
+
+  const userRole = (currentUserProfile?.role || 'owner').toLowerCase();
+  const roleDisplay =
+    userRole === 'owner' ? 'Owner' : userRole === 'admin' ? 'Admin' : 'Moderator';
+
+  const userInitials = (staffName || 'SU')
     .split(' ')
     .map((n) => n[0])
     .join('')
     .substring(0, 2)
     .toUpperCase();
-  const academicNavItems = [
-    { id: 'dashboard', label: 'Executive Dashboard', icon: LayoutDashboard },
+
+  // Exact 9 primary navigation modules requested
+  const allNavItems = [
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      icon: LayoutDashboard,
+      permission: null, // Always accessible
+    },
     {
       id: 'students',
-      label: 'Students Directory',
+      label: 'Students',
       icon: Users,
       badge: counts.students !== undefined ? String(counts.students) : '0',
+      permission: 'view_students',
     },
     {
       id: 'batches',
-      label: 'Courses & Batches',
+      label: 'Batches',
       icon: BookOpen,
       badge: counts.batches !== undefined ? String(counts.batches) : '0',
+      permission: 'manage_batches',
     },
-    { id: 'attendance', label: 'Attendance Register', icon: CalendarCheck, badge: 'Live' },
-    { id: 'exams', label: 'Exams & Marks', icon: Award },
-  ];
-
-  const adminNavItems = [
-    { id: 'parents', label: 'Parent Directory', icon: UserCheck },
     {
-      id: 'import',
-      label: 'Bulk Data Import',
-      icon: FileSpreadsheet,
-      badge: 'XLS/CSV',
+      id: 'attendance',
+      label: 'Attendance',
+      icon: CalendarCheck,
+      badge: 'Live',
+      permission: 'view_attendance',
+    },
+    {
+      id: 'parents',
+      label: 'Parents',
+      icon: UserCheck,
+      permission: 'manage_parents',
+    },
+    {
+      id: 'fees',
+      label: 'Fees',
+      icon: CreditCard,
+      permission: 'manage_fees',
+    },
+    {
+      id: 'exams',
+      label: 'Exams',
+      icon: Award,
+      permission: 'manage_exams',
     },
     {
       id: 'notifications',
-      label: 'Telegram & Alerts',
+      label: 'Notifications',
       icon: Bell,
       badge: counts.notifications !== undefined ? String(counts.notifications) : '0',
+      permission: 'send_notifications',
     },
-    { id: 'settings', label: 'ERP Settings', icon: Settings },
+    {
+      id: 'settings',
+      label: 'Settings',
+      icon: Settings,
+      permission: 'manage_settings',
+    },
   ];
+
+  // Filter items by user role and module permissions
+  const visibleNavItems = allNavItems.filter((item) => {
+    if (!item.permission) return true;
+    return hasPermission(currentUserProfile, item.permission);
+  });
 
   const handleNavClick = (id) => {
     onNavigate(id);
@@ -88,7 +133,7 @@ export default function Sidebar({
               <GraduationCap size={22} />
             </div>
             <div>
-              <div className="brand-title">Ruparel Attendence ERP</div>
+              <div className="brand-title">Ruparel Attendance ERP</div>
               <div className="brand-subtitle">Tuition &amp; Academy System</div>
             </div>
           </div>
@@ -103,28 +148,8 @@ export default function Sidebar({
 
         {/* Navigation Section */}
         <nav className="sidebar-nav">
-          <div className="nav-section-title">Academic Modules</div>
-          {academicNavItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activePage === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => handleNavClick(item.id)}
-                className={`nav-item ${isActive ? 'active' : ''}`}
-              >
-                <Icon className="nav-icon" />
-                <span>{item.label}</span>
-                {item.badge && <span className="nav-badge">{item.badge}</span>}
-              </button>
-            );
-          })}
-
-          <div className="nav-section-title" style={{ marginTop: '12px' }}>
-            Communications &amp; Config
-          </div>
-          {adminNavItems.map((item) => {
+          <div className="nav-section-title">Navigation</div>
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activePage === item.id;
             return (
@@ -145,12 +170,25 @@ export default function Sidebar({
         {/* Sidebar Footer with Logged In User Profile */}
         <div className="sidebar-footer">
           <div className="user-snippet">
-            <div className="user-avatar" title={user?.email || 'Admin Profile'}>
+            <div className="user-avatar" title={user?.email || 'Profile'}>
               {userInitials}
             </div>
             <div className="user-info">
-              <div className="user-name" title={adminName}>{adminName}</div>
-              <div className="user-role">{adminRole}</div>
+              <div className="user-name" title={staffName}>
+                {staffName}
+              </div>
+              <div
+                className="user-role"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  color: userRole === 'owner' ? 'var(--gold-primary)' : '#94a3b8',
+                }}
+              >
+                {userRole === 'owner' ? <ShieldCheck size={12} /> : <Shield size={12} />}
+                <span>{roleDisplay}</span>
+              </div>
             </div>
             <button
               type="button"
@@ -162,7 +200,7 @@ export default function Sidebar({
                 background: 'transparent',
                 color: '#94a3b8',
               }}
-              title="Sign Out to Login Screen"
+              title="Sign Out"
             >
               <LogOut size={15} />
             </button>

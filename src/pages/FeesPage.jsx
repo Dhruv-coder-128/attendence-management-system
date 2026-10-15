@@ -1,0 +1,640 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  CreditCard,
+  Search,
+  Filter,
+  DollarSign,
+  AlertTriangle,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Send,
+  Plus,
+  Eye,
+  Calendar,
+  FileSpreadsheet,
+} from 'lucide-react';
+import Button from '../components/common/Button';
+import Badge from '../components/common/Badge';
+import Modal from '../components/common/Modal';
+import Input from '../components/common/Input';
+import Select from '../components/common/Select';
+import StudentAcademicDossier from '../components/students/StudentAcademicDossier';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { recordFeePayment, computeFeeStatus } from '../lib/feeService';
+import { sendVerifiedFeeReminder } from '../lib/telegramClient';
+
+export default function FeesPage({ onRefreshCounts }) {
+  const [students, setStudents] = useState([]);
+  const [batches, setBatches] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
+
+  // Filters & Search
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedBatch, setSelectedBatch] = useState('ALL');
+  const [selectedStatus, setSelectedStatus] = useState('ALL');
+
+  // Record Payment Modal State
+  const [selectedStudentForPayment, setSelectedStudentForPayment] = useState(null);
+  const [paymentData, setPaymentData] = useState({
+    amount: '',
+    paymentMethod: 'Cash',
+    referenceNo: '',
+    notes: '',
+  });
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+
+  // Sending Telegram Reminder State
+  const [sendingReminderId, setSendingReminderId] = useState(null);
+
+  // Dossier Modal State
+  const [dossierStudent, setDossierStudent] = useState(null);
+
+  // Fetch all students and their fee records
+  const loadFeesData = useCallback(async () => {
+    if (!supabase || !isSupabaseConfigured) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // 1. Fetch batches for filter dropdown
+      const { data: batchesData } = await supabase
+        .from('batches')
+        .select('id, name, code')
+        .order('name');
+      setBatches(batchesData || []);
+
+      // 2. Fetch students with batch, parent details, and fee data
+      const { data: studentsData, error: sErr } = await supabase
+        .from('students')
+        .select(`
+          id,
+          admission_no,
+          roll_no,
+          full_name,
+          email,
+          phone,
+          status,
+          tuition_fee,
+          fee_paid,
+          fee_status,
+          fee_due_date,
+          batches:batch_id ( id, name, code ),
+          student_fees ( id, total_amount, paid_amount, pending_amount, status, next_due_date, installment_schedule )
+        `)
+        .order('full_name');
+
+      if (sErr) throw sErr;
+      setStudents(studentsData || []);
+    } catch (err) {
+      console.error('Error fetching fees data:', err);
+      setError(err.message || 'Failed to fetch fee records.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFeesData();
+  }, [loadFeesData]);
+
+  const showNotice = (msg, isError = false) => {
+    setNotice({ text: msg, isError });
+    setTimeout(() => setNotice(null), 4500);
+  };
+
+  // Derived KPI Totals
+  const stats = useMemo(() => {
+    let totalExpected = 0;
+    let totalCollected = 0;
+    let overdueCount = 0;
+    let pendingCount = 0;
+
+    students.forEach((s) => {
+      const feeRec = s.student_fees?.[0];
+      const tuition = Number(feeRec?.total_amount ?? s.tuition_fee ?? 45000);
+      const paid = Number(feeRec?.paid_amount ?? s.fee_paid ?? 0);
+      const status = feeRec?.status ?? s.fee_status ?? 'pending';
+
+      totalExpected += tuition;
+      totalCollected += paid;
+
+      if (status === 'overdue') overdueCount++;
+      if (status === 'pending' || status === 'partial') pendingCount++;
+    });
+
+    const pendingBalance = Math.max(0, totalExpected - totalCollected);
+
+    return {
+      totalExpected,
+      totalCollected,
+      pendingBalance,
+      overdueCount,
+      pendingCount,
+    };
+  }, [students]);
+
+  // Filtered Students List
+  const filteredStudents = useMemo(() => {
+    return students.filter((s) => {
+      const matchesSearch =
+        !searchTerm ||
+        s.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.admission_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        s.roll_no?.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const batchId = s.batches?.id;
+      const matchesBatch = selectedBatch === 'ALL' || batchId === selectedBatch;
+
+      const feeRec = s.student_fees?.[0];
+      const status = (feeRec?.status ?? s.fee_status ?? 'pending').toLowerCase();
+      const matchesStatus =
+        selectedStatus === 'ALL' || status === selectedStatus.toLowerCase();
+
+      return matchesSearch && matchesBatch && matchesStatus;
+    });
+  }, [students, searchTerm, selectedBatch, selectedStatus]);
+
+  // Handle Record Payment Submit
+  const handleRecordPayment = async (e) => {
+    e.preventDefault();
+    if (!selectedStudentForPayment) return;
+
+    const amt = parseFloat(paymentData.amount);
+    if (isNaN(amt) || amt <= 0) {
+      alert('Please enter a valid positive payment amount.');
+      return;
+    }
+
+    setIsSubmittingPayment(true);
+    try {
+      const feeRec = selectedStudentForPayment.student_fees?.[0];
+      const res = await recordFeePayment({
+        studentId: selectedStudentForPayment.id,
+        amount: amt,
+        paymentMethod: paymentData.paymentMethod,
+        referenceNo: paymentData.referenceNo,
+        notes: paymentData.notes,
+        existingFeeRecord: feeRec || {
+          total_amount: Number(selectedStudentForPayment.tuition_fee || 45000),
+          paid_amount: Number(selectedStudentForPayment.fee_paid || 0),
+          academic_year: '2026-27',
+        },
+      });
+
+      if (res.success) {
+        showNotice(res.message || 'Payment recorded successfully.');
+        setSelectedStudentForPayment(null);
+        setPaymentData({ amount: '', paymentMethod: 'Cash', referenceNo: '', notes: '' });
+        await loadFeesData();
+        if (onRefreshCounts) onRefreshCounts();
+      } else {
+        showNotice(res.error || 'Failed to record payment.', true);
+      }
+    } catch (err) {
+      showNotice(err.message || 'Error recording payment.', true);
+    } finally {
+      setIsSubmittingPayment(false);
+    }
+  };
+
+  // Handle Telegram Fee Reminder
+  const handleSendReminder = async (student) => {
+    setSendingReminderId(student.id);
+    try {
+      const feeRec = student.student_fees?.[0];
+      const res = await sendVerifiedFeeReminder(student.id, feeRec || {
+        total_amount: student.tuition_fee || 45000,
+        paid_amount: student.fee_paid || 0,
+        pending_amount: (student.tuition_fee || 45000) - (student.fee_paid || 0),
+        status: student.fee_status || 'pending',
+        next_due_date: student.fee_due_date,
+      });
+
+      if (res.ok) {
+        showNotice(
+          `Fee reminder sent via Telegram to ${res.sentCount || 1} verified guardian(s) of ${student.full_name}!`
+        );
+      } else {
+        showNotice(res.error || 'Failed to dispatch Telegram fee reminder.', true);
+      }
+    } catch (err) {
+      showNotice(err.message || 'Error sending Telegram fee reminder.', true);
+    } finally {
+      setSendingReminderId(null);
+    }
+  };
+
+  return (
+    <div>
+      {/* Page Header */}
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Tuition Fees &amp; Accounts</h1>
+          <p className="page-description">
+            Track student tuition installments, record fee payments, and dispatch Telegram reminders to verified guardians
+          </p>
+        </div>
+
+        <div className="page-actions">
+          <Button
+            variant="outline"
+            size="sm"
+            icon={RefreshCw}
+            onClick={loadFeesData}
+            disabled={loading}
+          >
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Notice Banner */}
+      {notice && (
+        <div
+          style={{
+            marginBottom: '16px',
+            padding: '10px 16px',
+            borderRadius: '6px',
+            backgroundColor: notice.isError ? 'var(--status-absent-bg)' : 'var(--status-present-bg)',
+            border: `1px solid ${notice.isError ? 'var(--status-absent-border)' : 'var(--status-present-border)'}`,
+            color: notice.isError ? 'var(--status-absent)' : 'var(--status-present)',
+            fontSize: '13px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          {notice.isError ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
+          <span>{notice.text}</span>
+        </div>
+      )}
+
+      {/* KPI Cards */}
+      <div className="stats-grid" style={{ marginBottom: '24px' }}>
+        <div className="stats-card navy">
+          <div className="stats-card-header">
+            <span className="stats-card-title">Total Tuition Expected</span>
+            <div className="stats-card-icon navy">
+              <DollarSign size={20} />
+            </div>
+          </div>
+          <div className="stats-card-value">
+            ₹{stats.totalExpected.toLocaleString('en-IN')}
+          </div>
+          <div className="stats-card-subtext">
+            Cumulative academic year billing
+          </div>
+        </div>
+
+        <div className="stats-card success">
+          <div className="stats-card-header">
+            <span className="stats-card-title">Total Collected / Paid</span>
+            <div className="stats-card-icon success">
+              <CheckCircle2 size={20} />
+            </div>
+          </div>
+          <div className="stats-card-value">
+            ₹{stats.totalCollected.toLocaleString('en-IN')}
+          </div>
+          <div className="stats-card-subtext">
+            {stats.totalExpected > 0
+              ? `${Math.round((stats.totalCollected / stats.totalExpected) * 100)}% Collected`
+              : 'Cleared receipts'}
+          </div>
+        </div>
+
+        <div className="stats-card gold">
+          <div className="stats-card-header">
+            <span className="stats-card-title">Pending Balance</span>
+            <div className="stats-card-icon gold">
+              <CreditCard size={20} />
+            </div>
+          </div>
+          <div className="stats-card-value">
+            ₹{stats.pendingBalance.toLocaleString('en-IN')}
+          </div>
+          <div className="stats-card-subtext">
+            Outstanding dues to be settled
+          </div>
+        </div>
+
+        <div className={`stats-card ${stats.overdueCount > 0 ? 'danger' : 'navy'}`}>
+          <div className="stats-card-header">
+            <span className="stats-card-title">Overdue Accounts</span>
+            <div className={`stats-card-icon ${stats.overdueCount > 0 ? 'danger' : 'navy'}`}>
+              <AlertTriangle size={20} />
+            </div>
+          </div>
+          <div className="stats-card-value">{stats.overdueCount}</div>
+          <div className="stats-card-subtext">
+            {stats.overdueCount > 0
+              ? 'Past payment deadline'
+              : 'Zero overdue installments'}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Table Card */}
+      <div className="erp-card" style={{ padding: '20px' }}>
+        {/* Search & Filter Bar */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            flexWrap: 'wrap',
+            marginBottom: '16px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '1 1 280px' }}>
+            <div style={{ position: 'relative', width: '100%', maxWidth: '320px' }}>
+              <Search
+                size={16}
+                style={{
+                  position: 'absolute',
+                  left: '10px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'var(--text-muted)',
+                }}
+              />
+              <input
+                type="text"
+                placeholder="Search student or admission no..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="form-input"
+                style={{ paddingLeft: '32px', fontSize: '13px' }}
+              />
+            </div>
+
+            <select
+              value={selectedBatch}
+              onChange={(e) => setSelectedBatch(e.target.value)}
+              className="form-input"
+              style={{ width: 'auto', fontSize: '13px' }}
+            >
+              <option value="ALL">All Batches</option>
+              {batches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="form-input"
+              style={{ width: 'auto', fontSize: '13px' }}
+            >
+              <option value="ALL">All Statuses</option>
+              <option value="paid">Paid</option>
+              <option value="partial">Partial</option>
+              <option value="pending">Pending</option>
+              <option value="overdue">Overdue</option>
+            </select>
+          </div>
+
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+            Showing <strong>{filteredStudents.length}</strong> of {students.length} students
+          </div>
+        </div>
+
+        {/* Fees Table */}
+        <div className="erp-table-scroll">
+          <table className="erp-table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Batch</th>
+                <th style={{ textAlign: 'right' }}>Total Fee</th>
+                <th style={{ textAlign: 'right' }}>Paid</th>
+                <th style={{ textAlign: 'right' }}>Pending</th>
+                <th>Status</th>
+                <th>Next Due Date</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                    Loading fee records...
+                  </td>
+                </tr>
+              ) : filteredStudents.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                    No student fee records found matching your filters.
+                  </td>
+                </tr>
+              ) : (
+                filteredStudents.map((s) => {
+                  const feeRec = s.student_fees?.[0];
+                  const total = Number(feeRec?.total_amount ?? s.tuition_fee ?? 45000);
+                  const paid = Number(feeRec?.paid_amount ?? s.fee_paid ?? 0);
+                  const pending = Math.max(0, total - paid);
+                  const status = (feeRec?.status ?? s.fee_status ?? 'pending').toLowerCase();
+                  const dueDate = feeRec?.next_due_date || s.fee_due_date || 'N/A';
+
+                  let badgeVariant = 'gold';
+                  if (status === 'paid') badgeVariant = 'present';
+                  else if (status === 'overdue') badgeVariant = 'absent';
+                  else if (status === 'partial') badgeVariant = 'late';
+
+                  return (
+                    <tr key={s.id}>
+                      <td>
+                        <div style={{ fontWeight: 600, color: 'var(--navy-950)' }}>
+                          {s.full_name}
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          Adm: {s.admission_no || 'N/A'} {s.roll_no ? `| Roll: ${s.roll_no}` : ''}
+                        </div>
+                      </td>
+
+                      <td>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          {s.batches?.name || 'Unassigned'}
+                        </span>
+                      </td>
+
+                      <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--navy-950)' }}>
+                        ₹{total.toLocaleString('en-IN')}
+                      </td>
+
+                      <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--status-present)' }}>
+                        ₹{paid.toLocaleString('en-IN')}
+                      </td>
+
+                      <td style={{ textAlign: 'right', fontWeight: 600, color: pending > 0 ? 'var(--status-absent)' : 'var(--text-muted)' }}>
+                        ₹{pending.toLocaleString('en-IN')}
+                      </td>
+
+                      <td>
+                        <Badge variant={badgeVariant}>
+                          {status.toUpperCase()}
+                        </Badge>
+                      </td>
+
+                      <td>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          {dueDate}
+                        </span>
+                      </td>
+
+                      <td style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedStudentForPayment(s);
+                              setPaymentData({
+                                amount: pending > 0 ? String(pending) : '',
+                                paymentMethod: 'Cash',
+                                referenceNo: '',
+                                notes: '',
+                              });
+                            }}
+                            title="Record Payment"
+                          >
+                            Pay
+                          </Button>
+
+                          {pending > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              icon={Send}
+                              onClick={() => handleSendReminder(s)}
+                              disabled={sendingReminderId === s.id}
+                              title="Send Telegram Fee Reminder"
+                            >
+                              {sendingReminderId === s.id ? '...' : 'Remind'}
+                            </Button>
+                          )}
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            icon={Eye}
+                            onClick={() => setDossierStudent(s)}
+                            title="View Full Dossier"
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* RECORD PAYMENT MODAL */}
+      <Modal
+        isOpen={Boolean(selectedStudentForPayment)}
+        onClose={() => setSelectedStudentForPayment(null)}
+        title={`Record Tuition Payment: ${selectedStudentForPayment?.full_name}`}
+        description="Submit fee receipt and update student balance in PostgreSQL"
+      >
+        <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <Input
+            label="Payment Amount (₹)"
+            type="number"
+            placeholder="e.g. 15000"
+            value={paymentData.amount}
+            onChange={(e) => setPaymentData({ ...paymentData, amount: e.target.value })}
+            required
+            autoFocus
+          />
+
+          <div>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--navy-900)',
+                marginBottom: '4px',
+              }}
+            >
+              Payment Mode
+            </label>
+            <select
+              value={paymentData.paymentMethod}
+              onChange={(e) => setPaymentData({ ...paymentData, paymentMethod: e.target.value })}
+              className="form-input"
+            >
+              <option value="Cash">Cash</option>
+              <option value="UPI / GPay / PhonePe">UPI / GPay / PhonePe</option>
+              <option value="Bank Transfer (NEFT/IMPS)">Bank Transfer (NEFT/IMPS)</option>
+              <option value="Cheque">Cheque</option>
+              <option value="Debit / Credit Card">Debit / Credit Card</option>
+            </select>
+          </div>
+
+          <Input
+            label="Transaction / Reference Number (Optional)"
+            placeholder="e.g. UPI-98745123 or Cheque #123456"
+            value={paymentData.referenceNo}
+            onChange={(e) => setPaymentData({ ...paymentData, referenceNo: e.target.value })}
+          />
+
+          <Input
+            label="Notes / Receipt Remarks (Optional)"
+            placeholder="e.g. Term 1 installment cleared"
+            value={paymentData.notes}
+            onChange={(e) => setPaymentData({ ...paymentData, notes: e.target.value })}
+          />
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={() => setSelectedStudentForPayment(null)}
+              disabled={isSubmittingPayment}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              type="submit"
+              disabled={isSubmittingPayment}
+            >
+              {isSubmittingPayment ? 'Saving Receipt...' : 'Confirm Payment'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* STUDENT ACADEMIC DOSSIER MODAL */}
+      {dossierStudent && (
+        <StudentAcademicDossier
+          student={dossierStudent}
+          isOpen={Boolean(dossierStudent)}
+          onClose={() => {
+            setDossierStudent(null);
+            loadFeesData();
+          }}
+          onUpdateStudent={() => {
+            loadFeesData();
+          }}
+        />
+      )}
+    </div>
+  );
+}
