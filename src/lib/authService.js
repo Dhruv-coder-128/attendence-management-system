@@ -46,6 +46,11 @@ export async function fetchUserProfile(user) {
     return getFallbackOwnerProfile(user);
   }
 
+  // Explicit owner in Auth metadata
+  if (user.app_metadata?.role === 'owner' || user.user_metadata?.role === 'owner') {
+    return getFallbackOwnerProfile(user);
+  }
+
   try {
     const { data: profile, error } = await supabase
       .from('user_profiles')
@@ -54,27 +59,43 @@ export async function fetchUserProfile(user) {
       .maybeSingle();
 
     if (error || !profile) {
-      // If user profile is not found or table is pending migration, check if this is the only user
+      // Check if any active owner exists in the system
       const { count } = await supabase
         .from('user_profiles')
-        .select('id', { count: 'exact', head: true });
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'owner')
+        .eq('is_active', true);
 
       if (count === 0 || !count) {
-        // First user is automatically granted Owner privileges
+        // If no active owner exists, the primary user is granted Owner privileges
         return getFallbackOwnerProfile(user);
       }
 
-      // Default safe profile
+      // Check user metadata for assigned role
+      const assignedRole = user.app_metadata?.role || user.user_metadata?.role || 'moderator';
+
       return {
         id: user.id,
         email: user.email,
         full_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Staff User',
-        role: 'moderator',
-        permissions: {
-          view_students: true,
-          view_attendance: true,
-          mark_attendance: true,
-        },
+        role: assignedRole,
+        permissions: assignedRole === 'owner'
+          ? getFallbackOwnerProfile(user).permissions
+          : {
+              view_students: true,
+              edit_students: assignedRole === 'admin',
+              delete_students: false,
+              view_attendance: true,
+              mark_attendance: true,
+              manage_batches: assignedRole === 'admin',
+              manage_fees: assignedRole === 'admin',
+              manage_exams: assignedRole === 'admin',
+              manage_parents: assignedRole === 'admin',
+              send_notifications: assignedRole === 'admin',
+              export_data: assignedRole === 'admin',
+              manage_users: false,
+              manage_settings: false,
+            },
         is_active: true,
       };
     }

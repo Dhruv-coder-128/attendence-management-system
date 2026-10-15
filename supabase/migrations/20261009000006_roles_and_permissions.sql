@@ -171,5 +171,23 @@ DROP POLICY IF EXISTS "Service role manages user profiles" ON public.user_profil
 CREATE POLICY "Service role manages user profiles"
     ON public.user_profiles FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+-- Allow Owners full management via authenticated client
+DROP POLICY IF EXISTS "Owners can manage user_profiles" ON public.user_profiles;
+CREATE POLICY "Owners can manage user_profiles"
+    ON public.user_profiles FOR ALL TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.role = 'owner'
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.role = 'owner'
+        )
+    );
+
+-- Table access grants for authenticated and service roles
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_profiles TO authenticated, service_role;
+
 -- Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';

@@ -48,6 +48,7 @@ export default function UsersManagement({ currentUserProfile }) {
     permissions: {},
   });
   const [isCreating, setIsCreating] = useState(false);
+  const [modalError, setModalError] = useState(null);
 
   // Edit Permissions Modal State
   const [editingUser, setEditingUser] = useState(null);
@@ -60,7 +61,9 @@ export default function UsersManagement({ currentUserProfile }) {
   const getAuthToken = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      return session?.access_token || '';
+      if (session?.access_token) return session.access_token;
+      const { data: refreshData } = await supabase.auth.refreshSession();
+      return refreshData?.session?.access_token || '';
     } catch {
       return '';
     }
@@ -103,22 +106,28 @@ export default function UsersManagement({ currentUserProfile }) {
   // Handle Create User
   const handleCreateUser = async (e) => {
     e.preventDefault();
+    setModalError(null);
     if (!newUserData.email || !newUserData.password) {
-      alert('Please provide an email and password.');
+      setModalError('Please provide both email and an initial password.');
       return;
     }
     if (newUserData.password.length < 6) {
-      alert('Password must be at least 6 characters.');
+      setModalError('Password must be at least 6 characters long.');
       return;
     }
 
     setIsCreating(true);
     try {
       const token = await getAuthToken();
+      if (!token) {
+        setModalError('Authentication session not found. Please refresh the page and try again.');
+        return;
+      }
       const res = await createUserAccount(token, newUserData);
       if (res.ok) {
-        showNotification(res.message || 'User created successfully.');
+        showNotification(res.message || 'Staff member created successfully.');
         setIsAddModalOpen(false);
+        setModalError(null);
         setNewUserData({
           email: '',
           password: '',
@@ -128,9 +137,11 @@ export default function UsersManagement({ currentUserProfile }) {
         });
         await loadUsers();
       } else {
+        setModalError(res.error || 'Failed to create staff account.');
         showNotification(res.error || 'Failed to create user.', true);
       }
     } catch (err) {
+      setModalError(err.message || 'Error creating staff member.');
       showNotification(err.message || 'Error creating user.', true);
     } finally {
       setIsCreating(false);
@@ -565,6 +576,25 @@ export default function UsersManagement({ currentUserProfile }) {
               {isCallerOwner && <option value="owner">Owner (Full System Administration)</option>}
             </select>
           </div>
+
+          {modalError && (
+            <div
+              style={{
+                padding: '8px 12px',
+                borderRadius: '6px',
+                backgroundColor: 'var(--status-absent-bg)',
+                border: '1px solid var(--status-absent-border)',
+                color: 'var(--status-absent)',
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <AlertCircle size={15} style={{ flexShrink: 0 }} />
+              <span>{modalError}</span>
+            </div>
+          )}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
             <Button
