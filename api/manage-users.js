@@ -351,7 +351,7 @@ export default async function handler(req, res) {
       if (!adminClient) {
         return res.status(500).json({
           ok: false,
-          error: 'Server configuration error: SUPABASE_SERVICE_ROLE_KEY is required on the server to provision staff accounts.',
+          error: 'SUPABASE_SERVICE_ROLE_KEY missing in .env.local: To create staff accounts from this modal, add your Supabase service_role key to .env.local (Supabase Dashboard > Settings > API > service_role). Alternatively, the staff member can sign up directly via the Login page.',
         });
       }
 

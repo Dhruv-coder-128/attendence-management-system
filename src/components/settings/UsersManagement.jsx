@@ -580,19 +580,20 @@ export default function UsersManagement({ currentUserProfile }) {
           {modalError && (
             <div
               style={{
-                padding: '8px 12px',
+                padding: '10px 14px',
                 borderRadius: '6px',
                 backgroundColor: 'var(--status-absent-bg)',
                 border: '1px solid var(--status-absent-border)',
                 color: 'var(--status-absent)',
                 fontSize: '12px',
+                lineHeight: 1.5,
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'flex-start',
                 gap: '8px',
               }}
             >
-              <AlertCircle size={15} style={{ flexShrink: 0 }} />
-              <span>{modalError}</span>
+              <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div>{modalError}</div>
             </div>
           )}
 
