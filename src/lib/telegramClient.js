@@ -11,7 +11,7 @@ import { supabase } from './supabase.js';
  * - Honest tracking of WhatsApp manual share mode vs automated gateway.
  */
 
-export const TELEGRAM_BOT_USERNAME = 'RuparelAttendanceBot';
+export const TELEGRAM_BOT_USERNAME = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TELEGRAM_BOT_USERNAME) || 'RuparelAttendanceBot';
 
 /**
  * Helper to generate a random hex string for linking tokens

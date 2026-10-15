@@ -95,6 +95,18 @@ export default async function handler(req, res) {
     });
   }
 
+  const body = req.body || {};
+  const { batchId, date, sessionName = 'Regular', retryFailedOnly = false, forceAll = false } = body;
+  const { studentId } = body;
+
+  // Payload guard: require either batchId + date or studentId
+  if (!batchId && !studentId) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid request payload. Specify batchId and date, or studentId.',
+    });
+  }
+
   // If service_role is not available, pass the admin's forwarded JWT to satisfy Row Level Security
   const clientOptions = {};
   if (!serviceRoleKey && authHeader) {
@@ -104,17 +116,14 @@ export default async function handler(req, res) {
   }
 
   const supabase = createClient(supabaseUrl, supabaseKey, clientOptions);
-  const body = req.body || {};
 
   // Case A: Batch-level Roll Call Dispatch (One-Click Attendance Notifications)
-  const { batchId, date, sessionName = 'Regular', retryFailedOnly = false, forceAll = false } = body;
-
   if (batchId && date) {
     try {
       const cleanBatchId = String(batchId).trim();
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(cleanBatchId);
 
-      // 1. Fetch batch information (search by UUID or code / name)
+      // 1. Fetch batch information: safe sequential lookup by UUID, exact code, or name
       let batchData = null;
       let bErr = null;
 
@@ -128,26 +137,46 @@ export default async function handler(req, res) {
         bErr = resObj.error;
       }
 
-      if (!batchData) {
+      // If not found by UUID, try exact code match
+      if (!batchData && !bErr) {
         const resObj = await supabase
           .from('batches')
           .select('id, name, code, course_id')
-          .or(`code.eq.${cleanBatchId},name.ilike.%${cleanBatchId}%`)
-          .limit(1)
+          .eq('code', cleanBatchId)
           .maybeSingle();
         if (resObj.data) {
           batchData = resObj.data;
-          bErr = null;
-        } else if (!bErr) {
+        } else if (resObj.error) {
           bErr = resObj.error;
         }
       }
 
-      if (bErr || !batchData) {
+      // If still not found, try name match
+      if (!batchData && !bErr) {
+        const resObj = await supabase
+          .from('batches')
+          .select('id, name, code, course_id')
+          .ilike('name', `%${cleanBatchId}%`)
+          .limit(1)
+          .maybeSingle();
+        if (resObj.data) {
+          batchData = resObj.data;
+        } else if (resObj.error) {
+          bErr = resObj.error;
+        }
+      }
+
+      if (bErr) {
+        return res.status(500).json({
+          ok: false,
+          error: `Database error resolving cohort "${cleanBatchId}": ${bErr.message}`,
+        });
+      }
+
+      if (!batchData) {
         return res.status(404).json({
           ok: false,
-          error: `Cohort / Batch "${cleanBatchId}" not found in database. Please verify that you are logged in and that the batch exists.`,
-          details: bErr?.message,
+          error: `Cohort / Batch "${cleanBatchId}" not found in database. Please verify that the cohort exists.`,
         });
       }
 
@@ -384,7 +413,7 @@ Your ward <b>${escapeHtml(student.full_name)}</b> (Adm No: <code>${escapeHtml(st
   }
 
   // Case B: Single student notification fallback
-  const { studentId, status: singleStatus, date: singleDate, batchName: singleBatchName } = body;
+  const { status: singleStatus, date: singleDate, batchName: singleBatchName } = body;
   if (studentId) {
     try {
       const { data: student, error: sErr } = await supabase
@@ -431,6 +460,21 @@ Your ward <b>${escapeHtml(student.full_name)}</b> (Adm No: <code>${escapeHtml(st
 
       if (!sendResult.ok) {
         return res.status(400).json({ ok: false, error: sendResult.error || 'Telegram Bot API error.' });
+      }
+
+      // Record successful dispatch in attendance table if record exists
+      try {
+        await supabase
+          .from('attendance')
+          .update({
+            telegram_notified: true,
+            telegram_notified_at: new Date().toISOString(),
+            telegram_error: null,
+          })
+          .eq('student_id', studentId)
+          .eq('date', singleDate || new Date().toISOString().split('T')[0]);
+      } catch (attUpErr) {
+        console.warn('Could not update attendance status for single student:', attUpErr.message);
       }
 
       return res.status(200).json({

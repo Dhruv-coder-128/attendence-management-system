@@ -44,21 +44,11 @@ function apiDevPlugin() {
               const handler = handlerModule.default
 
               if (typeof handler === 'function') {
-                let rawBody = ''
-                req.on('data', (chunk) => {
-                  rawBody += chunk
-                })
+                const parsedUrl = new URL(req.url, 'http://localhost')
+                req.query = Object.fromEntries(parsedUrl.searchParams)
 
-                req.on('end', async () => {
-                  if (rawBody) {
-                    try {
-                      req.body = JSON.parse(rawBody)
-                    } catch {
-                      req.body = rawBody
-                    }
-                  } else {
-                    req.body = {}
-                  }
+                const executeHandler = async (body) => {
+                  req.body = body
 
                   // Augment response object with Express-like helpers used in Vercel
                   res.status = (code) => {
@@ -67,7 +57,9 @@ function apiDevPlugin() {
                   }
 
                   res.json = (data) => {
-                    res.setHeader('Content-Type', 'application/json')
+                    if (!res.headersSent) {
+                      res.setHeader('Content-Type', 'application/json')
+                    }
                     res.end(JSON.stringify(data))
                     return res
                   }
@@ -77,13 +69,45 @@ function apiDevPlugin() {
                     return res
                   }
 
-                  await handler(req, res)
+                  try {
+                    await handler(req, res)
+                  } catch (err) {
+                    console.error(`Error in /api/${endpoint} handler:`, err)
+                    if (!res.writableEnded) {
+                      res.statusCode = 500
+                      res.setHeader('Content-Type', 'application/json')
+                      res.end(JSON.stringify({ ok: false, error: err.message }))
+                    }
+                  }
+                }
+
+                if (req.method === 'GET' || req.method === 'HEAD') {
+                  await executeHandler({})
+                  return
+                }
+
+                let rawBody = ''
+                req.on('data', (chunk) => {
+                  rawBody += chunk
+                })
+
+                req.on('end', async () => {
+                  let parsed = {}
+                  if (rawBody) {
+                    try {
+                      parsed = JSON.parse(rawBody)
+                    } catch {
+                      parsed = rawBody
+                    }
+                  }
+                  await executeHandler(parsed)
                 })
                 return
               }
             } catch (err) {
               console.error(`Error executing /api/${endpoint} in dev middleware:`, err)
               res.statusCode = 500
+              res.setHeader('Content-Type', 'application/json')
               res.end(JSON.stringify({ ok: false, error: err.message }))
               return
             }

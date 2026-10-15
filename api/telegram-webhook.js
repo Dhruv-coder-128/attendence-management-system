@@ -170,7 +170,15 @@ export default async function handler(req, res) {
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   // Helper: query only the student wards associated with a specific parent
-  async function fetchWardsForParent(parentId) {
+  async function fetchWardsForParent(parentId, targetChatId = null) {
+    if (targetChatId) {
+      try {
+        const { data: statusRes } = await supabase.rpc('get_parent_status_by_chat_id', { p_chat_id: targetChatId });
+        if (statusRes && statusRes.found && statusRes.wards && statusRes.wards.length > 0) {
+          return statusRes.wards;
+        }
+      } catch {}
+    }
     if (!parentId) return [];
     try {
       const { data: studentLinks } = await supabase
@@ -209,7 +217,7 @@ export default async function handler(req, res) {
       return '• <i>Registered student ward</i>';
     }
     return wards
-      .map((w) => `• <b>${escapeHtml(w.full_name)}</b> — Adm No: <code>${escapeHtml(w.admission_no)}</code> (${escapeHtml(w.batch_code)})`)
+      .map((w) => `• <b>${escapeHtml(w.full_name)}</b> — Adm No: <code>${escapeHtml(w.admission_no)}</code> (${escapeHtml(w.batch_code || w.batch_name || 'Cohort')})`)
       .join('\n');
   }
 
@@ -381,7 +389,7 @@ No changes were made to your account. You can tap your personalized invitation l
       }
 
       // Success: Fetch only the student wards associated with this parent
-      const wards = await fetchWardsForParent(linkResult.parent.id);
+      const wards = await fetchWardsForParent(linkResult.parent.id, chatId);
       const wardsList = formatWardsHtml(wards);
 
       const successMessage = `
@@ -430,7 +438,7 @@ You will automatically receive official daily roll call notices directly in this
       return res.status(200).json({ ok: true, linked: false });
     }
 
-    const wards = await fetchWardsForParent(linkResult.parent.id);
+    const wards = await fetchWardsForParent(linkResult.parent.id, chatId);
     const wardsList = formatWardsHtml(wards);
 
     await sendTelegramMessage(chatId, `
@@ -454,22 +462,30 @@ You will automatically receive official daily attendance notices in this chat.
   if (command === '/start' && param) {
     try {
       // Check IDEMPOTENCY: Is this chat ID already linked to a parent?
-      const { data: alreadyLinkedParents } = await supabase
-        .from('parents')
-        .select(`
-          id,
-          full_name,
-          parent_students (
-            students:student_id ( full_name, admission_no, batches ( code ) )
-          )
-        `)
-        .eq('telegram_chat_id', chatId)
-        .limit(1);
+      let alreadyLinked = null;
+      try {
+        const { data: statusRpc } = await supabase.rpc('get_parent_status_by_chat_id', { p_chat_id: chatId });
+        if (statusRpc && statusRpc.found) {
+          alreadyLinked = statusRpc;
+        }
+      } catch {}
 
-      if (alreadyLinkedParents && alreadyLinkedParents.length > 0) {
-        const p = alreadyLinkedParents[0];
-        const wards = (p.parent_students || [])
-          .map((ps) => ps.students ? `• <b>${escapeHtml(ps.students.full_name)}</b> (Adm No: <code>${escapeHtml(ps.students.admission_no)}</code>)` : null)
+      if (!alreadyLinked) {
+        try {
+          const { data: linkedParents } = await supabase
+            .from('parents')
+            .select('id, full_name')
+            .eq('telegram_chat_id', chatId)
+            .limit(1);
+          if (linkedParents && linkedParents.length > 0) {
+            alreadyLinked = { found: true, parent_name: linkedParents[0].full_name, wards: [] };
+          }
+        } catch {}
+      }
+
+      if (alreadyLinked) {
+        const wards = (alreadyLinked.wards || [])
+          .map((w) => `• <b>${escapeHtml(w.full_name)}</b> (Adm No: <code>${escapeHtml(w.admission_no)}</code>)`)
           .filter(Boolean);
 
         const wardsList = wards.length > 0 ? `\n\n👥 <b>Registered Ward(s):</b>\n${wards.join('\n')}` : '';
@@ -477,7 +493,7 @@ You will automatically receive official daily attendance notices in this chat.
         await sendTelegramMessage(chatId, `
 ✅ <b>Account Already Connected!</b>
 
-Namaste <b>${escapeHtml(p.full_name)}</b>,
+Namaste <b>${escapeHtml(alreadyLinked.parent_name)}</b>,
 Your Telegram account is already verified and connected to Ruparel Attendance ERP.${wardsList}
 
 You will receive real-time roll call notifications whenever attendance is marked.
