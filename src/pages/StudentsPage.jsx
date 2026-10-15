@@ -25,6 +25,8 @@ import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import BulkImportModal from '../components/importer/BulkImportModal';
+import StudentAcademicDossier from '../components/students/StudentAcademicDossier';
+import { computeFeeStatus, getStandardCoursePolicy } from '../lib/feeService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 /**
@@ -44,6 +46,7 @@ export default function StudentsPage({ onRefreshCounts }) {
   const [selectedCourseId, setSelectedCourseId] = useState('All');
   const [selectedBatchId, setSelectedBatchId] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
+  const [selectedFeeStatus, setSelectedFeeStatus] = useState('All');
 
   // Modal States
   const [activeViewStudent, setActiveViewStudent] = useState(null);
@@ -77,6 +80,22 @@ export default function StudentsPage({ onRefreshCounts }) {
     setTimeout(() => setToastMessage(''), 4000);
   };
 
+  // Helper to compute student tuition fee details and status
+  const getStudentFeeInfo = (student) => {
+    const policy = getStandardCoursePolicy(student?.courses);
+    const total = Number(student?.tuition_fee) || policy.total;
+    const paid = Number(student?.fee_paid) || 0;
+    const dueDate = student?.fee_due_date || null;
+    const computed = computeFeeStatus(total, paid, [], dueDate);
+    return {
+      total,
+      paid,
+      pending: Math.max(0, total - paid),
+      dueDate,
+      ...computed,
+    };
+  };
+
   // 1. Fetch Students, Courses, and Batches from Supabase
   const fetchData = async () => {
     if (!isSupabaseConfigured || !supabase) {
@@ -103,31 +122,66 @@ export default function StudentsPage({ onRefreshCounts }) {
         .order('name');
       if (batchesErr) throw batchesErr;
 
-      // Fetch Students with relational joins to Course and Batch
-      const { data: studentsData, error: studentsErr } = await supabase
-        .from('students')
-        .select(`
-          id,
-          admission_no,
-          full_name,
-          roll_no,
-          course_id,
-          batch_id,
-          gender,
-          dob,
-          email,
-          phone,
-          blood_group,
-          address,
-          enrollment_date,
-          status,
-          created_at,
-          courses:course_id ( id, name, code, level ),
-          batches:batch_id ( id, name, code, timing, classroom )
-        `)
-        .order('created_at', { ascending: false });
+      // Fetch Students with relational joins to Course and Batch (with fee columns and resilient fallback)
+      let studentsData = null;
+      try {
+        const { data, error: sErr } = await supabase
+          .from('students')
+          .select(`
+            id,
+            admission_no,
+            full_name,
+            roll_no,
+            course_id,
+            batch_id,
+            gender,
+            dob,
+            email,
+            phone,
+            blood_group,
+            address,
+            enrollment_date,
+            status,
+            tuition_fee,
+            fee_paid,
+            fee_status,
+            fee_due_date,
+            created_at,
+            courses:course_id ( id, name, code, level ),
+            batches:batch_id ( id, name, code, timing, classroom )
+          `)
+          .order('created_at', { ascending: false });
 
-      if (studentsErr) throw studentsErr;
+        if (sErr) throw sErr;
+        studentsData = data;
+      } catch (colErr) {
+        // Fallback to core columns if migration columns aren't in schema cache
+        const { data, error: fallbackErr } = await supabase
+          .from('students')
+          .select(`
+            id,
+            admission_no,
+            full_name,
+            roll_no,
+            course_id,
+            batch_id,
+            gender,
+            dob,
+            email,
+            phone,
+            blood_group,
+            address,
+            enrollment_date,
+            status,
+            created_at,
+            courses:course_id ( id, name, code, level ),
+            batches:batch_id ( id, name, code, timing, classroom )
+          `)
+          .order('created_at', { ascending: false });
+
+        if (fallbackErr) throw fallbackErr;
+        studentsData = data;
+      }
 
       setCourses(coursesData || []);
       setBatches(batchesData || []);
@@ -212,9 +266,14 @@ export default function StudentsPage({ onRefreshCounts }) {
       const matchStatus =
         selectedStatus === 'All' || student.status === selectedStatus;
 
-      return matchSearch && matchCourse && matchBatch && matchStatus;
+      // Fee Status Filter
+      const feeInfo = getStudentFeeInfo(student);
+      const matchFee =
+        selectedFeeStatus === 'All' || feeInfo.status === selectedFeeStatus;
+
+      return matchSearch && matchCourse && matchBatch && matchStatus && matchFee;
     });
-  }, [students, searchTerm, selectedCourseId, selectedBatchId, selectedStatus]);
+  }, [students, searchTerm, selectedCourseId, selectedBatchId, selectedStatus, selectedFeeStatus]);
 
   // Open Add Modal
   const handleOpenAdd = () => {
@@ -550,6 +609,21 @@ export default function StudentsPage({ onRefreshCounts }) {
           </select>
         </div>
 
+        {/* Fee Status Filter */}
+        <div style={{ width: '160px' }}>
+          <select
+            value={selectedFeeStatus}
+            onChange={(e) => setSelectedFeeStatus(e.target.value)}
+            className="form-select"
+          >
+            <option value="All">All Fee Status</option>
+            <option value="paid">Fees Cleared</option>
+            <option value="partial">Partial Paid</option>
+            <option value="pending">Pending</option>
+            <option value="overdue">Overdue</option>
+          </select>
+        </div>
+
         <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: 'auto' }}>
           <strong>{filteredStudents.length}</strong> {filteredStudents.length === 1 ? 'student' : 'students'}
         </div>
@@ -566,6 +640,7 @@ export default function StudentsPage({ onRefreshCounts }) {
                 <th>Course &amp; Batch</th>
                 <th>Roll No</th>
                 <th>Contact Phone</th>
+                <th>Fee Status</th>
                 <th>Admission Date</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
@@ -574,14 +649,14 @@ export default function StudentsPage({ onRefreshCounts }) {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
                     <RefreshCw size={22} className="animate-spin" style={{ marginBottom: '8px' }} />
                     <div>Loading records from Supabase...</div>
                   </td>
                 </tr>
               ) : filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
                     <UserCheck size={32} color="var(--gold-dark)" style={{ marginBottom: '10px' }} />
                     <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--navy-950)' }}>
                       {students.length === 0
@@ -638,6 +713,21 @@ export default function StudentsPage({ onRefreshCounts }) {
                         <span style={{ color: 'var(--text-light)' }}>—</span>
                       )}
                     </td>
+                    <td>
+                      {(() => {
+                        const fee = getStudentFeeInfo(student);
+                        return (
+                          <div>
+                            <Badge status={fee.badgeStatus}>
+                              {fee.label}
+                            </Badge>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
+                              ₹{fee.paid.toLocaleString('en-IN')} / ₹{fee.total.toLocaleString('en-IN')}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                       {student.enrollment_date || '—'}
                     </td>
@@ -693,145 +783,18 @@ export default function StudentsPage({ onRefreshCounts }) {
         </div>
       </div>
 
-      {/* VIEW STUDENT DOSSIER MODAL */}
-      <Modal
-        isOpen={Boolean(activeViewStudent)}
-        onClose={() => setActiveViewStudent(null)}
-        title="Student Profile Dossier"
-        subtitle={activeViewStudent ? `${activeViewStudent.full_name} (${activeViewStudent.admission_no})` : ''}
-        footer={
-          <Button variant="outline" size="sm" onClick={() => setActiveViewStudent(null)}>
-            Close Dossier
-          </Button>
-        }
-      >
-        {activeViewStudent && (
-          <div>
-            <div
-              style={{
-                display: 'flex',
-                gap: '16px',
-                padding: '16px',
-                backgroundColor: 'var(--bg-subtle)',
-                borderRadius: '6px',
-                border: '1px solid var(--border-subtle)',
-                marginBottom: '16px',
-              }}
-            >
-              <div
-                style={{
-                  width: '52px',
-                  height: '52px',
-                  borderRadius: '50%',
-                  backgroundColor: 'var(--navy-900)',
-                  color: 'var(--gold-light)',
-                  border: '2px solid var(--gold-border)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '18px',
-                  fontWeight: 700,
-                  flexShrink: 0,
-                }}
-              >
-                {activeViewStudent.full_name
-                  .split(' ')
-                  .map((n) => n[0])
-                  .join('')
-                  .substring(0, 2)}
-              </div>
-
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--navy-950)' }}>
-                  {activeViewStudent.full_name}
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  {activeViewStudent.courses?.name || 'Course'} &bull; {activeViewStudent.batches?.name || 'Batch'}
-                </div>
-                <div style={{ marginTop: '6px' }}>
-                  <Badge
-                    status={activeViewStudent.status === 'active' ? 'Present' : 'Pending'}
-                  >
-                    {activeViewStudent.status}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, 1fr)',
-                gap: '12px',
-                fontSize: '13px',
-              }}
-            >
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
-                  Admission Number / Student ID
-                </span>
-                <strong style={{ fontFamily: 'var(--font-mono)' }}>{activeViewStudent.admission_no}</strong>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
-                  Roll Number
-                </span>
-                <span>{activeViewStudent.roll_no || 'Not assigned'}</span>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
-                  Academic Course
-                </span>
-                <span>{activeViewStudent.courses?.name || '—'}</span>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
-                  Batch &amp; Timings
-                </span>
-                <span>{activeViewStudent.batches?.name || '—'} ({activeViewStudent.batches?.timing || 'Standard'})</span>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
-                  Primary Contact Phone
-                </span>
-                <span>{activeViewStudent.phone || '—'}</span>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
-                  Student Email
-                </span>
-                <span>{activeViewStudent.email || '—'}</span>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
-                  Gender &amp; Date of Birth
-                </span>
-                <span>{activeViewStudent.gender || '—'} {activeViewStudent.dob ? `(${activeViewStudent.dob})` : ''}</span>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
-                  Admission Date &amp; Blood Group
-                </span>
-                <span>{activeViewStudent.enrollment_date || '—'} &bull; {activeViewStudent.blood_group || 'O+'}</span>
-              </div>
-
-              <div style={{ gridColumn: 'span 2' }}>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block' }}>
-                  Residential Address
-                </span>
-                <span>{activeViewStudent.address || 'Not provided'}</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
+      {/* STUDENT ACADEMIC DOSSIER MODAL (Phase 4) */}
+      {activeViewStudent && (
+        <StudentAcademicDossier
+          student={activeViewStudent}
+          isOpen={Boolean(activeViewStudent)}
+          onClose={() => setActiveViewStudent(null)}
+          onUpdateStudent={() => {
+            fetchData();
+            if (onRefreshCounts) onRefreshCounts();
+          }}
+        />
+      )}
 
       {/* ADD / EDIT STUDENT MODAL */}
       <Modal

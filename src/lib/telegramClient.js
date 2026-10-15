@@ -424,3 +424,52 @@ export async function setupTelegramWebhook(webhookUrl, action = 'set') {
     return { ok: false, error: err.message };
   }
 }
+
+/**
+ * Dispatches an official tuition fee reminder notice to verified guardians
+ * via the serverless Telegram Bot API, strictly respecting alert preferences.
+ */
+export async function sendVerifiedFeeReminder({
+  student,
+  feeRecord,
+  targetParentId = null,
+}) {
+  if (!student || !student.id) {
+    return { success: false, error: 'Valid student details are required.' };
+  }
+
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch('/api/telegram-notify', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        action: 'fee_reminder',
+        studentId: student.id,
+        feeRecord,
+        targetParentId,
+      }),
+    });
+
+    const result = await response.json();
+    if (response.ok && result.ok) {
+      return {
+        success: true,
+        message: result.message || 'Tuition fee reminder dispatched successfully!',
+        recipientsCount: result.recipientsCount || 1,
+        details: result.details || [],
+      };
+    }
+
+    return {
+      success: false,
+      error: result.error || `Server responded with HTTP ${response.status}`,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err.message || 'Network error communicating with fee reminder gateway.',
+    };
+  }
+}
+

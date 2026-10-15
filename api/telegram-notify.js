@@ -96,10 +96,20 @@ export default async function handler(req, res) {
   }
 
   const body = req.body || {};
-  const { batchId, date, sessionName = 'Regular', retryFailedOnly = false, forceAll = false } = body;
-  const { studentId } = body;
+  const {
+    action,
+    notificationType,
+    batchId,
+    date,
+    sessionName = 'Regular',
+    retryFailedOnly = false,
+    forceAll = false,
+    studentId,
+    feeRecord,
+    targetParentId,
+  } = body;
 
-  // Payload guard: require either batchId + date or studentId
+  // Payload guard: require either fee_reminder with studentId, or batchId + date, or studentId
   if (!batchId && !studentId) {
     return res.status(400).json({
       ok: false,
@@ -116,6 +126,167 @@ export default async function handler(req, res) {
   }
 
   const supabase = createClient(supabaseUrl, supabaseKey, clientOptions);
+
+  // Case C: Tuition Fee Schedule Reminder Dispatch
+  if ((action === 'fee_reminder' || notificationType === 'fee_reminder') && studentId) {
+    try {
+      // 1. Fetch student with course and batch
+      const { data: student, error: sErr } = await supabase
+        .from('students')
+        .select(`
+          id,
+          full_name,
+          admission_no,
+          roll_no,
+          courses:course_id ( id, name, code ),
+          batches:batch_id ( id, name, code )
+        `)
+        .eq('id', studentId)
+        .single();
+
+      if (sErr || !student) {
+        return res.status(404).json({ ok: false, error: 'Student not found in database.' });
+      }
+
+      // 2. Fetch or resolve fee record
+      let currentFee = feeRecord;
+      if (!currentFee) {
+        const { data: dbFee } = await supabase
+          .from('student_fees')
+          .select('*')
+          .eq('student_id', studentId)
+          .maybeSingle();
+        currentFee = dbFee;
+      }
+
+      const totalAmt = Number(currentFee?.total_amount || 45000);
+      const paidAmt = Number(currentFee?.paid_amount || 0);
+      const pendingAmt = Number(currentFee?.pending_amount ?? (totalAmt - paidAmt));
+      const dueDate = currentFee?.next_due_date || 'Upcoming Milestone';
+      const isOverdue = currentFee?.status === 'overdue' || (currentFee?.next_due_date && currentFee.next_due_date < new Date().toISOString().split('T')[0] && pendingAmt > 0);
+
+      // 3. Query linked guardians with preferences
+      let plQuery = supabase
+        .from('parent_students')
+        .select(`
+          id,
+          relationship,
+          is_primary_contact,
+          can_receive_alerts,
+          alert_preference,
+          contact_priority,
+          parents:parent_id (
+            id,
+            full_name,
+            phone,
+            telegram_chat_id,
+            is_verified
+          )
+        `)
+        .eq('student_id', studentId);
+
+      if (targetParentId) {
+        plQuery = plQuery.eq('parent_id', targetParentId);
+      }
+
+      const { data: plData, error: plErr } = await plQuery;
+      if (plErr) {
+        return res.status(500).json({ ok: false, error: `Failed to query guardians: ${plErr.message}` });
+      }
+
+      // 4. Filter guardians who should receive fee reminder
+      const eligibleGuardians = (plData || []).filter((pl) => {
+        if (!pl.can_receive_alerts) return false;
+        const p = pl.parents;
+        if (!p || !p.is_verified || !p.telegram_chat_id) return false;
+
+        const pref = pl.alert_preference || 'all';
+        if (pref === 'none') return false;
+        // If preference is emergency_only, only send if the fee is strictly overdue or they are primary contact
+        if (pref === 'emergency_only' && !isOverdue && !pl.is_primary_contact) return false;
+
+        return true;
+      });
+
+      if (eligibleGuardians.length === 0) {
+        return res.status(400).json({
+          ok: false,
+          error: `No verified guardians with active alert preferences found for ${student.full_name}. Please ensure at least one guardian has Telegram connected.`,
+        });
+      }
+
+      // 5. Send message to each eligible guardian
+      let sentCount = 0;
+      const details = [];
+
+      for (const item of eligibleGuardians) {
+        const parent = item.parents;
+        const statusEmoji = isOverdue ? '🚨' : '💳';
+        const statusText = isOverdue ? 'OVERDUE' : pendingAmt === 0 ? 'CLEARED' : 'INSTALLMENT SCHEDULED';
+
+        const messageHtml = `
+${statusEmoji} <b>Ruparel Attendance ERP — Tuition Fee Schedule Notice</b>
+
+Namaste <b>${escapeHtml(parent.full_name)}</b>,
+This is an official communication regarding the tuition fee schedule for your ward:
+
+👤 <b>Student:</b> ${escapeHtml(student.full_name)}
+🆔 <b>Admission No:</b> <code>${escapeHtml(student.admission_no)}</code>
+🎓 <b>Course & Batch:</b> ${escapeHtml(student.courses?.name || 'Academic Stream')} (${escapeHtml(student.batches?.name || 'Cohort')})
+
+📊 <b>Account Breakdown:</b>
+• Total Academic Tuition: <b>₹${totalAmt.toLocaleString('en-IN')}</b>
+• Amount Paid to Date: <b>₹${paidAmt.toLocaleString('en-IN')}</b>
+• <b>Outstanding Balance:</b> <b>₹${pendingAmt.toLocaleString('en-IN')}</b>
+• Payment Status: <b>${statusText}</b>
+• Scheduled Due Date: <b>${escapeHtml(dueDate)}</b> ${isOverdue ? '⚠️ <i>(Payment Overdue)</i>' : ''}
+
+Kindly ensure the pending installment is cleared at the academy accounts desk. If you have already completed this payment, kindly share the receipt with reception to reconcile records.
+
+<i>Ruparel Tuition & Academy Management System</i>
+`.trim();
+
+        const sendRes = await sendTelegramAlert(botToken, parent.telegram_chat_id, messageHtml);
+        if (sendRes.ok) {
+          sentCount++;
+          details.push({
+            parentName: parent.full_name,
+            relationship: item.relationship,
+            chatId: parent.telegram_chat_id,
+            result: 'sent',
+          });
+        } else {
+          details.push({
+            parentName: parent.full_name,
+            relationship: item.relationship,
+            chatId: parent.telegram_chat_id,
+            result: 'failed',
+            error: sendRes.error,
+          });
+        }
+      }
+
+      // 6. Update last_reminder_sent_at in student_fees
+      try {
+        await supabase
+          .from('student_fees')
+          .update({ last_reminder_sent_at: new Date().toISOString() })
+          .eq('student_id', studentId);
+      } catch (upErr) {
+        console.warn('Could not update last_reminder_sent_at:', upErr);
+      }
+
+      return res.status(200).json({
+        ok: true,
+        message: `Tuition fee reminder dispatched to ${sentCount} guardian account(s)!`,
+        recipientsCount: sentCount,
+        details,
+      });
+    } catch (feeErr) {
+      console.error('Fee reminder error:', feeErr);
+      return res.status(500).json({ ok: false, error: feeErr.message || 'Error processing fee reminder.' });
+    }
+  }
 
   // Case A: Batch-level Roll Call Dispatch (One-Click Attendance Notifications)
   if (batchId && date) {
@@ -221,12 +392,16 @@ export default async function handler(req, res) {
       // 3. Collect student IDs to query verified parents server-side
       const studentIds = records.map((r) => r.student_id).filter(Boolean);
 
-      const { data: parentLinks, error: plErr } = await supabase
+      let parentLinks = null;
+      const plRes = await supabase
         .from('parent_students')
         .select(`
           student_id,
           relationship,
+          is_primary_contact,
           can_receive_alerts,
+          alert_preference,
+          contact_priority,
           parents:parent_id (
             id,
             full_name,
@@ -237,8 +412,26 @@ export default async function handler(req, res) {
         `)
         .in('student_id', studentIds);
 
-      if (plErr) {
-        return res.status(500).json({ ok: false, error: `Failed to query parent linkages: ${plErr.message}` });
+      if (!plRes.error) {
+        parentLinks = plRes.data;
+      } else {
+        // Fallback to core columns if migration not yet applied
+        const plLegacy = await supabase
+          .from('parent_students')
+          .select(`
+            student_id,
+            relationship,
+            can_receive_alerts,
+            parents:parent_id (
+              id,
+              full_name,
+              phone,
+              telegram_chat_id,
+              is_verified
+            )
+          `)
+          .in('student_id', studentIds);
+        parentLinks = plLegacy.data;
       }
 
       // Build student -> verified parents mapping
@@ -251,7 +444,12 @@ export default async function handler(req, res) {
         if (!studentParentsMap[pl.student_id]) {
           studentParentsMap[pl.student_id] = [];
         }
-        studentParentsMap[pl.student_id].push(p);
+        studentParentsMap[pl.student_id].push({
+          ...p,
+          alert_preference: pl.alert_preference || 'all',
+          is_primary_contact: Boolean(pl.is_primary_contact),
+          relationship: pl.relationship || 'Guardian',
+        });
       });
 
       // 4. Process each student's attendance notification
@@ -315,6 +513,17 @@ export default async function handler(req, res) {
         let lastErrorDesc = '';
 
         for (const parent of parents) {
+          // Respect Multi-Guardian Alert Preferences:
+          // 1. If preference is 'none', do not send.
+          if (parent.alert_preference === 'none') continue;
+
+          // 2. If preference is 'emergency_only':
+          // Only send if student is marked Absent (critical attendance emergency),
+          // or if they are primary contact. Do NOT send routine Present or Excused notices.
+          if (parent.alert_preference === 'emergency_only' && record.status !== 'Absent' && !parent.is_primary_contact) {
+            continue;
+          }
+
           const messageHtml = `
 ${statusEmoji} <b>Ruparel Attendance ERP — Roll Call Notice</b>
 

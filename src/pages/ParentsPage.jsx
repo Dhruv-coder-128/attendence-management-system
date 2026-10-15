@@ -89,6 +89,8 @@ export default function ParentsPage({ onRefreshCounts }) {
     relationship: 'Father',
     preferred_notification_channel: 'telegram',
     student_id: '', // for junction linking
+    contact_priority: 'primary', // 'primary' | 'secondary' | 'emergency'
+    alert_preference: 'all', // 'all' | 'emergency_only' | 'none'
   };
   const [formData, setFormData] = useState(initialForm);
 
@@ -140,12 +142,19 @@ export default function ParentsPage({ onRefreshCounts }) {
             id,
             relationship,
             is_primary_contact,
+            alert_preference,
+            contact_priority,
             students:student_id ( id, full_name, admission_no )
           )
         `)
         .order('full_name');
 
-      if (fullSelectRes.error && (fullSelectRes.error.message?.includes('invitation_status') || fullSelectRes.error.message?.includes('linking_token'))) {
+      if (fullSelectRes.error && (
+        fullSelectRes.error.message?.includes('invitation_status') ||
+        fullSelectRes.error.message?.includes('linking_token') ||
+        fullSelectRes.error.message?.includes('alert_preference') ||
+        fullSelectRes.error.message?.includes('contact_priority')
+      )) {
         // Fallback to core columns existing on production schema
         const coreRes = await supabase
           .from('parents')
@@ -237,6 +246,8 @@ export default function ParentsPage({ onRefreshCounts }) {
     setFormData({
       ...initialForm,
       student_id: students[0]?.id || '',
+      contact_priority: 'primary',
+      alert_preference: 'all',
     });
     setIsAddModalOpen(true);
   };
@@ -245,13 +256,16 @@ export default function ParentsPage({ onRefreshCounts }) {
   const handleOpenEdit = (parent) => {
     setModalError('');
     setParentToEdit(parent);
+    const ps = parent.parent_students?.[0];
     setFormData({
       full_name: parent.full_name || '',
       phone: parent.phone || '',
       email: parent.email || '',
-      relationship: parent.relationship || 'Parent',
+      relationship: parent.relationship || 'Father',
       preferred_notification_channel: parent.preferred_notification_channel || 'telegram',
-      student_id: parent.parent_students?.[0]?.students?.id || '',
+      student_id: ps?.students?.id || '',
+      contact_priority: ps?.contact_priority || (ps?.is_primary_contact ? 'primary' : 'secondary'),
+      alert_preference: ps?.alert_preference || 'all',
     });
   };
 
@@ -289,6 +303,23 @@ export default function ParentsPage({ onRefreshCounts }) {
 
         if (updateErr) throw updateErr;
 
+        // Try updating junction contact_priority & alert_preference
+        if (parentToEdit.parent_students?.[0]?.id) {
+          try {
+            await supabase
+              .from('parent_students')
+              .update({
+                relationship: formData.relationship,
+                is_primary_contact: formData.contact_priority === 'primary',
+                contact_priority: formData.contact_priority,
+                alert_preference: formData.alert_preference,
+              })
+              .eq('id', parentToEdit.parent_students[0].id);
+          } catch (psErr) {
+            console.warn('Junction update notice:', psErr.message);
+          }
+        }
+
         showToast(`Guardian details for ${parentPayload.full_name} updated!`);
         setParentToEdit(null);
       } else {
@@ -307,10 +338,23 @@ export default function ParentsPage({ onRefreshCounts }) {
             parent_id: newParent.id,
             student_id: formData.student_id,
             relationship: formData.relationship,
-            is_primary_contact: true,
+            is_primary_contact: formData.contact_priority === 'primary',
+            contact_priority: formData.contact_priority || 'primary',
+            alert_preference: formData.alert_preference || 'all',
           };
 
-          await supabase.from('parent_students').insert([junctionPayload]);
+          try {
+            const { error: jErr } = await supabase.from('parent_students').insert([junctionPayload]);
+            if (jErr) throw jErr;
+          } catch (jErr) {
+            console.warn('Junction insert fallback:', jErr.message);
+            await supabase.from('parent_students').insert([{
+              parent_id: newParent.id,
+              student_id: formData.student_id,
+              relationship: formData.relationship,
+              is_primary_contact: formData.contact_priority === 'primary',
+            }]);
+          }
         }
 
         showToast(`Guardian ${parentPayload.full_name} registered successfully!`);
@@ -839,9 +883,55 @@ export default function ParentsPage({ onRefreshCounts }) {
                         )}
                       </td>
                       <td>
-                        <span style={{ fontSize: '12px', fontWeight: 500 }}>
-                          {parent.relationship}
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--navy-900)' }}>
+                            {parent.relationship}
+                          </span>
+                          {(() => {
+                            const ps = parent.parent_students?.[0];
+                            const priority = ps?.contact_priority || (ps?.is_primary_contact ? 'primary' : 'secondary');
+                            const alertPref = ps?.alert_preference || 'all';
+                            return (
+                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                <span
+                                  style={{
+                                    fontSize: '10px',
+                                    fontWeight: 600,
+                                    padding: '1px 5px',
+                                    borderRadius: '3px',
+                                    backgroundColor: priority === 'primary' ? 'var(--navy-900)' : '#f1f5f9',
+                                    color: priority === 'primary' ? '#ffffff' : 'var(--text-secondary)',
+                                    textTransform: 'capitalize',
+                                  }}
+                                >
+                                  {priority}
+                                </span>
+                                <span
+                                  style={{
+                                    fontSize: '10px',
+                                    fontWeight: 500,
+                                    padding: '1px 5px',
+                                    borderRadius: '3px',
+                                    backgroundColor:
+                                      alertPref === 'emergency_only'
+                                        ? '#fef3c7'
+                                        : alertPref === 'none'
+                                        ? '#fee2e2'
+                                        : '#e0f2fe',
+                                    color:
+                                      alertPref === 'emergency_only'
+                                        ? '#92400e'
+                                        : alertPref === 'none'
+                                        ? '#991b1b'
+                                        : '#0369a1',
+                                  }}
+                                >
+                                  {alertPref === 'emergency_only' ? 'Emergency Only' : alertPref === 'none' ? 'Muted' : 'All Alerts'}
+                                </span>
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </td>
                       <td>
                         {linkedWards.length === 0 ? (
@@ -1142,7 +1232,7 @@ export default function ParentsPage({ onRefreshCounts }) {
               label="Relationship to Student"
               value={formData.relationship}
               onChange={(e) => setFormData({ ...formData, relationship: e.target.value })}
-              options={['Father', 'Mother', 'Guardian', 'Other']}
+              options={['Father', 'Mother', 'Local Guardian', 'Guardian', 'Other']}
             />
 
             <Select
@@ -1154,6 +1244,30 @@ export default function ParentsPage({ onRefreshCounts }) {
                 { value: 'sms', label: 'SMS' },
                 { value: 'whatsapp', label: 'WhatsApp' },
                 { value: 'email', label: 'Email' },
+              ]}
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <Select
+              label="Contact Priority"
+              value={formData.contact_priority}
+              onChange={(e) => setFormData({ ...formData, contact_priority: e.target.value })}
+              options={[
+                { value: 'primary', label: 'Primary Contact' },
+                { value: 'secondary', label: 'Secondary Contact' },
+                { value: 'emergency', label: 'Emergency Contact' },
+              ]}
+            />
+
+            <Select
+              label="Alert Routing Preference"
+              value={formData.alert_preference}
+              onChange={(e) => setFormData({ ...formData, alert_preference: e.target.value })}
+              options={[
+                { value: 'all', label: 'All Alerts (Roll Call + Fees)' },
+                { value: 'emergency_only', label: 'Emergency Only (Absences/Overdue)' },
+                { value: 'none', label: 'Muted / No Alerts' },
               ]}
             />
           </div>
