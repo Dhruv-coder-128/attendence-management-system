@@ -1,56 +1,154 @@
 import { createClient } from '@supabase/supabase-js';
+import { getStoredLicense } from './licenseService.js';
 
 /**
  * Supabase Client Module
- * Reads VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY from environment variables.
+ * Supports both single-tenant web mode (via .env.local) and multi-tenant per-school
+ * desktop mode (via school license database configuration).
  * Safe for client-side execution (never uses service_role or secret keys).
  */
 
 const envObj = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : (typeof process !== 'undefined' ? process.env : {});
-const rawUrl = (envObj.VITE_SUPABASE_URL || envObj.SUPABASE_URL || '').trim();
-const rawKey = (envObj.VITE_SUPABASE_PUBLISHABLE_KEY || envObj.VITE_SUPABASE_ANON_KEY || envObj.SUPABASE_ANON_KEY || '').trim();
+const defaultEnvUrl = (envObj.VITE_SUPABASE_URL || envObj.SUPABASE_URL || '').trim();
+const defaultEnvKey = (envObj.VITE_SUPABASE_PUBLISHABLE_KEY || envObj.VITE_SUPABASE_ANON_KEY || envObj.SUPABASE_ANON_KEY || '').trim();
 
-// Check if valid configuration is provided and not default placeholders
+/**
+ * Resolves the currently active database credentials:
+ * 1. School-specific database credentials from the activated license (if present)
+ * 2. Fallback to production environment variables (.env.local / Vercel envs)
+ */
+export function getActiveDatabaseConfig() {
+  const license = getStoredLicense();
+  const schoolDb = license?.databaseConfig;
+
+  if (schoolDb?.supabaseUrl && schoolDb?.supabaseAnonKey) {
+    return {
+      url: schoolDb.supabaseUrl.trim(),
+      key: schoolDb.supabaseAnonKey.trim(),
+      schoolName: license.schoolName || 'School Instance',
+      isCustomSchoolDb: true,
+      configured: true,
+    };
+  }
+
+  const isEnvValid = Boolean(
+    defaultEnvUrl &&
+    defaultEnvKey &&
+    defaultEnvUrl !== 'https://your-project-ref.supabase.co' &&
+    !defaultEnvUrl.includes('your-project') &&
+    !defaultEnvKey.includes('your-anon-public-key') &&
+    !defaultEnvKey.includes('your-supabase-publishable')
+  );
+
+  return {
+    url: defaultEnvUrl,
+    key: defaultEnvKey,
+    schoolName: 'Primary Institution',
+    isCustomSchoolDb: false,
+    configured: isEnvValid,
+  };
+}
+
+let activeClientInstance = null;
+let activeClientUrl = null;
+let activeClientKey = null;
+
+/**
+ * Obtains or instantiates the Supabase client for the current active database
+ */
+export function getSupabaseClient() {
+  const config = getActiveDatabaseConfig();
+  if (!config.configured || !config.url || !config.key) {
+    return null;
+  }
+
+  if (activeClientInstance && activeClientUrl === config.url && activeClientKey === config.key) {
+    return activeClientInstance;
+  }
+
+  activeClientUrl = config.url;
+  activeClientKey = config.key;
+  activeClientInstance = createClient(config.url, config.key, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+  });
+
+  return activeClientInstance;
+}
+
+/**
+ * Forces reinitialization of the Supabase client (e.g. after activating a new school license)
+ */
+export function reinitializeSupabaseClient() {
+  activeClientInstance = null;
+  activeClientUrl = null;
+  activeClientKey = null;
+  return getSupabaseClient();
+}
+
+/**
+ * Proxy object representing the Supabase client.
+ * Dynamically resolves all property and method calls to the active school's database client.
+ * Allows all existing imports (`import { supabase } from '...'`) to work seamlessly.
+ */
+export const supabase = new Proxy({}, {
+  get(_target, prop) {
+    const client = getSupabaseClient();
+    if (!client) {
+      // Return a dummy safe proxy or undefined
+      return undefined;
+    }
+    const val = client[prop];
+    if (typeof val === 'function') {
+      return val.bind(client);
+    }
+    return val;
+  },
+});
+
+/**
+ * Boolean flag indicating if Supabase is configured for the active context
+ */
 export const isSupabaseConfigured = Boolean(
-  rawUrl &&
-  rawKey &&
-  rawUrl !== 'https://your-project-ref.supabase.co' &&
-  !rawUrl.includes('your-project') &&
-  !rawKey.includes('your-anon-public-key') &&
-  !rawKey.includes('your-supabase-publishable')
+  getActiveDatabaseConfig().configured
 );
 
 export const supabaseConfig = {
-  url: isSupabaseConfigured ? rawUrl : '',
-  configured: isSupabaseConfigured,
+  get url() {
+    return getActiveDatabaseConfig().url;
+  },
+  get configured() {
+    return getActiveDatabaseConfig().configured;
+  },
+  get schoolName() {
+    return getActiveDatabaseConfig().schoolName;
+  },
+  get isCustomSchoolDb() {
+    return getActiveDatabaseConfig().isCustomSchoolDb;
+  },
 };
 
-// Simple reusable Supabase client instance
-export const supabase = isSupabaseConfigured
-  ? createClient(rawUrl, rawKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-      },
-    })
-  : null;
-
 /**
- * Performs a live connectivity check against the Supabase endpoint.
+ * Performs a live connectivity check against the active Supabase endpoint.
  * Does not modify any database tables.
- * Returns { ok, configured, url, latencyMs, error, statusText }
+ * Returns { ok, configured, url, schoolName, latencyMs, error, statusText }
  */
 export async function checkSupabaseConnection() {
-  if (!isSupabaseConfigured) {
+  const config = getActiveDatabaseConfig();
+
+  if (!config.configured) {
     let missing = [];
-    if (!rawUrl) missing.push('VITE_SUPABASE_URL');
-    if (!rawKey) missing.push('VITE_SUPABASE_PUBLISHABLE_KEY');
+    if (!config.url) missing.push('Supabase URL');
+    if (!config.key) missing.push('Supabase Publishable Key');
 
     return {
       ok: false,
       configured: false,
       url: null,
-      error: `Missing configuration: ${missing.join(', ')} is not defined in .env.local`,
+      schoolName: config.schoolName,
+      error: `Missing database configuration: ${missing.join(', ')}.`,
       statusText: 'Not Configured',
       latencyMs: 0,
     };
@@ -60,10 +158,10 @@ export async function checkSupabaseConnection() {
 
   try {
     // Ping the Supabase GoTrue Auth health endpoint
-    const response = await fetch(`${rawUrl}/auth/v1/health`, {
+    const response = await fetch(`${config.url}/auth/v1/health`, {
       method: 'GET',
       headers: {
-        apikey: rawKey,
+        apikey: config.key,
       },
     });
 
@@ -74,7 +172,9 @@ export async function checkSupabaseConnection() {
       return {
         ok: true,
         configured: true,
-        url: rawUrl,
+        url: config.url,
+        schoolName: config.schoolName,
+        isCustomSchoolDb: config.isCustomSchoolDb,
         version: data?.version || 'Active',
         statusText: 'Connected & Reachable',
         latencyMs,
@@ -85,7 +185,8 @@ export async function checkSupabaseConnection() {
       return {
         ok: false,
         configured: true,
-        url: rawUrl,
+        url: config.url,
+        schoolName: config.schoolName,
         error: 'Authentication failed (401): The provided publishable key was rejected by Supabase.',
         statusText: 'Unauthorized',
         latencyMs,
@@ -95,7 +196,8 @@ export async function checkSupabaseConnection() {
     return {
       ok: false,
       configured: true,
-      url: rawUrl,
+      url: config.url,
+      schoolName: config.schoolName,
       error: `Supabase server returned HTTP ${response.status}: ${response.statusText}`,
       statusText: `HTTP Error ${response.status}`,
       latencyMs,
@@ -105,7 +207,8 @@ export async function checkSupabaseConnection() {
     return {
       ok: false,
       configured: true,
-      url: rawUrl,
+      url: config.url,
+      schoolName: config.schoolName,
       error: err?.message || 'Network error: Unable to reach the Supabase endpoint.',
       statusText: 'Connection Failed',
       latencyMs,

@@ -1,0 +1,244 @@
+import React, { useState } from 'react';
+import { Lock, Mail, Phone, MessageSquare, ShieldAlert, KeyRound, ArrowRight } from 'lucide-react';
+import { getContactDeveloperLinks, getStoredLicense } from '../../lib/licenseService';
+import SchoolActivationModal from './SchoolActivationModal';
+
+export default function TrialExpiredLockout({ onReactivated }) {
+  const [showActivationModal, setShowActivationModal] = useState(false);
+  const license = getStoredLicense();
+  const contactLinks = getContactDeveloperLinks();
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(10, 20, 36, 0.96)',
+        backdropFilter: 'blur(8px)',
+        zIndex: 10000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+      }}
+    >
+      <div
+        style={{
+          maxWidth: '560px',
+          width: '100%',
+          backgroundColor: '#ffffff',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+          border: '1px solid var(--border-strong)',
+          textAlign: 'center',
+        }}
+      >
+        {/* Top Header */}
+        <div
+          style={{
+            backgroundColor: '#991b1b',
+            color: '#ffffff',
+            padding: '28px 24px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+          }}
+        >
+          <div
+            style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(255, 255, 255, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '12px',
+            }}
+          >
+            <Lock size={32} color="#ffffff" />
+          </div>
+          <h2
+            style={{
+              margin: '0 0 6px 0',
+              fontSize: '22px',
+              fontWeight: 700,
+              fontFamily: 'var(--font-heading)',
+              color: '#ffffff',
+            }}
+          >
+            Evaluation Trial Concluded
+          </h2>
+          <span style={{ fontSize: '13px', color: '#fecaca', letterSpacing: '0.3px' }}>
+            {license?.schoolName ? `${license.schoolName} — ` : ''}SMS Student Management System
+          </span>
+        </div>
+
+        {/* Content Body */}
+        <div style={{ padding: '28px 24px' }}>
+          {/* Exact required text specified in prompt */}
+          <div
+            style={{
+              backgroundColor: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: '8px',
+              padding: '16px',
+              marginBottom: '20px',
+            }}
+          >
+            <p
+              style={{
+                margin: 0,
+                fontSize: '15px',
+                fontWeight: 600,
+                color: '#991b1b',
+                lineHeight: 1.5,
+              }}
+            >
+              Your 30-day trial has expired. Contact the developer to activate SMS.
+            </p>
+          </div>
+
+          <p
+            style={{
+              fontSize: '13px',
+              color: 'var(--text-secondary)',
+              lineHeight: 1.6,
+              marginBottom: '24px',
+              textAlign: 'left',
+            }}
+          >
+            <strong>Data Preservation Guarantee:</strong> All your school records, students, fee records, attendance registers, and exam marks remain securely preserved in your dedicated Supabase database. Entering an active license key will instantly unlock the system.
+          </p>
+
+          {/* Configurable Contact Developer Actions */}
+          <div
+            style={{
+              backgroundColor: 'var(--bg-subtle)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '8px',
+              padding: '16px',
+              marginBottom: '20px',
+              textAlign: 'left',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--text-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                marginBottom: '12px',
+              }}
+            >
+              Authorized Developer Contact
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <a
+                href={contactLinks.emailLink}
+                className="btn btn-outline"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 14px',
+                  textDecoration: 'none',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Mail size={16} color="var(--navy-700)" />
+                  <span>Email Developer: <strong>{contactLinks.email}</strong></span>
+                </div>
+                <ArrowRight size={14} color="var(--text-muted)" />
+              </a>
+
+              {contactLinks.whatsappLink && (
+                <a
+                  href={contactLinks.whatsappLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn btn-outline"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 14px',
+                    textDecoration: 'none',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    borderColor: '#22c55e',
+                    backgroundColor: '#f0fdf4',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#15803d' }}>
+                    <MessageSquare size={16} />
+                    <span>WhatsApp Developer Support</span>
+                  </div>
+                  <ArrowRight size={14} color="#15803d" />
+                </a>
+              )}
+
+              {contactLinks.phoneLink && (
+                <a
+                  href={contactLinks.phoneLink}
+                  className="btn btn-outline"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 14px',
+                    textDecoration: 'none',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Phone size={16} color="var(--navy-700)" />
+                    <span>Phone: {contactLinks.phone}</span>
+                  </div>
+                  <ArrowRight size={14} color="var(--text-muted)" />
+                </a>
+              )}
+            </div>
+          </div>
+
+          {/* Enter Renewal / Full License Key */}
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setShowActivationModal(true)}
+            style={{
+              width: '100%',
+              padding: '12px 16px',
+              fontSize: '14px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+            }}
+          >
+            <KeyRound size={17} />
+            <span>Enter Renewal or Full License Key</span>
+          </button>
+        </div>
+
+        {/* Modal for Entering Key */}
+        <SchoolActivationModal
+          isOpen={showActivationModal}
+          onClose={() => setShowActivationModal(false)}
+          onActivated={(data) => {
+            setShowActivationModal(false);
+            if (onReactivated) onReactivated(data);
+          }}
+          isForced={false}
+        />
+      </div>
+    </div>
+  );
+}

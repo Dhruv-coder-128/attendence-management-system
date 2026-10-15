@@ -13,12 +13,17 @@ import SettingsPage from './pages/SettingsPage';
 import BulkImportPage from './pages/BulkImportPage';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { fetchUserProfile, hasPermission, getFallbackOwnerProfile, getFallbackStaffProfile, OWNER_EMAIL } from './lib/authService';
+import { validateLicense, isTauriDesktop, getStoredLicense } from './lib/licenseService';
+import SchoolActivationModal from './components/license/SchoolActivationModal';
+import TrialBanner from './components/license/TrialBanner';
+import TrialExpiredLockout from './components/license/TrialExpiredLockout';
 import { RefreshCw, GraduationCap } from 'lucide-react';
 
 /**
  * SMS — Student Management System Root Application Component
  * 100% Real Database Connected — Zero Mock Data Dependencies
- * Integrates RBAC (Owner, Admin, Moderator) and Phase 5 Exams & Fees
+ * Integrates RBAC (Owner, Admin, Moderator), Phase 5 Exams & Fees,
+ * Desktop Packaging, and Multi-School Licensing with 30-Day Server Trial.
  */
 export default function App() {
   // Supabase Auth Session State
@@ -26,6 +31,10 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+
+  // School Licensing & 30-Day Trial State
+  const [licenseStatus, setLicenseStatus] = useState(null);
+  const [isActivationModalOpen, setIsActivationModalOpen] = useState(false);
 
   // Active View / Navigation State
   const [activePage, setActivePage] = useState('dashboard');
@@ -46,6 +55,26 @@ export default function App() {
       return [];
     }
   });
+
+  // Validate license on app startup and whenever reactivation occurs
+  const checkLicense = useCallback(async () => {
+    try {
+      const res = await validateLicense();
+      setLicenseStatus(res);
+      // In desktop app, if unlicensed, prompt for activation
+      if (isTauriDesktop() && res.status === 'unlicensed') {
+        setIsActivationModalOpen(true);
+      }
+      return res;
+    } catch (err) {
+      console.warn('License verification error:', err);
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    checkLicense();
+  }, [checkLicense]);
 
   // Function to refresh database counts for the navigation badges
   const refreshCounts = useCallback(async () => {
@@ -234,69 +263,135 @@ export default function App() {
     );
   }
 
-  // 2. Route Protection: If unauthenticated, render Login Page
-  if (!user) {
-    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  // 2. Lockout screen if trial has expired or system clock was tampered
+  if (licenseStatus?.isTrialExpired || licenseStatus?.status === 'trial_expired' || licenseStatus?.status === 'clock_tampered') {
+    return (
+      <TrialExpiredLockout
+        onReactivated={() => {
+          checkLicense();
+          refreshCounts();
+        }}
+      />
+    );
   }
 
-  // 3. Render Protected Administrative ERP Console
+  // 3. Forced activation modal for desktop app if completely unlicensed
+  if (isTauriDesktop() && licenseStatus?.status === 'unlicensed') {
+    return (
+      <SchoolActivationModal
+        isOpen={true}
+        isForced={true}
+        onActivated={(data) => {
+          checkLicense();
+          refreshCounts();
+        }}
+      />
+    );
+  }
+
+  // 4. Route Protection: If unauthenticated, render Login Page
+  if (!user) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+        {licenseStatus?.status === 'trial_active' && (
+          <TrialBanner
+            daysRemaining={licenseStatus?.daysRemaining}
+            onOpenActivation={() => setIsActivationModalOpen(true)}
+          />
+        )}
+        <LoginPage onLoginSuccess={handleLoginSuccess} />
+        <SchoolActivationModal
+          isOpen={isActivationModalOpen}
+          onClose={() => setIsActivationModalOpen(false)}
+          onActivated={() => {
+            checkLicense();
+            refreshCounts();
+          }}
+        />
+      </div>
+    );
+  }
+
+  // 5. Render Protected Administrative ERP Console
   return (
-    <AppLayout
-      activePage={activePage}
-      onNavigate={setActivePage}
-      onLogout={handleLogout}
-      user={user}
-      currentUserProfile={currentUserProfile}
-      counts={counts}
-    >
-      {activePage === 'dashboard' && (
-        <DashboardPage
-          onNavigate={setActivePage}
-          onAlertParent={() => setActivePage('notifications')}
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      {licenseStatus?.status === 'trial_active' && (
+        <TrialBanner
+          daysRemaining={licenseStatus?.daysRemaining}
+          onOpenActivation={() => setIsActivationModalOpen(true)}
         />
       )}
 
-      {activePage === 'students' && (
-        <StudentsPage onRefreshCounts={refreshCounts} />
-      )}
+      <AppLayout
+        activePage={activePage}
+        onNavigate={setActivePage}
+        onLogout={handleLogout}
+        user={user}
+        currentUserProfile={currentUserProfile}
+        counts={counts}
+      >
+        {activePage === 'dashboard' && (
+          <DashboardPage
+            onNavigate={setActivePage}
+            onAlertParent={() => setActivePage('notifications')}
+          />
+        )}
 
-      {activePage === 'batches' && (
-        <BatchesPage onRefreshCounts={refreshCounts} />
-      )}
+        {activePage === 'students' && (
+          <StudentsPage onRefreshCounts={refreshCounts} />
+        )}
 
-      {activePage === 'attendance' && (
-        <AttendancePage onRefreshCounts={refreshCounts} />
-      )}
+        {activePage === 'batches' && (
+          <BatchesPage onRefreshCounts={refreshCounts} />
+        )}
 
-      {activePage === 'parents' && (
-        <ParentsPage
-          onSendNotice={() => setActivePage('notifications')}
-          onRefreshCounts={refreshCounts}
-        />
-      )}
+        {activePage === 'attendance' && (
+          <AttendancePage onRefreshCounts={refreshCounts} />
+        )}
 
-      {activePage === 'fees' && (
-        <FeesPage onRefreshCounts={refreshCounts} />
-      )}
+        {activePage === 'parents' && (
+          <ParentsPage
+            onSendNotice={() => setActivePage('notifications')}
+            onRefreshCounts={refreshCounts}
+          />
+        )}
 
-      {activePage === 'exams' && (
-        <ExamsPage />
-      )}
+        {activePage === 'fees' && (
+          <FeesPage onRefreshCounts={refreshCounts} />
+        )}
 
-      {activePage === 'notifications' && (
-        <NotificationsPage
-          notifications={notifications}
-          onBroadcast={handleBroadcast}
-        />
-      )}
+        {activePage === 'exams' && (
+          <ExamsPage />
+        )}
 
-      {activePage === 'import' && (
-        <BulkImportPage onNavigate={setActivePage} onRefreshCounts={refreshCounts} />
-      )}
+        {activePage === 'notifications' && (
+          <NotificationsPage
+            notifications={notifications}
+            onBroadcast={handleBroadcast}
+          />
+        )}
 
-      {activePage === 'settings' && (
-        <SettingsPage currentUserProfile={currentUserProfile} />
-      )}
-    </AppLayout>
+        {activePage === 'import' && (
+          <BulkImportPage onNavigate={setActivePage} onRefreshCounts={refreshCounts} />
+        )}
+
+        {activePage === 'settings' && (
+          <SettingsPage
+            currentUserProfile={currentUserProfile}
+            onOpenLicenseModal={() => setIsActivationModalOpen(true)}
+          />
+        )}
+      </AppLayout>
+
+      {/* Activation / License Management Modal */}
+      <SchoolActivationModal
+        isOpen={isActivationModalOpen}
+        onClose={() => setIsActivationModalOpen(false)}
+        onActivated={() => {
+          checkLicense();
+          refreshCounts();
+        }}
+      />
+    </div>
   );
 }

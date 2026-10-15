@@ -14,11 +14,13 @@ import {
   Link,
   Trash2,
   Send,
+  KeyRound,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
 import UsersManagement from '../components/settings/UsersManagement';
 import { isSupabaseConfigured, checkSupabaseConnection, supabaseConfig } from '../lib/supabase';
+import { getStoredLicense } from '../lib/licenseService';
 import {
   getTelegramBotStatus,
   setupTelegramWebhook,
@@ -33,7 +35,8 @@ import {
 /**
  * System Settings, Cloud Integration Status & Staff Access Page
  */
-export default function SettingsPage({ currentUserProfile }) {
+export default function SettingsPage({ currentUserProfile, onOpenLicenseModal }) {
+  const storedLicense = getStoredLicense();
   const [instituteName, setInstituteName] = useState(DEFAULT_ACADEMY_SETTINGS.academy_name);
   const [campusName, setCampusName] = useState(DEFAULT_ACADEMY_SETTINGS.branch_name);
   const [address, setAddress] = useState(DEFAULT_ACADEMY_SETTINGS.address);
@@ -581,6 +584,26 @@ export default function SettingsPage({ currentUserProfile }) {
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)' }}>School / Tenant:</span>
+                <span style={{ fontWeight: 600, color: 'var(--navy-900)' }}>
+                  {storedLicense?.schoolName || supabaseConfig.schoolName || 'Primary Institution'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)' }}>License Mode:</span>
+                <span style={{ fontWeight: 600, color: storedLicense?.status === 'trial_active' ? 'var(--gold-dark)' : 'var(--status-present)' }}>
+                  {storedLicense?.status === 'trial_active'
+                    ? `30-Day Trial (${storedLicense.daysRemaining ?? 30} Days Left)`
+                    : (storedLicense?.status || 'Active Institutional')}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Database Isolation:</span>
+                <span style={{ color: supabaseConfig.isCustomSchoolDb ? '#15803d' : 'var(--navy-700)', fontWeight: 600 }}>
+                  {supabaseConfig.isCustomSchoolDb ? 'Dedicated School Supabase DB' : 'Default Project Instance (.env.local)'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Configured URL:</span>
                 <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
                   {supabaseConfig.url || '(None)'}
@@ -598,6 +621,18 @@ export default function SettingsPage({ currentUserProfile }) {
                   Client Publishable Key Only (Zero Secret Exposure)
                 </span>
               </div>
+              {onOpenLicenseModal && (
+                <div style={{ marginTop: '6px', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onOpenLicenseModal}
+                    icon={KeyRound}
+                  >
+                    Switch School License / Connect Database
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 
