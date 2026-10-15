@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import Button from '../common/Button';
 import Badge from '../common/Badge';
+import { getStoredAcademySettings } from '../../lib/academySettings';
 
 /**
  * Printable Academic Report Card Modal
@@ -25,6 +26,8 @@ export default function ReportCardModal({
   attendanceRate = null,
 }) {
   if (!isOpen || !student) return null;
+
+  const branding = getStoredAcademySettings();
 
   const handlePrint = () => {
     window.print();
@@ -183,12 +186,20 @@ export default function ReportCardModal({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '8px',
+                  gap: '12px',
                   color: 'var(--navy-900)',
                   marginBottom: '4px',
                 }}
               >
-                <GraduationCap size={26} />
+                {branding.logo_url ? (
+                  <img
+                    src={branding.logo_url}
+                    alt="Logo"
+                    style={{ height: '38px', width: 'auto', objectFit: 'contain' }}
+                  />
+                ) : (
+                  <GraduationCap size={28} />
+                )}
                 <span
                   style={{
                     fontSize: '20px',
@@ -197,12 +208,24 @@ export default function ReportCardModal({
                     textTransform: 'uppercase',
                   }}
                 >
-                  Ruparel Tuition Academy
+                  {branding.academy_name}
                 </span>
               </div>
-              <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569' }}>
-                EXCELLENCE IN HIGHER SECONDARY &amp; COLLEGE EDUCATION &bull; ESTD. 2018
+
+              <div style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>
+                {branding.branch_name} &bull; {branding.address}
               </div>
+
+              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                Phone: {branding.phone} &bull; Email: {branding.email}
+              </div>
+
+              {branding.tagline && (
+                <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic', marginTop: '2px' }}>
+                  {branding.tagline}
+                </div>
+              )}
+
               <div
                 style={{
                   display: 'inline-block',

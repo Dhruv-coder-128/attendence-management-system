@@ -893,9 +893,67 @@ CREATE POLICY "Owners can manage user_profiles"
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_profiles TO authenticated, service_role;
 
 -- =====================================================================
--- 17. REFRESH SCHEMA CACHE
+-- 18. ACADEMY BRANDING & INSTITUTION SETTINGS
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS public.academy_settings (
+    id VARCHAR(50) PRIMARY KEY DEFAULT 'default',
+    academy_name VARCHAR(255) NOT NULL DEFAULT 'Ruparel Attendance ERP Academy',
+    branch_name VARCHAR(255) NOT NULL DEFAULT 'Central Campus — Main Wing',
+    address TEXT DEFAULT '123 Education Hub, MG Road, Mumbai, Maharashtra 400001',
+    phone VARCHAR(50) DEFAULT '+91 98765 43210',
+    email VARCHAR(255) DEFAULT 'contact@ruparel.edu',
+    logo_url TEXT DEFAULT '',
+    tagline VARCHAR(255) DEFAULT 'Excellence in Higher Secondary & College Education • Estd. 2018',
+    academic_year VARCHAR(50) DEFAULT 'AY 2026-27 (Term 1)',
+    min_attendance_threshold INTEGER DEFAULT 75,
+    late_grace_minutes INTEGER DEFAULT 15,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+DROP TRIGGER IF EXISTS trigger_academy_settings_updated_at ON public.academy_settings;
+CREATE TRIGGER trigger_academy_settings_updated_at BEFORE UPDATE ON public.academy_settings
+FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+ALTER TABLE public.academy_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Anyone can view academy settings" ON public.academy_settings;
+CREATE POLICY "Anyone can view academy settings"
+    ON public.academy_settings FOR SELECT TO authenticated, anon USING (true);
+
+DROP POLICY IF EXISTS "Owners and service_role can update academy settings" ON public.academy_settings;
+CREATE POLICY "Owners and service_role can update academy settings"
+    ON public.academy_settings FOR ALL TO authenticated, service_role
+    USING (
+        auth.role() = 'service_role' OR EXISTS (
+            SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.role = 'owner'
+        )
+    )
+    WITH CHECK (
+        auth.role() = 'service_role' OR EXISTS (
+            SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.role = 'owner'
+        )
+    );
+
+GRANT SELECT, INSERT, UPDATE ON public.academy_settings TO anon, authenticated, service_role;
+
+INSERT INTO public.academy_settings (id, academy_name, branch_name, address, phone, email, tagline)
+VALUES (
+    'default',
+    'Ruparel Attendance ERP Academy',
+    'Central Campus — Main Wing',
+    '123 Education Hub, MG Road, Mumbai, Maharashtra 400001',
+    '+91 98765 43210',
+    'contact@ruparel.edu',
+    'Excellence in Higher Secondary & College Education • Estd. 2018'
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- =====================================================================
+-- 19. REFRESH SCHEMA CACHE
 -- Signals PostgREST to immediately reload schema cache
 -- =====================================================================
 NOTIFY pgrst, 'reload schema';
+
 
 

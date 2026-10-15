@@ -24,26 +24,27 @@ import {
   setupTelegramWebhook,
   TELEGRAM_BOT_USERNAME,
 } from '../lib/telegramClient';
+import {
+  fetchAcademySettings,
+  updateAcademySettings,
+  DEFAULT_ACADEMY_SETTINGS,
+} from '../lib/academySettings';
 
 /**
  * System Settings, Cloud Integration Status & Staff Access Page
  */
 export default function SettingsPage({ currentUserProfile }) {
-  const [instituteName, setInstituteName] = useState(() => {
-    return localStorage.getItem('erp_institute_name') || 'Ruparel Attendance ERP Academy';
-  });
-  const [campusName, setCampusName] = useState(() => {
-    return localStorage.getItem('erp_campus_name') || 'Central Campus — Main Wing';
-  });
-  const [academicYear, setAcademicYear] = useState(() => {
-    return localStorage.getItem('erp_academic_year') || 'AY 2026-27 (Term 1)';
-  });
-  const [minAttendanceThreshold, setMinAttendanceThreshold] = useState(() => {
-    return localStorage.getItem('erp_min_attendance') || '75';
-  });
-  const [lateGracePeriod, setLateGracePeriod] = useState(() => {
-    return localStorage.getItem('erp_late_grace') || '15';
-  });
+  const [instituteName, setInstituteName] = useState(DEFAULT_ACADEMY_SETTINGS.academy_name);
+  const [campusName, setCampusName] = useState(DEFAULT_ACADEMY_SETTINGS.branch_name);
+  const [address, setAddress] = useState(DEFAULT_ACADEMY_SETTINGS.address);
+  const [phone, setPhone] = useState(DEFAULT_ACADEMY_SETTINGS.phone);
+  const [email, setEmail] = useState(DEFAULT_ACADEMY_SETTINGS.email);
+  const [logoUrl, setLogoUrl] = useState(DEFAULT_ACADEMY_SETTINGS.logo_url);
+  const [tagline, setTagline] = useState(DEFAULT_ACADEMY_SETTINGS.tagline);
+  const [academicYear, setAcademicYear] = useState(DEFAULT_ACADEMY_SETTINGS.academic_year);
+  const [minAttendanceThreshold, setMinAttendanceThreshold] = useState(DEFAULT_ACADEMY_SETTINGS.min_attendance_threshold);
+  const [lateGracePeriod, setLateGracePeriod] = useState(DEFAULT_ACADEMY_SETTINGS.late_grace_minutes);
+  const [isSaving, setIsSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
 
   // Supabase Connection Diagnostics State
@@ -153,20 +154,59 @@ export default function SettingsPage({ currentUserProfile }) {
   useEffect(() => {
     runConnectionTest();
     fetchTelegramStatus();
+    // Load Academy Branding from Supabase
+    fetchAcademySettings().then((s) => {
+      if (s) {
+        setInstituteName(s.academy_name || DEFAULT_ACADEMY_SETTINGS.academy_name);
+        setCampusName(s.branch_name || DEFAULT_ACADEMY_SETTINGS.branch_name);
+        setAddress(s.address || DEFAULT_ACADEMY_SETTINGS.address);
+        setPhone(s.phone || DEFAULT_ACADEMY_SETTINGS.phone);
+        setEmail(s.email || DEFAULT_ACADEMY_SETTINGS.email);
+        setLogoUrl(s.logo_url || '');
+        setTagline(s.tagline || DEFAULT_ACADEMY_SETTINGS.tagline);
+        setAcademicYear(s.academic_year || DEFAULT_ACADEMY_SETTINGS.academic_year);
+        setMinAttendanceThreshold(s.min_attendance_threshold ?? DEFAULT_ACADEMY_SETTINGS.min_attendance_threshold);
+        setLateGracePeriod(s.late_grace_minutes ?? DEFAULT_ACADEMY_SETTINGS.late_grace_minutes);
+      }
+    });
   }, []);
 
-  const handleSaveSettings = (e) => {
-    e.preventDefault();
+  const handleLogoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Logo image should be under 2MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      setLogoUrl(uploadEvent.target.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveSettings = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    setIsSaving(true);
     try {
-      localStorage.setItem('erp_institute_name', instituteName);
-      localStorage.setItem('erp_campus_name', campusName);
-      localStorage.setItem('erp_academic_year', academicYear);
-      localStorage.setItem('erp_min_attendance', minAttendanceThreshold);
-      localStorage.setItem('erp_late_grace', lateGracePeriod);
+      await updateAcademySettings({
+        academy_name: instituteName,
+        branch_name: campusName,
+        address,
+        phone,
+        email,
+        logo_url: logoUrl,
+        tagline,
+        academic_year: academicYear,
+        min_attendance_threshold: Number(minAttendanceThreshold),
+        late_grace_minutes: Number(lateGracePeriod),
+      });
       setSavedNotice(true);
-      setTimeout(() => setSavedNotice(false), 3000);
+      setTimeout(() => setSavedNotice(false), 3500);
     } catch (err) {
       console.error('Failed to save settings:', err);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -251,12 +291,43 @@ export default function SettingsPage({ currentUserProfile }) {
               label="Academy Name"
               value={instituteName}
               onChange={(e) => setInstituteName(e.target.value)}
+              placeholder="e.g. Ruparel Tuition Academy"
             />
 
             <Input
-              label="Campus &amp; Building Block"
+              label="Campus / Branch Name"
               value={campusName}
               onChange={(e) => setCampusName(e.target.value)}
+              placeholder="e.g. Central Campus — Main Wing"
+            />
+
+            <Input
+              label="Official Street Address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="e.g. 123 Education Hub, MG Road, Mumbai"
+            />
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <Input
+                label="Official Contact Phone"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+91 98765 43210"
+              />
+              <Input
+                label="Official Contact Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="contact@ruparel.edu"
+              />
+            </div>
+
+            <Input
+              label="Official Tagline / Motto"
+              value={tagline}
+              onChange={(e) => setTagline(e.target.value)}
+              placeholder="e.g. Excellence in Higher Secondary & College Education"
             />
 
             <Input
@@ -264,6 +335,82 @@ export default function SettingsPage({ currentUserProfile }) {
               value={academicYear}
               onChange={(e) => setAcademicYear(e.target.value)}
             />
+
+            {/* Logo Customization */}
+            <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--border-subtle)' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  color: 'var(--navy-900)',
+                  marginBottom: '6px',
+                }}
+              >
+                Official Academy Logo (Printed on receipts &amp; report cards)
+              </label>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                {logoUrl ? (
+                  <div
+                    style={{
+                      width: '64px',
+                      height: '64px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-subtle)',
+                      padding: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#ffffff',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <img
+                      src={logoUrl}
+                      alt="Academy Logo"
+                      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                    />
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      width: '64px',
+                      height: '64px',
+                      borderRadius: '8px',
+                      border: '1px dashed var(--border-subtle)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#f8fafc',
+                      color: 'var(--text-muted)',
+                      fontSize: '11px',
+                    }}
+                  >
+                    No Logo
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    style={{ fontSize: '12px' }}
+                  />
+                  {logoUrl && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setLogoUrl('')}
+                      style={{ width: 'fit-content', color: 'var(--status-absent)' }}
+                    >
+                      Remove Logo
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="erp-card" style={{ padding: '20px' }}>

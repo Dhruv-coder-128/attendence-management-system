@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Send,
   Eye,
+  Printer,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
@@ -17,6 +18,7 @@ import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import StatsCard from '../components/common/StatsCard';
 import StudentAcademicDossier from '../components/students/StudentAcademicDossier';
+import FeeReceiptModal from '../components/fees/FeeReceiptModal';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   recordFeePayment,
@@ -56,6 +58,10 @@ export default function FeesPage({ onRefreshCounts }) {
 
   // Dossier Modal State
   const [dossierStudent, setDossierStudent] = useState(null);
+
+  // Official Fee Receipt Modal State
+  const [receiptStudent, setReceiptStudent] = useState(null);
+  const [receiptPaymentRecord, setReceiptPaymentRecord] = useState(null);
 
   // Fetch all students and their fee records with resilient parallel query
   const loadFeesData = useCallback(async () => {
@@ -231,10 +237,20 @@ export default function FeesPage({ onRefreshCounts }) {
 
       if (res.success) {
         showNotice(res.message || 'Payment recorded successfully.');
+        const studentRef = selectedStudentForPayment;
+        const paidDetails = {
+          amount: amt,
+          payment_method: paymentData.paymentMethod,
+          reference_no: paymentData.referenceNo,
+          notes: paymentData.notes,
+        };
         setSelectedStudentForPayment(null);
         setPaymentData({ amount: '', paymentMethod: 'Cash', referenceNo: '', notes: '' });
         await loadFeesData();
         if (onRefreshCounts) onRefreshCounts();
+        // Immediately present receipt modal for printing
+        setReceiptPaymentRecord(paidDetails);
+        setReceiptStudent(studentRef);
       } else {
         showNotice(res.error || 'Failed to record payment.', true);
       }
@@ -547,6 +563,19 @@ export default function FeesPage({ onRefreshCounts }) {
                           <Button
                             variant="outline"
                             size="sm"
+                            icon={Printer}
+                            onClick={() => {
+                              setReceiptPaymentRecord(null);
+                              setReceiptStudent(s);
+                            }}
+                            title="Print Official Fee Receipt"
+                          >
+                            Receipt
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
                             icon={Eye}
                             onClick={() => setDossierStudent(s)}
                             title="View Full Dossier"
@@ -655,6 +684,17 @@ export default function FeesPage({ onRefreshCounts }) {
           }}
         />
       )}
+
+      {/* OFFICIAL FEE RECEIPT MODAL */}
+      <FeeReceiptModal
+        isOpen={Boolean(receiptStudent)}
+        onClose={() => {
+          setReceiptStudent(null);
+          setReceiptPaymentRecord(null);
+        }}
+        student={receiptStudent}
+        paymentRecord={receiptPaymentRecord}
+      />
     </div>
   );
 }

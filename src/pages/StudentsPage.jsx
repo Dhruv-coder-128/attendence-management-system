@@ -17,6 +17,9 @@ import {
   Sparkles,
   Layers,
   Upload,
+  Download,
+  FileSpreadsheet,
+  FileText,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -28,6 +31,8 @@ import BulkImportModal from '../components/importer/BulkImportModal';
 import StudentAcademicDossier from '../components/students/StudentAcademicDossier';
 import { computeFeeStatus, getStandardCoursePolicy } from '../lib/feeService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { exportStudentsToExcel, exportStudentsToCSV } from '../lib/studentExporter';
+import { getStoredAcademySettings } from '../lib/academySettings';
 
 /**
  * Students Directory Page — Connected directly to Supabase PostgreSQL
@@ -54,6 +59,8 @@ export default function StudentsPage({ onRefreshCounts }) {
   const [studentToDelete, setStudentToDelete] = useState(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalError, setModalError] = useState('');
   const [showAdvancedFields, setShowAdvancedFields] = useState(false);
@@ -276,6 +283,47 @@ export default function StudentsPage({ onRefreshCounts }) {
     });
   }, [students, searchTerm, selectedCourseId, selectedBatchId, selectedStatus, selectedFeeStatus]);
 
+  // Close export menu on outside click
+  useEffect(() => {
+    if (!isExportMenuOpen) return;
+    const handleClickOutside = (e) => {
+      const container = document.getElementById('export-directory-container');
+      if (container && !container.contains(e.target)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isExportMenuOpen]);
+
+  // Handle Export Directory (Excel or CSV)
+  const handleExportDirectory = async (format) => {
+    setIsExportMenuOpen(false);
+    setIsExporting(true);
+    try {
+      const listToExport = filteredStudents.length > 0 ? filteredStudents : students;
+      if (listToExport.length === 0) {
+        alert('No students available to export.');
+        return;
+      }
+      const branding = getStoredAcademySettings();
+      const academyName = branding?.academy_name || 'Ruparel Attendance ERP';
+
+      if (format === 'excel') {
+        const file = await exportStudentsToExcel(listToExport, academyName);
+        showToast(`Exported ${listToExport.length} students to Excel (${file})`);
+      } else {
+        const file = await exportStudentsToCSV(listToExport, academyName);
+        showToast(`Exported ${listToExport.length} students to CSV (${file})`);
+      }
+    } catch (err) {
+      console.error('Export error:', err);
+      alert('Failed to export students: ' + err.message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   // Open Add Modal
   const handleOpenAdd = () => {
     setModalError('');
@@ -442,13 +490,116 @@ export default function StudentsPage({ onRefreshCounts }) {
             {loading ? 'Refreshing...' : 'Refresh'}
           </Button>
 
+          {/* Export Directory Dropdown */}
+          <div id="export-directory-container" style={{ position: 'relative' }}>
+            <Button
+              variant="outline"
+              size="md"
+              icon={Download}
+              onClick={() => setIsExportMenuOpen((prev) => !prev)}
+              disabled={loading || isExporting || students.length === 0}
+            >
+              {isExporting ? 'Exporting...' : 'Export Directory'}
+            </Button>
+
+            {isExportMenuOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: '6px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  boxShadow: 'var(--shadow-md)',
+                  minWidth: '220px',
+                  zIndex: 50,
+                  padding: '6px',
+                }}
+              >
+                <div
+                  style={{
+                    padding: '6px 10px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    color: 'var(--text-light)',
+                    letterSpacing: '0.5px',
+                  }}
+                >
+                  Download Options
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleExportDirectory('excel')}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 12px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    color: 'var(--text-primary)',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-subtle)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <FileSpreadsheet size={16} style={{ color: '#16a34a', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontWeight: 600 }}>Excel Spreadsheet</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Format: .xlsx (formatted)</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleExportDirectory('csv')}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 12px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    color: 'var(--text-primary)',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    marginTop: '2px',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-subtle)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <FileText size={16} style={{ color: '#2563eb', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontWeight: 600 }}>CSV Text File</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Format: .csv (standard)</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
           <Button
             variant="outline"
             size="md"
             icon={Upload}
             onClick={() => setIsImportModalOpen(true)}
           >
-            Bulk Import
+            Import Students
           </Button>
 
           <Button
