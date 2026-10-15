@@ -442,8 +442,8 @@ export default function StudentAcademicDossier({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Student Academic Dossier"
-      subtitle={`${student.full_name} • Adm No: ${student.admission_no} • Ruparel Tuition Management`}
+      title={student.full_name}
+      subtitle={`Admission No: ${student.admission_no} • ${student.batches?.name || 'Cohort'} • ${student.courses?.name || 'Course'}`}
       maxWidth="920px"
       footer={
         <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>

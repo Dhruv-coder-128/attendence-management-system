@@ -70,10 +70,24 @@ export default function App() {
         ? batchCount
         : (bData ? bData.length : 0);
 
+      // 3. Live Notifications / Telegram Dispatches Count from public.attendance
+      let notifyCount = notifications.length;
+      try {
+        const { count, error: nErr } = await supabase
+          .from('attendance')
+          .select('id', { count: 'exact', head: true })
+          .eq('telegram_notified', true);
+        if (!nErr && count !== null && count !== undefined) {
+          notifyCount = count;
+        }
+      } catch {
+        // Fallback to local logs
+      }
+
       setCounts({
         students: finalStudents,
         batches: finalBatches,
-        notifications: notifications.length,
+        notifications: notifyCount,
       });
     } catch (err) {
       console.warn('Count refresh encountered issue:', err);

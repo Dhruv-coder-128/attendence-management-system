@@ -266,9 +266,9 @@ export default function BatchesPage({ onRefreshCounts }) {
       {/* Page Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Courses &amp; Academic Batches</h1>
+          <h1 className="page-title">Batches</h1>
           <p className="page-description">
-            Cohort Allocations &bull; Connected to Supabase PostgreSQL (<code>public.batches</code>)
+            Manage academic cohorts, assign courses, and monitor classroom capacities
           </p>
         </div>
 
@@ -399,11 +399,10 @@ export default function BatchesPage({ onRefreshCounts }) {
           <table className="erp-table">
             <thead>
               <tr>
-                <th style={{ width: '110px' }}>Batch Code</th>
-                <th>Batch Name &amp; Course</th>
-                <th>Shift &amp; Timings</th>
-                <th>Classroom / Hall</th>
-                <th style={{ width: '140px' }}>Capacity Utilization</th>
+                <th>Batch Name</th>
+                <th>Course</th>
+                <th>Schedule</th>
+                <th style={{ width: '150px' }}>Students</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
@@ -411,28 +410,28 @@ export default function BatchesPage({ onRefreshCounts }) {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
                     <RefreshCw size={22} className="animate-spin" style={{ marginBottom: '8px' }} />
-                    <div>Loading batches from Supabase...</div>
+                    <div>Loading batches...</div>
                   </td>
                 </tr>
               ) : filteredBatches.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
                     <Layers size={32} color="var(--gold-dark)" style={{ marginBottom: '10px' }} />
                     <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--navy-950)' }}>
                       {batches.length === 0
-                        ? 'No Batches Found in Supabase Database'
+                        ? 'No Batches Found'
                         : 'No matching batches found'}
                     </div>
                     <div style={{ fontSize: '12px', marginTop: '4px', maxWidth: '400px', margin: '4px auto 16px' }}>
                       {batches.length === 0
-                        ? 'Your public.batches table is currently empty. Click below to create your first academic cohort.'
+                        ? 'Your batch list is currently empty. Click below to create your first academic cohort.'
                         : 'Try adjusting your search query or clearing the course filter.'}
                     </div>
                     {batches.length === 0 && (
                       <Button variant="primary" size="sm" icon={Plus} onClick={handleOpenCreate}>
-                        Create First Batch
+                        Create Batch
                       </Button>
                     )}
                   </td>
@@ -445,40 +444,41 @@ export default function BatchesPage({ onRefreshCounts }) {
                   return (
                     <tr key={batch.id}>
                       <td>
-                        <span
-                          style={{
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '12px',
-                            fontWeight: 700,
-                            backgroundColor: 'var(--navy-900)',
-                            color: '#fff',
-                            padding: '2px 7px',
-                            borderRadius: '4px',
-                          }}
-                        >
-                          {batch.code}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span
+                            style={{
+                              fontFamily: 'var(--font-mono)',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              backgroundColor: 'var(--navy-900)',
+                              color: '#fff',
+                              padding: '2px 6px',
+                              borderRadius: '3px',
+                            }}
+                          >
+                            {batch.code}
+                          </span>
+                          <span style={{ fontWeight: 600, color: 'var(--navy-950)' }}>
+                            {batch.name}
+                          </span>
+                        </div>
                       </td>
                       <td>
-                        <div style={{ fontWeight: 600, color: 'var(--navy-950)' }}>
-                          {batch.name}
+                        <div style={{ fontWeight: 500, color: 'var(--navy-800)' }}>
+                          {batch.courses?.name || 'Unassigned'}
                         </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {batch.courses?.code} &bull; {batch.courses?.name}
-                        </div>
+                        {batch.courses?.code && (
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            {batch.courses.code}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <div style={{ fontSize: '12px', fontWeight: 500 }}>
                           {batch.timing || 'Schedule pending'}
                         </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {batch.shift} &bull; {batch.academic_year}
-                        </div>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px' }}>
-                          <MapPin size={12} color="var(--gold-dark)" />
-                          <span>{batch.classroom || 'TBD'}</span>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <MapPin size={11} /> {batch.classroom || 'Room TBD'}
                         </div>
                       </td>
                       <td>

@@ -380,9 +380,9 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Telegram &amp; Communication Management</h1>
+          <h1 className="page-title">Notifications</h1>
           <p className="page-description">
-            Live Telegram Roll Call Alerts Audit &bull; Outbox Broadcast Logs &bull; PostgreSQL Synchronized
+            Review parent alert delivery status, audit Telegram dispatch logs, and send broadcasts
           </p>
         </div>
 

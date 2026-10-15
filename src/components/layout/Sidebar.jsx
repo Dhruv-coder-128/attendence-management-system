@@ -139,9 +139,9 @@ export default function Sidebar({
           </div>
 
           <div className="sidebar-badge-strip">
-            <span>AY 2026-27 &bull; Term 1</span>
+            <span>Academic Portal</span>
             <span style={{ fontWeight: 600 }}>
-              {counts.students !== undefined ? `${counts.students} Students` : 'PostgreSQL'}
+              {counts.students ? `${counts.students} Students` : 'Ruparel ERP'}
             </span>
           </div>
         </div>

@@ -12,6 +12,8 @@ import {
   AlertCircle,
   Calendar,
   Send,
+  CreditCard,
+  Award,
 } from 'lucide-react';
 import StatsCard from '../components/common/StatsCard';
 import Badge from '../components/common/Badge';
@@ -184,10 +186,10 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
         </div>
       )}
 
-      {/* EXACTLY 4 PRIMARY STATS */}
-      <div className="stats-grid" style={{ marginBottom: '24px' }}>
+      {/* EXACTLY 4 PRIMARY STATS (Equal-width row on desktop) */}
+      <div className="stats-grid" style={{ marginBottom: '16px' }}>
         <StatsCard
-          title="Students"
+          title="Total Students"
           value={loading ? '...' : String(stats.totalStudents)}
           subtext="Total enrolled students"
           icon={Users}
@@ -217,6 +219,59 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
           icon={BookOpen}
           variant="gold"
         />
+      </div>
+
+      {/* QUICK TASK SHORTCUTS */}
+      <div
+        className="erp-card"
+        style={{
+          padding: '12px 18px',
+          marginBottom: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px',
+          backgroundColor: '#ffffff',
+        }}
+      >
+        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--navy-900)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          Quick Shortcuts
+        </span>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={CalendarCheck}
+            onClick={() => onNavigate('attendance')}
+          >
+            Mark Attendance
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={Users}
+            onClick={() => onNavigate('students')}
+          >
+            Student Directory
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={CreditCard}
+            onClick={() => onNavigate('fees')}
+          >
+            Record Fee Payment
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={Award}
+            onClick={() => onNavigate('exams')}
+          >
+            Enter Exam Marks
+          </Button>
+        </div>
       </div>
 
       {/* TWO SECTIONS BELOW STATS: TODAY'S ATTENDANCE & BATCH SUMMARY */}

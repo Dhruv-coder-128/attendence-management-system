@@ -604,9 +604,9 @@ export default function ParentsPage({ onRefreshCounts }) {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Parent Communications Directory</h1>
+          <h1 className="page-title">Parents</h1>
           <p className="page-description">
-            Registered Guardian Contacts &bull; Connected to Supabase PostgreSQL (<code>public.parents</code>)
+            Manage guardian contacts, link Telegram notifications, and configure alert preferences
           </p>
         </div>
 

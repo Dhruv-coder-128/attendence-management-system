@@ -81,6 +81,7 @@ export default function AppLayout({
           activePage={activePage}
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           onQuickAction={handleQuickAction}
+          unreadCount={counts?.notifications || 0}
         />
 
         {/* Content Body */}

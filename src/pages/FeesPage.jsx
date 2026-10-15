@@ -2,28 +2,33 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   CreditCard,
   Search,
-  Filter,
   DollarSign,
   AlertTriangle,
   CheckCircle2,
   AlertCircle,
   RefreshCw,
   Send,
-  Plus,
   Eye,
-  Calendar,
-  FileSpreadsheet,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import Select from '../components/common/Select';
+import StatsCard from '../components/common/StatsCard';
 import StudentAcademicDossier from '../components/students/StudentAcademicDossier';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { recordFeePayment, computeFeeStatus } from '../lib/feeService';
+import {
+  recordFeePayment,
+  computeFeeStatus,
+  getStandardCoursePolicy,
+} from '../lib/feeService';
 import { sendVerifiedFeeReminder } from '../lib/telegramClient';
 
+/**
+ * Tuition Fees & Accounts Management
+ * Displays real student fee records, supports installment recording & Telegram reminders.
+ */
 export default function FeesPage({ onRefreshCounts }) {
   const [students, setStudents] = useState([]);
   const [batches, setBatches] = useState([]);
@@ -52,7 +57,7 @@ export default function FeesPage({ onRefreshCounts }) {
   // Dossier Modal State
   const [dossierStudent, setDossierStudent] = useState(null);
 
-  // Fetch all students and their fee records
+  // Fetch all students and their fee records with resilient parallel query
   const loadFeesData = useCallback(async () => {
     if (!supabase || !isSupabaseConfigured) {
       setLoading(false);
@@ -70,7 +75,7 @@ export default function FeesPage({ onRefreshCounts }) {
         .order('name');
       setBatches(batchesData || []);
 
-      // 2. Fetch students with batch, parent details, and fee data
+      // 2. Fetch students with course and batch joins
       const { data: studentsData, error: sErr } = await supabase
         .from('students')
         .select(`
@@ -85,16 +90,57 @@ export default function FeesPage({ onRefreshCounts }) {
           fee_paid,
           fee_status,
           fee_due_date,
-          batches:batch_id ( id, name, code ),
-          student_fees ( id, total_amount, paid_amount, pending_amount, status, next_due_date, installment_schedule )
+          enrollment_date,
+          courses:course_id ( id, name, code, level ),
+          batches:batch_id ( id, name, code )
         `)
         .order('full_name');
 
       if (sErr) throw sErr;
-      setStudents(studentsData || []);
+
+      // 3. In parallel, fetch student_fees records if available
+      let feeRecordsMap = {};
+      try {
+        const { data: feeRecords, error: fErr } = await supabase
+          .from('student_fees')
+          .select('id, student_id, total_amount, paid_amount, pending_amount, status, next_due_date, installment_schedule');
+
+        if (!fErr && feeRecords) {
+          feeRecords.forEach((f) => {
+            feeRecordsMap[f.student_id] = f;
+          });
+        }
+      } catch (fCatch) {
+        console.warn('student_fees query note:', fCatch);
+      }
+
+      // 4. Merge students with fee data
+      const mergedStudents = (studentsData || []).map((student) => {
+        const feeRecord = feeRecordsMap[student.id];
+        const policy = getStandardCoursePolicy(student.courses);
+        const total = Number(feeRecord?.total_amount ?? student.tuition_fee ?? policy.total);
+        const paid = Number(feeRecord?.paid_amount ?? student.fee_paid ?? 0);
+        const computed = computeFeeStatus(
+          total,
+          paid,
+          feeRecord?.installment_schedule || [],
+          feeRecord?.next_due_date || student.fee_due_date
+        );
+
+        return {
+          ...student,
+          student_fees: feeRecord ? [feeRecord] : [],
+          tuition_fee: total,
+          fee_paid: paid,
+          fee_status: computed.status,
+          fee_due_date: feeRecord?.next_due_date || student.fee_due_date || computed.nextDueDate,
+        };
+      });
+
+      setStudents(mergedStudents);
     } catch (err) {
       console.error('Error fetching fees data:', err);
-      setError(err.message || 'Failed to fetch fee records.');
+      setError(err.message || 'Failed to load student fee records.');
     } finally {
       setLoading(false);
     }
@@ -114,19 +160,16 @@ export default function FeesPage({ onRefreshCounts }) {
     let totalExpected = 0;
     let totalCollected = 0;
     let overdueCount = 0;
-    let pendingCount = 0;
 
     students.forEach((s) => {
-      const feeRec = s.student_fees?.[0];
-      const tuition = Number(feeRec?.total_amount ?? s.tuition_fee ?? 45000);
-      const paid = Number(feeRec?.paid_amount ?? s.fee_paid ?? 0);
-      const status = feeRec?.status ?? s.fee_status ?? 'pending';
+      const tuition = Number(s.tuition_fee || 45000);
+      const paid = Number(s.fee_paid || 0);
+      const status = s.fee_status || 'pending';
 
       totalExpected += tuition;
       totalCollected += paid;
 
       if (status === 'overdue') overdueCount++;
-      if (status === 'pending' || status === 'partial') pendingCount++;
     });
 
     const pendingBalance = Math.max(0, totalExpected - totalCollected);
@@ -136,7 +179,6 @@ export default function FeesPage({ onRefreshCounts }) {
       totalCollected,
       pendingBalance,
       overdueCount,
-      pendingCount,
     };
   }, [students]);
 
@@ -152,8 +194,7 @@ export default function FeesPage({ onRefreshCounts }) {
       const batchId = s.batches?.id;
       const matchesBatch = selectedBatch === 'ALL' || batchId === selectedBatch;
 
-      const feeRec = s.student_fees?.[0];
-      const status = (feeRec?.status ?? s.fee_status ?? 'pending').toLowerCase();
+      const status = (s.fee_status || 'pending').toLowerCase();
       const matchesStatus =
         selectedStatus === 'ALL' || status === selectedStatus.toLowerCase();
 
@@ -236,9 +277,9 @@ export default function FeesPage({ onRefreshCounts }) {
       {/* Page Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Tuition Fees &amp; Accounts</h1>
+          <h1 className="page-title">Fees</h1>
           <p className="page-description">
-            Track student tuition installments, record fee payments, and dispatch Telegram reminders to verified guardians
+            Track student tuition installments, record fee payments, and send Telegram reminders to guardians
           </p>
         </div>
 
@@ -276,69 +317,43 @@ export default function FeesPage({ onRefreshCounts }) {
         </div>
       )}
 
-      {/* KPI Cards */}
+      {/* Primary KPI Cards (Consistent with design system) */}
       <div className="stats-grid" style={{ marginBottom: '24px' }}>
-        <div className="stats-card navy">
-          <div className="stats-card-header">
-            <span className="stats-card-title">Total Tuition Expected</span>
-            <div className="stats-card-icon navy">
-              <DollarSign size={20} />
-            </div>
-          </div>
-          <div className="stats-card-value">
-            ₹{stats.totalExpected.toLocaleString('en-IN')}
-          </div>
-          <div className="stats-card-subtext">
-            Cumulative academic year billing
-          </div>
-        </div>
+        <StatsCard
+          title="Total Fees"
+          value={loading ? '...' : `₹${stats.totalExpected.toLocaleString('en-IN')}`}
+          subtext="Annual academic billing"
+          icon={DollarSign}
+          variant="navy"
+        />
 
-        <div className="stats-card success">
-          <div className="stats-card-header">
-            <span className="stats-card-title">Total Collected / Paid</span>
-            <div className="stats-card-icon success">
-              <CheckCircle2 size={20} />
-            </div>
-          </div>
-          <div className="stats-card-value">
-            ₹{stats.totalCollected.toLocaleString('en-IN')}
-          </div>
-          <div className="stats-card-subtext">
-            {stats.totalExpected > 0
+        <StatsCard
+          title="Total Paid"
+          value={loading ? '...' : `₹${stats.totalCollected.toLocaleString('en-IN')}`}
+          subtext={
+            stats.totalExpected > 0
               ? `${Math.round((stats.totalCollected / stats.totalExpected) * 100)}% Collected`
-              : 'Cleared receipts'}
-          </div>
-        </div>
+              : 'Cleared receipts'
+          }
+          icon={CheckCircle2}
+          variant="success"
+        />
 
-        <div className="stats-card gold">
-          <div className="stats-card-header">
-            <span className="stats-card-title">Pending Balance</span>
-            <div className="stats-card-icon gold">
-              <CreditCard size={20} />
-            </div>
-          </div>
-          <div className="stats-card-value">
-            ₹{stats.pendingBalance.toLocaleString('en-IN')}
-          </div>
-          <div className="stats-card-subtext">
-            Outstanding dues to be settled
-          </div>
-        </div>
+        <StatsCard
+          title="Pending Balance"
+          value={loading ? '...' : `₹${stats.pendingBalance.toLocaleString('en-IN')}`}
+          subtext="Outstanding dues"
+          icon={CreditCard}
+          variant="gold"
+        />
 
-        <div className={`stats-card ${stats.overdueCount > 0 ? 'danger' : 'navy'}`}>
-          <div className="stats-card-header">
-            <span className="stats-card-title">Overdue Accounts</span>
-            <div className={`stats-card-icon ${stats.overdueCount > 0 ? 'danger' : 'navy'}`}>
-              <AlertTriangle size={20} />
-            </div>
-          </div>
-          <div className="stats-card-value">{stats.overdueCount}</div>
-          <div className="stats-card-subtext">
-            {stats.overdueCount > 0
-              ? 'Past payment deadline'
-              : 'Zero overdue installments'}
-          </div>
-        </div>
+        <StatsCard
+          title="Overdue Accounts"
+          value={loading ? '...' : String(stats.overdueCount)}
+          subtext={stats.overdueCount > 0 ? 'Past payment deadline' : 'Zero overdue installments'}
+          icon={AlertTriangle}
+          variant={stats.overdueCount > 0 ? 'danger' : 'navy'}
+        />
       </div>
 
       {/* Main Table Card */}
@@ -439,12 +454,11 @@ export default function FeesPage({ onRefreshCounts }) {
                 </tr>
               ) : (
                 filteredStudents.map((s) => {
-                  const feeRec = s.student_fees?.[0];
-                  const total = Number(feeRec?.total_amount ?? s.tuition_fee ?? 45000);
-                  const paid = Number(feeRec?.paid_amount ?? s.fee_paid ?? 0);
+                  const total = Number(s.tuition_fee || 45000);
+                  const paid = Number(s.fee_paid || 0);
                   const pending = Math.max(0, total - paid);
-                  const status = (feeRec?.status ?? s.fee_status ?? 'pending').toLowerCase();
-                  const dueDate = feeRec?.next_due_date || s.fee_due_date || 'N/A';
+                  const status = (s.fee_status || 'pending').toLowerCase();
+                  const dueDate = s.fee_due_date || 'N/A';
 
                   let badgeVariant = 'gold';
                   if (status === 'paid') badgeVariant = 'present';
@@ -476,7 +490,13 @@ export default function FeesPage({ onRefreshCounts }) {
                         ₹{paid.toLocaleString('en-IN')}
                       </td>
 
-                      <td style={{ textAlign: 'right', fontWeight: 600, color: pending > 0 ? 'var(--status-absent)' : 'var(--text-muted)' }}>
+                      <td
+                        style={{
+                          textAlign: 'right',
+                          fontWeight: 600,
+                          color: pending > 0 ? 'var(--status-absent)' : 'var(--text-muted)',
+                        }}
+                      >
                         ₹{pending.toLocaleString('en-IN')}
                       </td>
 
@@ -547,7 +567,7 @@ export default function FeesPage({ onRefreshCounts }) {
         isOpen={Boolean(selectedStudentForPayment)}
         onClose={() => setSelectedStudentForPayment(null)}
         title={`Record Tuition Payment: ${selectedStudentForPayment?.full_name}`}
-        description="Submit fee receipt and update student balance in PostgreSQL"
+        subtitle="Submit fee receipt and update student balance in PostgreSQL"
       >
         <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <Input

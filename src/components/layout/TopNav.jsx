@@ -1,16 +1,14 @@
 import React from 'react';
-import { Menu, Calendar, Shield, Bell, Plus, CheckSquare, Database } from 'lucide-react';
-import Button from '../common/Button';
-import { isSupabaseConfigured } from '../../lib/supabase';
+import { Menu, Calendar, Bell } from 'lucide-react';
 
 /**
- * Enterprise Top Navigation Bar
+ * Clean Professional Top Navigation Bar
  */
 export default function TopNav({
   activePage,
   onOpenMobileMenu,
   onQuickAction,
-  unreadCount = 2,
+  unreadCount = 0,
 }) {
   const getPageTitle = (page) => {
     switch (page) {
@@ -59,28 +57,7 @@ export default function TopNav({
       </div>
 
       <div className="topbar-right">
-        {/* Database Connection Chip */}
-        <div
-          onClick={() => onQuickAction && onQuickAction('goto-settings')}
-          className="topbar-chip"
-          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-          title={isSupabaseConfigured ? 'Supabase Database Connected' : 'Supabase Not Configured'}
-        >
-          <span
-            style={{
-              width: '7px',
-              height: '7px',
-              borderRadius: '50%',
-              backgroundColor: isSupabaseConfigured ? 'var(--status-present)' : 'var(--status-absent)',
-              display: 'inline-block',
-            }}
-          />
-          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--navy-900)' }}>
-            {isSupabaseConfigured ? 'DB: Live' : 'DB: Offline'}
-          </span>
-        </div>
-
-        {/* Campus & Term Chip */}
+        {/* Date Indicator */}
         <div className="topbar-chip" style={{ display: 'none', md: 'flex' }}>
           <Calendar size={13} color="var(--gold-dark)" />
           <span>
@@ -93,29 +70,6 @@ export default function TopNav({
           </span>
         </div>
 
-        {/* Quick Action Button */}
-        {activePage !== 'attendance' && (
-          <Button
-            variant="outline"
-            size="sm"
-            icon={CheckSquare}
-            onClick={() => onQuickAction && onQuickAction('goto-attendance')}
-          >
-            Roll Call
-          </Button>
-        )}
-
-        {activePage !== 'students' && (
-          <Button
-            variant="primary"
-            size="sm"
-            icon={Plus}
-            onClick={() => onQuickAction && onQuickAction('new-student')}
-          >
-            New Admission
-          </Button>
-        )}
-
         {/* Notification Bell */}
         <button
           type="button"
@@ -126,7 +80,8 @@ export default function TopNav({
             padding: '7px 9px',
             borderRadius: '4px',
           }}
-          title="Alerts & Telegram Queue"
+          title="Notifications & Alerts"
+          aria-label="Notifications"
         >
           <Bell size={16} />
           {unreadCount > 0 && (
@@ -147,7 +102,7 @@ export default function TopNav({
                 justifyContent: 'center',
               }}
             >
-              {unreadCount}
+              {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )}
         </button>

@@ -350,9 +350,9 @@ export default function ExamsPage() {
       {/* Page Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Exams &amp; Academic Assessments</h1>
+          <h1 className="page-title">Exams</h1>
           <p className="page-description">
-            Assessment Schedules &bull; Batch Mark Entry &bull; Telegram Result Dispatches (Phase 5)
+            Schedule examinations, record batch marks, and generate student report cards
           </p>
         </div>
 
@@ -361,8 +361,8 @@ export default function ExamsPage() {
             {loading ? 'Refreshing...' : 'Refresh'}
           </Button>
 
-          <Button variant="primary" size="md" icon={Plus} onClick={handleOpenCreateExam}>
-            Create Examination
+          <Button variant="primary" size="sm" icon={Plus} onClick={handleOpenCreateExam}>
+            Create Exam
           </Button>
         </div>
       </div>

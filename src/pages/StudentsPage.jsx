@@ -425,9 +425,9 @@ export default function StudentsPage({ onRefreshCounts }) {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Student Directory</h1>
+          <h1 className="page-title">Students</h1>
           <p className="page-description">
-            Live Student Registry &bull; Connected to Supabase PostgreSQL (<code>public.students</code>)
+            Manage enrolled students, inspect academic profiles, and track tuition status
           </p>
         </div>
 
@@ -638,13 +638,11 @@ export default function StudentsPage({ onRefreshCounts }) {
           <table className="erp-table">
             <thead>
               <tr>
-                <th style={{ width: '130px' }}>Admission No</th>
-                <th>Student Name</th>
-                <th>Course &amp; Batch</th>
-                <th>Roll No</th>
-                <th>Contact Phone</th>
+                <th style={{ width: '130px' }}>Admission No.</th>
+                <th>Name</th>
+                <th>Batch</th>
+                <th>Phone</th>
                 <th>Fee Status</th>
-                <th>Admission Date</th>
                 <th>Status</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
@@ -652,28 +650,28 @@ export default function StudentsPage({ onRefreshCounts }) {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
                     <RefreshCw size={22} className="animate-spin" style={{ marginBottom: '8px' }} />
-                    <div>Loading records from Supabase...</div>
+                    <div>Loading records from database...</div>
                   </td>
                 </tr>
               ) : filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
                     <UserCheck size={32} color="var(--gold-dark)" style={{ marginBottom: '10px' }} />
                     <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--navy-950)' }}>
                       {students.length === 0
-                        ? 'No Student Records in Supabase Database'
+                        ? 'No Student Records Found'
                         : 'No matching student records found'}
                     </div>
                     <div style={{ fontSize: '12px', marginTop: '4px', maxWidth: '400px', margin: '4px auto 16px' }}>
                       {students.length === 0
-                        ? 'Your PostgreSQL table (public.students) is currently empty. Click below to add your first student record.'
-                        : 'Try adjusting your search keyword or clearing the course and batch filters.'}
+                        ? 'Your student registry is currently empty. Click below to add your first student record.'
+                        : 'Try adjusting your search keyword or clearing the filters.'}
                     </div>
                     {students.length === 0 && (
                       <Button variant="primary" size="sm" icon={Plus} onClick={handleOpenAdd}>
-                        Add First Student
+                        Add Student
                       </Button>
                     )}
                   </td>
@@ -690,22 +688,21 @@ export default function StudentsPage({ onRefreshCounts }) {
                       <div style={{ fontWeight: 600, color: 'var(--navy-950)' }}>
                         {student.full_name}
                       </div>
-                      {student.email && (
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {student.email}
-                        </div>
-                      )}
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        {student.roll_no ? `Roll: ${student.roll_no}` : ''}
+                        {student.roll_no && student.email ? ' • ' : ''}
+                        {student.email || ''}
+                      </div>
                     </td>
                     <td>
                       <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--navy-800)' }}>
-                        {student.courses?.code || 'Unassigned Course'}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                         {student.batches?.name || 'Unassigned Batch'}
                       </div>
-                    </td>
-                    <td style={{ fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
-                      {student.roll_no || '—'}
+                      {student.courses?.code && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          {student.courses.code}
+                        </div>
+                      )}
                     </td>
                     <td style={{ fontSize: '12px' }}>
                       {student.phone ? (
@@ -730,9 +727,6 @@ export default function StudentsPage({ onRefreshCounts }) {
                           </div>
                         );
                       })()}
-                    </td>
-                    <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                      {student.enrollment_date || '—'}
                     </td>
                     <td>
                       <Badge

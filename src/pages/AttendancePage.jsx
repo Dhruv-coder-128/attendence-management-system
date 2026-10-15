@@ -500,12 +500,12 @@ export default function AttendancePage({ onRefreshCounts }) {
       <div className="page-header">
         <div>
           <h1 className="page-title">
-            {registerMode === 'monthly' ? 'Monthly Attendance Register & Analytics' : 'Daily Attendance Register'}
+            {registerMode === 'monthly' ? 'Monthly Attendance Matrix' : 'Attendance'}
           </h1>
           <p className="page-description">
             {registerMode === 'monthly'
-              ? 'Cohort-wide monthly roll call matrix, defaulter detection & Excel export'
-              : 'Live Daily Roll Call Register • Persisting to Supabase PostgreSQL (public.attendance)'}
+              ? 'Monthly roll call register, attendance trends, and Excel export'
+              : 'Select a batch and date to record attendance and dispatch parent alerts'}
           </p>
         </div>
 
@@ -522,36 +522,7 @@ export default function AttendancePage({ onRefreshCounts }) {
                 }}
                 disabled={loading || students.length === 0}
               >
-                Send Attendance Notifications
-              </Button>
-
-              <Button
-                variant="gold"
-                size="sm"
-                icon={Sparkles}
-                onClick={handleEnsureTestStudent}
-              >
-                Ensure Dhruv Shah (Test Student)
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                icon={Download}
-                onClick={handleExportDaily}
-                disabled={loading || isExportingDaily || students.length === 0}
-              >
-                {isExportingDaily ? 'Exporting...' : 'Export Daily (.xlsx)'}
-              </Button>
-
-              <Button
-                variant="outline"
-                size="sm"
-                icon={RefreshCw}
-                onClick={fetchBatchAttendance}
-                disabled={loading}
-              >
-                {loading ? 'Refreshing...' : 'Refresh'}
+                Send Notifications
               </Button>
 
               <Button
@@ -562,6 +533,26 @@ export default function AttendancePage({ onRefreshCounts }) {
                 disabled={loading || students.length === 0}
               >
                 Mark All Present
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Download}
+                onClick={handleExportDaily}
+                disabled={loading || isExportingDaily || students.length === 0}
+              >
+                {isExportingDaily ? 'Exporting...' : 'Export (.xlsx)'}
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                icon={RefreshCw}
+                onClick={fetchBatchAttendance}
+                disabled={loading}
+              >
+                {loading ? 'Refreshing...' : 'Refresh'}
               </Button>
             </>
           )}
