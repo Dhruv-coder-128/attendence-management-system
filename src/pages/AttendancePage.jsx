@@ -17,11 +17,16 @@ import {
   Copy,
   MessageCircle,
   CheckCircle2,
+  CalendarCheck,
+  FileSpreadsheet,
+  Download,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
+import MonthlyAttendanceRegister from '../components/attendance/MonthlyAttendanceRegister';
+import { exportDailyRegisterToExcel } from '../lib/attendanceExporter';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   ensureDhruvShahTestStudent,
@@ -65,9 +70,32 @@ export default function AttendancePage({ onRefreshCounts }) {
   const [isLinkingTelegram, setIsLinkingTelegram] = useState(false);
   const [telegramDispatchStatus, setTelegramDispatchStatus] = useState(null);
 
+  // View Switcher & Export State
+  const [registerMode, setRegisterMode] = useState('daily'); // 'daily' | 'monthly'
+  const [isExportingDaily, setIsExportingDaily] = useState(false);
+
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 4000);
+  };
+
+  const handleExportDaily = async () => {
+    if (students.length === 0) return;
+    setIsExportingDaily(true);
+    try {
+      await exportDailyRegisterToExcel({
+        batch: activeBatch,
+        date: selectedDate,
+        students,
+        attendanceMap,
+      });
+      showToast('Daily roll call register exported to Excel successfully!');
+    } catch (err) {
+      console.error('Daily export error:', err);
+      alert('Failed to export daily roll call: ' + err.message);
+    } finally {
+      setIsExportingDaily(false);
+    }
   };
 
   // 1. Fetch available batches (all cohorts from public.batches)
@@ -471,56 +499,150 @@ export default function AttendancePage({ onRefreshCounts }) {
       {/* Page Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Daily Attendance Register</h1>
+          <h1 className="page-title">
+            {registerMode === 'monthly' ? 'Monthly Attendance Register & Analytics' : 'Daily Attendance Register'}
+          </h1>
           <p className="page-description">
-            Live Roll Call Register &bull; Persisting to Supabase PostgreSQL (<code>public.attendance</code>)
+            {registerMode === 'monthly'
+              ? 'Cohort-wide monthly roll call matrix, defaulter detection & Excel export'
+              : 'Live Daily Roll Call Register • Persisting to Supabase PostgreSQL (public.attendance)'}
           </p>
         </div>
 
         <div className="page-actions" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-          <Button
-            variant="primary"
-            size="sm"
-            icon={Send}
-            onClick={() => {
-              setBulkNotifyResults(null);
-              setIsBulkNotifyModalOpen(true);
-            }}
-            disabled={loading || students.length === 0}
-          >
-            Send Attendance Notifications
-          </Button>
+          {registerMode === 'daily' && (
+            <>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={Send}
+                onClick={() => {
+                  setBulkNotifyResults(null);
+                  setIsBulkNotifyModalOpen(true);
+                }}
+                disabled={loading || students.length === 0}
+              >
+                Send Attendance Notifications
+              </Button>
 
-          <Button
-            variant="gold"
-            size="sm"
-            icon={Sparkles}
-            onClick={handleEnsureTestStudent}
-          >
-            Ensure Dhruv Shah (Test Student)
-          </Button>
+              <Button
+                variant="gold"
+                size="sm"
+                icon={Sparkles}
+                onClick={handleEnsureTestStudent}
+              >
+                Ensure Dhruv Shah (Test Student)
+              </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            icon={RefreshCw}
-            onClick={fetchBatchAttendance}
-            disabled={loading}
-          >
-            {loading ? 'Refreshing...' : 'Refresh'}
-          </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Download}
+                onClick={handleExportDaily}
+                disabled={loading || isExportingDaily || students.length === 0}
+              >
+                {isExportingDaily ? 'Exporting...' : 'Export Daily (.xlsx)'}
+              </Button>
 
-          <Button
-            variant="outline"
-            size="sm"
-            icon={CheckSquare}
-            onClick={handleMarkAllPresent}
-            disabled={loading || students.length === 0}
-          >
-            Mark All Present
-          </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={RefreshCw}
+                onClick={fetchBatchAttendance}
+                disabled={loading}
+              >
+                {loading ? 'Refreshing...' : 'Refresh'}
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                icon={CheckSquare}
+                onClick={handleMarkAllPresent}
+                disabled={loading || students.length === 0}
+              >
+                Mark All Present
+              </Button>
+            </>
+          )}
         </div>
       </div>
+
+      {/* View Switcher: Daily Roll Call vs. Monthly Register & Analytics */}
+      <div
+        style={{
+          display: 'flex',
+          gap: '8px',
+          borderBottom: '1px solid var(--border-subtle)',
+          marginBottom: '20px',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setRegisterMode('daily')}
+          style={{
+            padding: '10px 18px',
+            fontSize: '13px',
+            fontWeight: 600,
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            borderBottom: registerMode === 'daily' ? '2px solid var(--navy-900)' : '2px solid transparent',
+            color: registerMode === 'daily' ? 'var(--navy-950)' : 'var(--text-muted)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <CalendarCheck size={16} color={registerMode === 'daily' ? 'var(--navy-900)' : 'var(--text-muted)'} />
+          <span>Daily Roll Call</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setRegisterMode('monthly')}
+          style={{
+            padding: '10px 18px',
+            fontSize: '13px',
+            fontWeight: 600,
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            borderBottom: registerMode === 'monthly' ? '2px solid var(--navy-900)' : '2px solid transparent',
+            color: registerMode === 'monthly' ? 'var(--navy-950)' : 'var(--text-muted)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <FileSpreadsheet size={16} color={registerMode === 'monthly' ? 'var(--gold-dark)' : 'var(--text-muted)'} />
+          <span>Monthly Register &amp; Analytics</span>
+          <span
+            style={{
+              fontSize: '10px',
+              padding: '1px 6px',
+              borderRadius: '10px',
+              backgroundColor: 'var(--gold-subtle-bg)',
+              color: 'var(--gold-dark)',
+              fontWeight: 700,
+            }}
+          >
+            New
+          </span>
+        </button>
+      </div>
+
+      {registerMode === 'monthly' ? (
+        <MonthlyAttendanceRegister
+          batches={batches}
+          selectedBatchId={selectedBatchId}
+          onSelectBatch={setSelectedBatchId}
+          onRefreshCounts={onRefreshCounts}
+        />
+      ) : (
+        <>
 
       {/* Toast Notification */}
       {toastMessage && (
@@ -1482,6 +1604,8 @@ export default function AttendancePage({ onRefreshCounts }) {
             )}
           </div>
         </Modal>
+      )}
+      </>
       )}
     </div>
   );
