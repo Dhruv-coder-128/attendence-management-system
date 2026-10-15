@@ -1,6 +1,2 @@
-[build]
-target = "x86_64-pc-windows-gnu"
-
-[target.x86_64-pc-windows-gnu]
-linker = "gcc"
-ar = "ar"
+# Standard Windows MSVC toolchain configuration
+# Cargo defaults to x86_64-pc-windows-msvc on Windows with the msvc toolchain.
