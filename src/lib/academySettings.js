@@ -5,10 +5,11 @@ import { supabase, isSupabaseConfigured } from './supabase';
  */
 export const DEFAULT_ACADEMY_SETTINGS = {
   academy_name: 'SMS — Student Management System',
+  owner_name: 'Institution Administrator',
   branch_name: 'Central Campus — Main Wing',
   address: '123 Education Hub, MG Road, Mumbai, Maharashtra 400001',
-  phone: '+91 8866039007',
-  email: 'dushah2007@gmail.com',
+  phone: '+91 98765 43210',
+  email: 'admin@institution.edu',
   logo_url: '',
   tagline: 'Excellence in Higher Secondary & College Education • Estd. 2018',
   academic_year: 'AY 2026-27 (Term 1)',
@@ -25,6 +26,10 @@ export function getStoredAcademySettings() {
     const raw = localStorage.getItem('erp_academy_branding');
     if (raw) {
       const parsed = JSON.parse(raw);
+      // Sanitize legacy hardcoded developer email if present in old client cache
+      if (parsed.email === 'dushah2007@gmail.com') {
+        parsed.email = 'admin@institution.edu';
+      }
       return { ...DEFAULT_ACADEMY_SETTINGS, ...parsed };
     }
   } catch {

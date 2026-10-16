@@ -217,9 +217,9 @@ export default function UsersManagement({ currentUserProfile }) {
 
   // Handle Delete User
   const handleDeleteUser = async (user) => {
-    const isPrimary = (user.email || '').trim().toLowerCase() === 'dushah2007@gmail.com';
+    const isPrimary = (user.role || '').toLowerCase() === 'owner';
     if (isPrimary) {
-      alert('The Primary Owner account is protected and cannot be deleted.');
+      alert('The Institution Owner account is protected and cannot be deleted.');
       return;
     }
     if (!window.confirm(`Are you sure you want to remove user ${user.email}? This action cannot be undone.`)) {
@@ -360,8 +360,8 @@ export default function UsersManagement({ currentUserProfile }) {
               </tr>
             ) : (
               users.map((u) => {
-                // ONLY Dhruv Shah (primary system owner) is permanently protected
-                const isPrimaryOwner = (u.email || '').trim().toLowerCase() === 'dushah2007@gmail.com';
+                // The system owner account is permanently protected
+                const isPrimaryOwner = (u.role || '').toLowerCase() === 'owner';
                 const grantedPermsCount = Object.values(u.permissions || {}).filter(Boolean).length;
 
                 return (

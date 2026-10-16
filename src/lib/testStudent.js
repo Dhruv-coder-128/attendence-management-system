@@ -7,8 +7,8 @@ import { TELEGRAM_BOT_USERNAME } from './telegramClient';
  * Prevents duplicate creation and avoids fabricating details.
  */
 
-export const TEST_STUDENT_NAME = 'Dhruv Shah';
-export const TEST_STUDENT_ADMISSION_NO = 'ADM-TEST-DHRUV';
+export const TEST_STUDENT_NAME = 'Aarav Patel';
+export const TEST_STUDENT_ADMISSION_NO = 'ADM-TEST-SAMPLE';
 
 /**
  * Ensures Dhruv Shah exists as an enrolled student in an existing valid course & batch.

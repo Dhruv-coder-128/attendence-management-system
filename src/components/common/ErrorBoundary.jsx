@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertTriangle, RefreshCw, Trash2, Mail, MessageSquare } from 'lucide-react';
 import { openExternalLink } from '../../lib/externalOpener';
+import { getStoredAcademySettings } from '../../lib/academySettings';
 
 /**
  * Enterprise Application Error Boundary
@@ -186,27 +187,15 @@ export default class ErrorBoundary extends React.Component {
                   color: '#94a3b8',
                 }}
               >
-                <span>Developer: Dhruv Shah</span>
+                <span>System Helpdesk &amp; Technical Support</span>
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button
                     type="button"
-                    onClick={() => openExternalLink('https://wa.me/918866039007')}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#22c55e',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      fontSize: '12px',
+                    onClick={() => {
+                      const settings = getStoredAcademySettings();
+                      const email = settings.email || 'support@institution.edu';
+                      openExternalLink(`mailto:${email}?subject=SMS%20Desktop%20Error%20Report`);
                     }}
-                  >
-                    <MessageSquare size={13} /> WhatsApp Support
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openExternalLink('mailto:dushah2007@gmail.com')}
                     style={{
                       background: 'none',
                       border: 'none',
@@ -218,7 +207,7 @@ export default class ErrorBoundary extends React.Component {
                       fontSize: '12px',
                     }}
                   >
-                    <Mail size={13} /> Email
+                    <Mail size={13} /> Email Helpdesk
                   </button>
                 </div>
               </div>

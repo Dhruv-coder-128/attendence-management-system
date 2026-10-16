@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
 import { getStorageMode } from './databaseAdapter.js';
+import { getStoredAcademySettings } from './academySettings.js';
 
 /**
  * Standard Granular Permission Keys & Human-Readable Labels
@@ -20,7 +21,15 @@ export const MODULE_PERMISSIONS = [
   { key: 'manage_settings', label: 'System Settings', module: 'Settings', desc: 'Configure institute profile and gateway' },
 ];
 
-export const OWNER_EMAIL = 'dushah2007@gmail.com';
+export function getActiveOwnerIdentity() {
+  const academy = getStoredAcademySettings();
+  return {
+    email: academy.email || 'admin@institution.edu',
+    name: academy.owner_name || 'Institution Administrator',
+  };
+}
+
+export const OWNER_EMAIL = 'admin@institution.edu';
 
 /**
  * Standard Granular Permission Presets
@@ -217,15 +226,17 @@ export async function fetchUsersList(token) {
 
     const profiles = Array.isArray(data) ? [...data] : [];
     
+    const ownerIdentity = getActiveOwnerIdentity();
+
     // Ensure the system owner account is represented in the list
     const hasOwner = profiles.some(
-      (u) => (u.email || '').toLowerCase() === OWNER_EMAIL || u.role === 'owner'
+      (u) => (u.email || '').toLowerCase() === ownerIdentity.email.toLowerCase() || u.role === 'owner'
     );
     if (!hasOwner) {
       profiles.unshift({
         id: 'owner-session',
-        email: OWNER_EMAIL,
-        full_name: 'Dhruv Shah (Owner)',
+        email: ownerIdentity.email,
+        full_name: `${ownerIdentity.name} (Owner)`,
         role: 'owner',
         is_active: true,
         permissions: getFallbackOwnerProfile().permissions,
@@ -235,13 +246,14 @@ export async function fetchUsersList(token) {
 
     return { ok: true, users: profiles };
   } catch (err) {
+    const ownerIdentity = getActiveOwnerIdentity();
     return {
       ok: true,
       users: [
         {
           id: 'owner-session',
-          email: OWNER_EMAIL,
-          full_name: 'Dhruv Shah (Owner)',
+          email: ownerIdentity.email,
+          full_name: `${ownerIdentity.name} (Owner)`,
           role: 'owner',
           is_active: true,
           permissions: getFallbackOwnerProfile().permissions,

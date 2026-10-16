@@ -155,10 +155,12 @@ export default function BulkImportModal({
     }
   };
 
-  // Check if all required fields are mapped
+  // Check if all truly vital required fields are mapped (excluding auto-generated/defaulted fields)
   const unmappedRequiredFields = useMemo(() => {
     if (!activeSchema) return [];
-    return activeSchema.fields.filter((f) => f.required && !columnMapping[f.name]);
+    return activeSchema.fields.filter(
+      (f) => f.required && !f.autoGenerate && f.default === undefined && !columnMapping[f.name]
+    );
   }, [activeSchema, columnMapping]);
 
   // STEP 2: Proceed to Validation & Preview
@@ -289,7 +291,6 @@ export default function BulkImportModal({
                   size="sm"
                   icon={ArrowRight}
                   onClick={handleRunValidation}
-                  disabled={unmappedRequiredFields.length > 0}
                 >
                   Validate &amp; Preview
                 </Button>
@@ -668,22 +669,34 @@ export default function BulkImportModal({
             <div
               style={{
                 marginBottom: '16px',
-                padding: '10px 14px',
-                backgroundColor: 'var(--status-absent-bg)',
-                border: '1px solid var(--status-absent-border)',
-                borderRadius: '6px',
-                color: 'var(--status-absent)',
+                padding: '12px 16px',
+                backgroundColor: 'var(--navy-900)',
+                border: '1px solid var(--gold-border)',
+                borderRadius: '8px',
+                color: '#ffffff',
                 fontSize: '12px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '10px',
               }}
             >
-              <AlertCircle size={16} />
-              <span>
-                <strong>Required Fields Unmapped:</strong> Please map{' '}
-                {unmappedRequiredFields.map((f) => `"${f.label}"`).join(', ')} to proceed.
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sparkles size={16} color="var(--gold-primary)" />
+                <span>
+                  <strong>Flexible Mode Active:</strong>{' '}
+                  {unmappedRequiredFields.map((f) => `"${f.label}"`).join(', ')} will be auto-generated with smart defaults if unmapped.
+                </span>
+              </div>
+              <Button
+                variant="gold"
+                size="sm"
+                onClick={handleRunValidation}
+                style={{ fontSize: '11px', padding: '4px 10px' }}
+              >
+                Auto-Fill Defaults &amp; Continue
+              </Button>
             </div>
           )}
 
@@ -712,7 +725,7 @@ export default function BulkImportModal({
                           <strong style={{ fontSize: '13px', color: 'var(--navy-950)' }}>
                             {field.label}
                           </strong>
-                          {field.required && (
+                          {field.required && !field.autoGenerate && (
                             <span
                               style={{
                                 fontSize: '10px',
@@ -724,6 +737,34 @@ export default function BulkImportModal({
                               }}
                             >
                               Required
+                            </span>
+                          )}
+                          {field.autoGenerate && (
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 600,
+                                color: '#0369a1',
+                                backgroundColor: '#e0f2fe',
+                                padding: '1px 5px',
+                                borderRadius: '3px',
+                              }}
+                            >
+                              Auto-Generated
+                            </span>
+                          )}
+                          {!field.required && !field.autoGenerate && (
+                            <span
+                              style={{
+                                fontSize: '10px',
+                                fontWeight: 500,
+                                color: 'var(--text-muted)',
+                                backgroundColor: 'var(--bg-subtle)',
+                                padding: '1px 5px',
+                                borderRadius: '3px',
+                              }}
+                            >
+                              Optional
                             </span>
                           )}
                         </div>

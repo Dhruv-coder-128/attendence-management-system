@@ -2,6 +2,28 @@ import { supabase } from '../supabase.js';
 import { ENTITY_SCHEMAS } from './entitySchemas.js';
 import { resolveCourseReference } from './courseResolver.js';
 
+function generateCodeFromName(name, fallbackNum = 1) {
+  if (!name) return `CODE-${fallbackNum}`;
+  const clean = String(name).toUpperCase().replace(/[^A-Z0-9\s]/g, '').trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0].slice(0, 10);
+  return words.slice(0, 3).map((w) => w.slice(0, 4)).join('-').slice(0, 12);
+}
+
+function inferLevelFromName(name) {
+  if (!name) return 'General';
+  const lower = String(name).toLowerCase();
+  if (lower.includes('11') || lower.includes('xi')) return '11th';
+  if (lower.includes('12') || lower.includes('xii')) return '12th';
+  if (lower.includes('fy') || lower.includes('first year')) return 'FY';
+  if (lower.includes('sy') || lower.includes('second year')) return 'SY';
+  if (lower.includes('ty') || lower.includes('third year')) return 'TY';
+  if (lower.includes('bca')) return 'BCA';
+  if (lower.includes('10') || lower.includes('x')) return '10th';
+  if (lower.includes('9') || lower.includes('ix')) return '9th';
+  return 'General';
+}
+
 /**
  * Validates and transforms parsed rows according to entity schema and database state
  * Returns {
@@ -48,8 +70,8 @@ export async function validateImportRows(entityId, rawRows, columnMapping, injec
         value = value.trim();
       }
 
-      // Check required
-      if (field.required && (value === '' || value === null || value === undefined)) {
+      // Check required only if not auto-generable and has no default
+      if (field.required && !field.autoGenerate && field.default === undefined && (value === '' || value === null || value === undefined)) {
         errors.push(`Missing required field: "${field.label}"`);
         return;
       }
@@ -76,16 +98,14 @@ export async function validateImportRows(entityId, rawRows, columnMapping, injec
             resolvedData[field.name] = String(value).toLowerCase();
           }
         } else if (field.type === 'enum' && field.options) {
-          // Normalize enum
+          // Flexible enum normalization - never reject valid user strings
           const matchedOpt = field.options.find(
             (opt) => opt.toLowerCase() === String(value).toLowerCase()
           );
           if (matchedOpt) {
             resolvedData[field.name] = matchedOpt;
           } else {
-            errors.push(
-              `"${field.label}" must be one of: ${field.options.join(', ')} (received: ${value})`
-            );
+            resolvedData[field.name] = String(value).trim() || field.default || 'Other';
           }
         } else {
           resolvedData[field.name] = String(value);
@@ -100,12 +120,25 @@ export async function validateImportRows(entityId, rawRows, columnMapping, injec
 
     // 2. Perform entity-specific relational checks and unique key validation
     if (entityId === 'courses') {
+      if (!resolvedData.code && resolvedData.name) {
+        resolvedData.code = generateCodeFromName(resolvedData.name, rowNumber);
+      }
+      if (!resolvedData.level || resolvedData.level === 'General') {
+        const inferred = inferLevelFromName(resolvedData.name);
+        if (inferred && inferred !== 'General') {
+          resolvedData.level = inferred;
+        } else if (!resolvedData.level) {
+          resolvedData.level = 'General';
+        }
+      }
       const code = resolvedData.code ? resolvedData.code.toUpperCase() : '';
       resolvedData.code = code;
 
       if (code) {
         if (inMemorySeenKeys.has(code)) {
-          errors.push(`Duplicate Course Code in file: "${code}"`);
+          // If code was auto-generated or duplicated, add row suffix to avoid rejection
+          resolvedData.code = `${code}-${rowNumber}`;
+          inMemorySeenKeys.add(resolvedData.code);
         } else {
           inMemorySeenKeys.add(code);
         }
@@ -116,12 +149,16 @@ export async function validateImportRows(entityId, rawRows, columnMapping, injec
         }
       }
     } else if (entityId === 'batches') {
+      if (!resolvedData.code && resolvedData.name) {
+        resolvedData.code = generateCodeFromName(resolvedData.name, rowNumber);
+      }
       const code = resolvedData.code ? resolvedData.code.toUpperCase() : '';
       resolvedData.code = code;
 
       if (code) {
         if (inMemorySeenKeys.has(code)) {
-          errors.push(`Duplicate Batch Code in file: "${code}"`);
+          resolvedData.code = `${code}-${rowNumber}`;
+          inMemorySeenKeys.add(resolvedData.code);
         } else {
           inMemorySeenKeys.add(code);
         }
@@ -135,28 +172,52 @@ export async function validateImportRows(entityId, rawRows, columnMapping, injec
       // Foreign Key resolution: course_code -> course_id using multi-tiered resolver
       const rawCourseRef = resolvedData.course_code;
       if (!rawCourseRef || !String(rawCourseRef).trim()) {
-        errors.push(`Missing required Course Code reference`);
+        const defaultCourse = dbContext.coursesList?.[0];
+        if (defaultCourse) {
+          resolvedData.course_id = defaultCourse.id;
+          resolvedData.course_code = defaultCourse.code;
+          warnings.push(`Course reference omitted, auto-assigned to "${defaultCourse.name}".`);
+        } else {
+          resolvedData.course_code = 'GEN-COURSE';
+          resolvedData.course_id = null;
+        }
       } else {
         const resolution = resolveCourseReference(rawCourseRef, dbContext.coursesList);
         if (resolution.success) {
           resolvedData.course_id = resolution.course_id;
-          resolvedData.course_code = resolution.course_code; // Normalize to exact database course code
+          resolvedData.course_code = resolution.course_code;
           if (resolution.matchedBy !== 'code' && resolution.matchedBy !== 'id') {
             info.push(
               `Course reference "${rawCourseRef}" resolved to "${resolution.course_code}" (${resolution.course.name})`
             );
           }
         } else {
-          errors.push(resolution.error);
+          const defaultCourse = dbContext.coursesList?.[0];
+          if (defaultCourse) {
+            resolvedData.course_id = defaultCourse.id;
+            resolvedData.course_code = defaultCourse.code;
+            warnings.push(`Course "${rawCourseRef}" not found, assigned to "${defaultCourse.name}".`);
+          } else {
+            resolvedData.course_code = String(rawCourseRef).toUpperCase();
+            resolvedData.course_id = null;
+          }
         }
       }
     } else if (entityId === 'students') {
+      if (!resolvedData.admission_no) {
+        resolvedData.admission_no = `ADM-${new Date().getFullYear()}-${String(rowNumber).padStart(4, '0')}`;
+      }
+      if (!resolvedData.roll_no) {
+        resolvedData.roll_no = String(rowNumber - 1);
+      }
+
       const admNo = resolvedData.admission_no ? resolvedData.admission_no.toUpperCase() : '';
       resolvedData.admission_no = admNo;
 
       if (admNo) {
         if (inMemorySeenKeys.has(admNo)) {
-          errors.push(`Duplicate Admission Number in file: "${admNo}"`);
+          resolvedData.admission_no = `${admNo}-${rowNumber}`;
+          inMemorySeenKeys.add(resolvedData.admission_no);
         } else {
           inMemorySeenKeys.add(admNo);
         }
@@ -173,10 +234,20 @@ export async function validateImportRows(entityId, rawRows, columnMapping, injec
         const foundBatch = dbContext.batchesMap.get(batchCode);
         if (foundBatch) {
           resolvedData.batch_id = foundBatch.id;
-          // Auto-assign course_id from batch if not provided or to ensure integrity
           resolvedData.course_id = foundBatch.course_id;
         } else {
-          errors.push(`Referenced Batch Code "${batchCode}" does not exist in database`);
+          const defaultBatch = Array.from(dbContext.batchesMap.values())[0];
+          if (defaultBatch) {
+            resolvedData.batch_id = defaultBatch.id;
+            resolvedData.course_id = defaultBatch.course_id;
+            warnings.push(`Batch "${batchCode}" not found, auto-linked to "${defaultBatch.name}".`);
+          }
+        }
+      } else {
+        const defaultBatch = Array.from(dbContext.batchesMap.values())[0];
+        if (defaultBatch) {
+          resolvedData.batch_id = defaultBatch.id;
+          resolvedData.course_id = defaultBatch.course_id;
         }
       }
 

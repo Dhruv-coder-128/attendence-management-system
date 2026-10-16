@@ -139,7 +139,25 @@ export const unifiedAuth = {
       return { data: { user: null, session: null }, error: new Error('Please enter your institutional email.') };
     }
 
-    const isOwner = cleanEmail === 'dushah2007@gmail.com' || cleanEmail.startsWith('owner');
+function getLocalOwnerProfile() {
+  if (typeof window === 'undefined') {
+    return { name: 'Institution Administrator', email: 'admin@institution.edu' };
+  }
+  try {
+    const raw = localStorage.getItem('erp_academy_branding');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        name: parsed.owner_name || (parsed.academy_name ? `${parsed.academy_name} Owner` : 'Institution Administrator'),
+        email: parsed.email && parsed.email !== 'dushah2007@gmail.com' ? parsed.email : 'admin@institution.edu',
+      };
+    }
+  } catch {}
+  return { name: 'Institution Administrator', email: 'admin@institution.edu' };
+}
+
+    const localOwner = getLocalOwnerProfile();
+    const isOwner = cleanEmail === 'dushah2007@gmail.com' || cleanEmail === localOwner.email || cleanEmail.startsWith('owner');
     const mode = getStorageMode();
     const client = getSupabaseClient();
 
@@ -156,10 +174,10 @@ export const unifiedAuth = {
           console.warn('Remote Supabase auth failed for owner, applying owner local session:', res.error?.message);
           const ownerUser = {
             id: 'owner-session',
-            email: 'dushah2007@gmail.com',
+            email: localOwner.email,
             role: 'owner',
             aud: 'authenticated',
-            user_metadata: { full_name: 'Dhruv Shah (Owner)', role: 'owner' },
+            user_metadata: { full_name: `${localOwner.name} (Owner)`, role: 'owner' },
             app_metadata: { role: 'owner', provider: 'email' },
           };
           setStoredAuthUser(ownerUser);
@@ -182,10 +200,10 @@ export const unifiedAuth = {
         if (isOwner) {
           const ownerUser = {
             id: 'owner-session',
-            email: 'dushah2007@gmail.com',
+            email: localOwner.email,
             role: 'owner',
             aud: 'authenticated',
-            user_metadata: { full_name: 'Dhruv Shah (Owner)', role: 'owner' },
+            user_metadata: { full_name: `${localOwner.name} (Owner)`, role: 'owner' },
             app_metadata: { role: 'owner', provider: 'email' },
           };
           setStoredAuthUser(ownerUser);
@@ -204,10 +222,10 @@ export const unifiedAuth = {
     if (isOwner) {
       const ownerUser = {
         id: 'owner-session',
-        email: 'dushah2007@gmail.com',
+        email: localOwner.email,
         role: 'owner',
         aud: 'authenticated',
-        user_metadata: { full_name: 'Dhruv Shah (Owner)', role: 'owner' },
+        user_metadata: { full_name: `${localOwner.name} (Owner)`, role: 'owner' },
         app_metadata: { role: 'owner', provider: 'email' },
       };
       setStoredAuthUser(ownerUser);

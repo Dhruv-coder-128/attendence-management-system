@@ -160,6 +160,35 @@ assert(parsedCsv.parsedRows[0].studentName === 'Manav Trivedi', 'Parsed CSV stud
 assert(parsedCsv.parsedRows[0].courseName === 'Physics XI', 'Parsed CSV course name');
 assert(parsedCsv.parsedRows[0].batchName === 'Batch P1', 'Parsed CSV batch name');
 
+// TEST 6: Validator with relaxed schema, auto-generated codes, and custom enum values
+console.log('\n--- TEST 6: Schema Validation & Flexible Enum Acceptance ---');
+const { validateImportRows } = await import('../src/lib/importer/validator.js');
+
+const mockCoursesRows = [
+  { _rowNum: 2, 'Course Name': '10th Standard State Board' }, // No code, no level!
+  { _rowNum: 3, 'Course Name': 'Diploma in Mechanical Engineering', 'Academic Level': 'Diploma' }, // Custom level!
+  { _rowNum: 4, 'Course Name': 'Grade 9 CBSE Foundation', 'Academic Level': 'Grade 9' }, // Custom level!
+];
+
+const mockMapping = {
+  name: 'Course Name',
+  level: 'Academic Level',
+};
+
+const mockInjectedContext = {
+  existingCourseCodes: new Set(),
+  coursesList: [],
+};
+
+const validationResult = await validateImportRows('courses', mockCoursesRows, mockMapping, mockInjectedContext);
+assert(validationResult.summary.total === 3, 'Processed 3 course rows');
+assert(validationResult.summary.errors === 0, `0 validation errors (got ${validationResult.summary.errors})`);
+assert(validationResult.summary.valid === 3, `All 3 rows marked valid (got ${validationResult.summary.valid})`);
+assert(Boolean(validationResult.validatedRows[0].resolvedData.code), 'Row 1 course code was auto-generated');
+assert(validationResult.validatedRows[0].resolvedData.level === '10th', `Row 1 level auto-inferred as 10th (got ${validationResult.validatedRows[0].resolvedData.level})`);
+assert(validationResult.validatedRows[1].resolvedData.level === 'Diploma', `Row 2 custom level "Diploma" preserved without error (got ${validationResult.validatedRows[1].resolvedData.level})`);
+assert(validationResult.validatedRows[2].resolvedData.level === 'Grade 9', `Row 3 custom level "Grade 9" preserved without error (got ${validationResult.validatedRows[2].resolvedData.level})`);
+
 // Summary
 console.log('\n======================================================');
 console.log(`TEST RESULTS: ${passed} passed, ${failed} failed`);

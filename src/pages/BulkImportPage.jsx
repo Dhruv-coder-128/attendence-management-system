@@ -21,7 +21,7 @@ import BulkImportModal from '../components/importer/BulkImportModal';
 import MasterImportModal from '../components/importer/MasterImportModal';
 import SqlImportModal from '../components/importer/SqlImportModal';
 import { RECOMMENDED_IMPORT_SEQUENCE } from '../lib/importer/entitySchemas';
-import { downloadSampleTemplate } from '../lib/importer/templateGenerator';
+import { downloadSampleTemplate, downloadAllInOneTemplate } from '../lib/importer/templateGenerator';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 /**
@@ -184,13 +184,64 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
         </div>
       )}
 
+      {/* All-in-One Master Importer Hero Banner */}
+      <div
+        style={{
+          background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #1e293b 100%)',
+          borderRadius: '14px',
+          padding: '28px',
+          color: '#ffffff',
+          marginBottom: '28px',
+          border: '1px solid rgba(234, 179, 8, 0.3)',
+          boxShadow: '0 10px 30px -5px rgba(15, 23, 42, 0.4)',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ position: 'relative', zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
+          <div style={{ maxWidth: '680px' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 12px', borderRadius: '20px', backgroundColor: 'rgba(234, 179, 8, 0.15)', border: '1px solid rgba(234, 179, 8, 0.4)', color: '#fbbf24', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '12px' }}>
+              <Sparkles size={14} />
+              <span>Recommended &bull; Automatic Onboarding</span>
+            </div>
+            <h2 style={{ fontSize: '22px', fontWeight: 800, margin: '0 0 8px 0', letterSpacing: '-0.3px', color: '#ffffff' }}>
+              All-in-One Master Importer (Excel, CSV, JSON, .smsdb)
+            </h2>
+            <p style={{ fontSize: '13px', color: '#94a3b8', lineHeight: 1.6, margin: 0 }}>
+              Upload a single master institutional spreadsheet or personal database backup. The system automatically creates your <strong>Courses</strong>, <strong>Batches</strong>, <strong>Students</strong>, <strong>Parent Dossiers (with Telegram tokens)</strong>, and <strong>Tuition Fee Ledgers</strong> without any foreign key errors.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <Button
+              variant="gold"
+              size="lg"
+              icon={Sparkles}
+              onClick={() => setIsMasterModalOpen(true)}
+              style={{ fontWeight: 700, padding: '12px 22px', boxShadow: '0 4px 14px rgba(234, 179, 8, 0.3)' }}
+            >
+              Launch Master Importer
+            </Button>
+            <Button
+              variant="outline"
+              size="lg"
+              icon={Download}
+              onClick={() => downloadAllInOneTemplate('xlsx')}
+              style={{ color: '#ffffff', borderColor: 'rgba(255,255,255,0.25)', backgroundColor: 'rgba(255,255,255,0.05)' }}
+            >
+              Master Template (.xlsx)
+            </Button>
+          </div>
+        </div>
+      </div>
+
       {/* Recommended Sequence Guide Banner */}
       <div
         style={{
           padding: '16px 20px',
           backgroundColor: '#eff6ff',
           border: '1px solid #bfdbfe',
-          borderRadius: '8px',
+          borderRadius: '10px',
           marginBottom: '24px',
         }}
       >
@@ -198,96 +249,190 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
           <Info size={20} color="#1d4ed8" style={{ marginTop: '2px', flexShrink: 0 }} />
           <div>
             <strong style={{ fontSize: '14px', color: '#1e40af', display: 'block', marginBottom: '4px' }}>
-              Recommended Sequence for First-Time Setup
+              Per-Table Setup Guide (Import by Table)
             </strong>
             <p style={{ fontSize: '12px', color: '#1e3a8a', lineHeight: 1.5, margin: 0 }}>
-              Because relational foreign keys are strictly enforced in Supabase, import entities in order:{' '}
-              <strong>1. Courses</strong> &rarr; <strong>2. Batches</strong> (needs Course Code) &rarr;{' '}
-              <strong>3. Students</strong> (needs Batch Code) &rarr;{' '}
-              <strong>4. Parents &amp; Guardians</strong> (needs Student Admission No).
+              If you prefer uploading separate spreadsheets per entity, follow the sequence below. All missing codes and levels are auto-generated with smart defaults.
             </p>
           </div>
         </div>
       </div>
 
-      {/* 4 Interactive Entity Cards */}
+      {/* 4 Interactive Entity Cards - Spacious, High-Density Redesign */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: '20px',
-          marginBottom: '28px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+          gap: '24px',
+          marginBottom: '32px',
         }}
       >
         {RECOMMENDED_IMPORT_SEQUENCE.map((item) => {
           const Icon = entityIcons[item.id] || FileSpreadsheet;
           const currentCount = counts[item.id] ?? 0;
+          const isPopulated = currentCount > 0;
+
+          const cardDetails = {
+            courses: {
+              subtitle: 'Academic Streams & Degrees',
+              dependency: 'Foundation Table &bull; No Prerequisites',
+              fields: ['Course Code (auto)', 'Course Name', 'Academic Level', 'Curriculum Notes', 'Status'],
+              navTarget: 'students',
+              navLabel: 'Open Students Directory',
+            },
+            batches: {
+              subtitle: 'Divisions, Timings & Capacity',
+              dependency: 'Linked to Courses &bull; Feeds into Students',
+              fields: ['Batch Code (auto)', 'Batch Name', 'Course Link', 'Shift', 'Timing', 'Classroom'],
+              navTarget: 'batches',
+              navLabel: 'Open Batches Directory',
+            },
+            students: {
+              subtitle: 'Student Directory & Records',
+              dependency: 'Linked to Batches &bull; Feeds into Parents & Fees',
+              fields: ['Admission No (auto)', 'Student Full Name', 'Roll No (auto)', 'Batch Link', 'Phone', 'Gender', 'Fee Ledger'],
+              navTarget: 'students',
+              navLabel: 'Open Students Directory',
+            },
+            parents: {
+              subtitle: 'Guardian Contacts & Alert Tokens',
+              dependency: 'Linked to Students &bull; Generates Telegram Tokens',
+              fields: ['Guardian Full Name', 'Mobile Number', 'Student Link', 'Relationship', 'Linking Token'],
+              navTarget: 'parents',
+              navLabel: 'Open Parents Directory',
+            },
+          }[item.id] || {
+            subtitle: 'Institutional Entity',
+            dependency: 'Database Table',
+            fields: ['Record ID', 'Created At'],
+            navTarget: 'dashboard',
+            navLabel: 'Open Directory',
+          };
 
           return (
             <div
               key={item.id}
               className="erp-card"
               style={{
-                padding: '20px',
+                padding: '24px',
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'space-between',
-                transition: 'all 0.2s ease',
+                borderRadius: '12px',
+                border: '1px solid var(--border-color)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                transition: 'all 0.25s ease',
               }}
             >
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                  <div
-                    style={{
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '8px',
-                      backgroundColor: 'var(--navy-900)',
-                      color: 'var(--gold-primary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Icon size={20} />
+                {/* Header Row: Icon, Title & Live Status Pill */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div
+                      style={{
+                        width: '46px',
+                        height: '46px',
+                        borderRadius: '10px',
+                        backgroundColor: 'var(--navy-900)',
+                        color: 'var(--gold-primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 2px 8px rgba(15, 23, 42, 0.15)',
+                      }}
+                    >
+                      <Icon size={22} />
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--gold-dark)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Step {item.order} of 4
+                      </span>
+                      <h3 style={{ fontSize: '17px', fontWeight: 700, color: 'var(--navy-950)', margin: '2px 0 0 0' }}>
+                        {item.title}
+                      </h3>
+                    </div>
                   </div>
 
                   <span
                     style={{
                       fontSize: '11px',
                       fontWeight: 700,
-                      padding: '2px 8px',
+                      padding: '4px 10px',
                       borderRadius: '12px',
-                      backgroundColor: 'var(--bg-subtle)',
-                      border: '1px solid var(--border-subtle)',
-                      color: 'var(--text-secondary)',
+                      backgroundColor: isPopulated ? 'var(--status-present-bg)' : 'var(--bg-subtle)',
+                      border: `1px solid ${isPopulated ? 'var(--status-present-border)' : 'var(--border-subtle)'}`,
+                      color: isPopulated ? 'var(--status-present)' : 'var(--text-secondary)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
                     }}
                   >
-                    Step {item.order} of 4
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: isPopulated ? '#16a34a' : '#94a3b8' }} />
+                    {currentCount} {currentCount === 1 ? 'Record' : 'Records'}
                   </span>
                 </div>
 
-                <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '4px' }}>
-                  {item.title}
-                </h3>
-                <div style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', marginBottom: '10px' }}>
-                  public.{item.table} &bull; {currentCount} records in database
+                {/* Subtitle & Table Tag */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {cardDetails.subtitle}
+                  </span>
+                  <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', backgroundColor: 'var(--bg-subtle)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+                    public.{item.table}
+                  </span>
                 </div>
 
-                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.4, marginBottom: '16px' }}>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 16px 0' }}>
                   {item.description}
                 </p>
+
+                {/* Expected Schema Fields Preview Pills */}
+                <div style={{ backgroundColor: 'var(--bg-subtle)', padding: '12px', borderRadius: '8px', marginBottom: '16px', border: '1px solid var(--border-subtle)' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-light)', marginBottom: '8px', letterSpacing: '0.4px' }}>
+                    Columns &bull; Data Schema
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {cardDetails.fields.map((f, fIdx) => (
+                      <span
+                        key={fIdx}
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 500,
+                          backgroundColor: '#ffffff',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-subtle)',
+                          color: 'var(--text-primary)',
+                        }}
+                      >
+                        {f}
+                      </span>
+                    ))}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      color: 'var(--text-muted)',
+                      marginTop: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                    dangerouslySetInnerHTML={{ __html: `&#x1F517; ${cardDetails.dependency}` }}
+                  />
+                </div>
               </div>
 
+              {/* Card Action Center */}
               <div>
                 {/* Template Downloads */}
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
                   <Button
                     variant="outline"
                     size="sm"
                     icon={Download}
                     onClick={() => downloadSampleTemplate(item.id, 'xlsx')}
-                    style={{ flex: 1, fontSize: '11px', padding: '5px 8px' }}
+                    style={{ flex: 1, fontSize: '12px', fontWeight: 600, justifyContent: 'center', padding: '7px 10px' }}
                   >
                     .XLSX Template
                   </Button>
@@ -296,22 +441,48 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
                     size="sm"
                     icon={Download}
                     onClick={() => downloadSampleTemplate(item.id, 'csv')}
-                    style={{ flex: 1, fontSize: '11px', padding: '5px 8px' }}
+                    style={{ flex: 1, fontSize: '12px', fontWeight: 600, justifyContent: 'center', padding: '7px 10px' }}
                   >
                     .CSV Template
                   </Button>
                 </div>
 
-                {/* Launch Button */}
+                {/* Primary Import Button */}
                 <Button
                   variant="primary"
-                  size="sm"
+                  size="md"
                   icon={Upload}
                   onClick={() => openImportWizard(item.id)}
-                  style={{ width: '100%', justifyContent: 'center' }}
+                  style={{ width: '100%', justifyContent: 'center', fontWeight: 600 }}
                 >
-                  Import {item.title.split(' ')[0]}
+                  Import {item.title}
                 </Button>
+
+                {onNavigate && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate(cardDetails.navTarget)}
+                    style={{
+                      width: '100%',
+                      marginTop: '8px',
+                      padding: '4px',
+                      background: 'none',
+                      border: 'none',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: 'var(--navy-900)',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <span>{cardDetails.navLabel}</span>
+                    <ArrowRight size={12} />
+                  </button>
+                )}
               </div>
             </div>
           );
