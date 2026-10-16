@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { KeyRound, ShieldCheck, AlertCircle, Building2, ExternalLink, Mail, Phone, MessageSquare, CheckCircle2 } from 'lucide-react';
 import { activateSchoolLicense, getContactDeveloperLinks, getStoredLicense } from '../../lib/licenseService';
 import { reinitializeSupabaseClient } from '../../lib/supabase';
+import { openExternalLink, copyToClipboard } from '../../lib/externalOpener';
 
 export default function SchoolActivationModal({ isOpen, onClose, onActivated, isForced = false }) {
   const currentLicense = getStoredLicense();
@@ -9,6 +10,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successData, setSuccessData] = useState(null);
+  const [copiedInfo, setCopiedInfo] = useState('');
 
   const contactLinks = getContactDeveloperLinks();
 
@@ -168,45 +170,63 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
 
           {/* Contact Developer Section */}
           <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span>Need a License Key or Technical Support?</span>
+              {copiedInfo && (
+                <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
+                  ✓ Copied: {copiedInfo}!
+                </span>
+              )}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '12px' }}>
-              <a
-                href={contactLinks.emailLink}
-                target="_blank"
-                rel="noreferrer"
+              <button
+                type="button"
+                onClick={async () => {
+                  await copyToClipboard(contactLinks.email);
+                  setCopiedInfo('Email');
+                  setTimeout(() => setCopiedInfo(''), 2500);
+                  openExternalLink(contactLinks.emailLink);
+                }}
                 className="btn btn-outline"
-                style={{ padding: '6px 10px', fontSize: '11.5px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                style={{ padding: '6px 12px', fontSize: '11.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
               >
                 <Mail size={13} />
                 <span>Email Developer</span>
-              </a>
+              </button>
 
-              {contactLinks.whatsappLink && (
-                <a
-                  href={contactLinks.whatsappLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn btn-outline"
-                  style={{ padding: '6px 10px', fontSize: '11.5px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '5px', borderColor: '#22c55e', color: '#15803d' }}
-                >
-                  <MessageSquare size={13} />
-                  <span>WhatsApp</span>
-                </a>
-              )}
+              <button
+                type="button"
+                onClick={async () => {
+                  await copyToClipboard('8866039007');
+                  setCopiedInfo('WhatsApp Number');
+                  setTimeout(() => setCopiedInfo(''), 2500);
+                  openExternalLink(contactLinks.whatsappLink);
+                }}
+                className="btn btn-outline"
+                style={{ padding: '6px 12px', fontSize: '11.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px', borderColor: '#22c55e', color: '#15803d', backgroundColor: '#f0fdf4' }}
+              >
+                <MessageSquare size={13} />
+                <span>WhatsApp (+91 8866039007)</span>
+              </button>
 
-              {contactLinks.phoneLink && (
-                <a
-                  href={contactLinks.phoneLink}
-                  className="btn btn-outline"
-                  style={{ padding: '6px 10px', fontSize: '11.5px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                >
-                  <Phone size={13} />
-                  <span>Call {contactLinks.phone}</span>
-                </a>
-              )}
+              <button
+                type="button"
+                onClick={async () => {
+                  await copyToClipboard('8866039007');
+                  setCopiedInfo('Phone Number');
+                  setTimeout(() => setCopiedInfo(''), 2500);
+                  openExternalLink(contactLinks.phoneLink);
+                }}
+                className="btn btn-outline"
+                style={{ padding: '6px 12px', fontSize: '11.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+              >
+                <Phone size={13} />
+                <span>Call +91 8866039007</span>
+              </button>
             </div>
+            <p style={{ margin: '8px 0 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
+              Developer: <strong>Dhruv Shah</strong> • Direct WhatsApp/Phone: <strong>8866039007</strong>
+            </p>
           </div>
 
         </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Lock, Mail, Phone, MessageSquare, ShieldAlert, KeyRound, ArrowRight } from 'lucide-react';
 import { getContactDeveloperLinks, getStoredLicense } from '../../lib/licenseService';
+import { openExternalLink, copyToClipboard } from '../../lib/externalOpener';
 import SchoolActivationModal from './SchoolActivationModal';
 
 export default function TrialExpiredLockout({ onReactivated }) {
@@ -137,17 +138,22 @@ export default function TrialExpiredLockout({ onReactivated }) {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <a
-                href={contactLinks.emailLink}
+              <button
+                type="button"
+                onClick={() => {
+                  copyToClipboard(contactLinks.email);
+                  openExternalLink(contactLinks.emailLink);
+                }}
                 className="btn btn-outline"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: '10px 14px',
-                  textDecoration: 'none',
                   fontSize: '13px',
                   fontWeight: 500,
+                  cursor: 'pointer',
+                  width: '100%',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -155,46 +161,54 @@ export default function TrialExpiredLockout({ onReactivated }) {
                   <span>Email Developer: <strong>{contactLinks.email}</strong></span>
                 </div>
                 <ArrowRight size={14} color="var(--text-muted)" />
-              </a>
+              </button>
 
               {contactLinks.whatsappLink && (
-                <a
-                  href={contactLinks.whatsappLink}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={() => {
+                    copyToClipboard('8866039007');
+                    openExternalLink(contactLinks.whatsappLink);
+                  }}
                   className="btn btn-outline"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '10px 14px',
-                    textDecoration: 'none',
                     fontSize: '13px',
                     fontWeight: 500,
                     borderColor: '#22c55e',
                     backgroundColor: '#f0fdf4',
+                    cursor: 'pointer',
+                    width: '100%',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#15803d' }}>
                     <MessageSquare size={16} />
-                    <span>WhatsApp Developer Support</span>
+                    <span>WhatsApp Developer Support (+91 8866039007)</span>
                   </div>
                   <ArrowRight size={14} color="#15803d" />
-                </a>
+                </button>
               )}
 
               {contactLinks.phoneLink && (
-                <a
-                  href={contactLinks.phoneLink}
+                <button
+                  type="button"
+                  onClick={() => {
+                    copyToClipboard('8866039007');
+                    openExternalLink(contactLinks.phoneLink);
+                  }}
                   className="btn btn-outline"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '10px 14px',
-                    textDecoration: 'none',
                     fontSize: '13px',
                     fontWeight: 500,
+                    cursor: 'pointer',
+                    width: '100%',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -202,7 +216,7 @@ export default function TrialExpiredLockout({ onReactivated }) {
                     <span>Phone: {contactLinks.phone}</span>
                   </div>
                   <ArrowRight size={14} color="var(--text-muted)" />
-                </a>
+                </button>
               )}
             </div>
           </div>
