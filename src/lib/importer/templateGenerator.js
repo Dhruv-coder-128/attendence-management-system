@@ -295,8 +295,14 @@ export async function downloadSampleTemplate(entityId, format = 'xlsx') {
     XLSX.utils.book_append_sheet(workbook, refWorksheet, 'Valid Courses Reference');
   }
 
-  XLSX.writeFile(workbook, `${baseFilename}.xlsx`);
+  // Write XLSX using array buffer and download via native Blob URL
+  const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  triggerBlobDownload(blob, `${baseFilename}.xlsx`);
 }
+
 
 export const ALL_IN_ONE_SAMPLE_RECORDS = [
   {
@@ -401,7 +407,12 @@ export async function downloadAllInOneTemplate(format = 'xlsx') {
   ];
   XLSX.utils.book_append_sheet(workbook, instructionsSheet, 'Column Guide & Instructions');
 
-  XLSX.writeFile(workbook, `${baseFilename}.xlsx`);
+  // Write XLSX using array buffer and download via native Blob URL
+  const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  triggerBlobDownload(blob, `${baseFilename}.xlsx`);
 }
 
 /**

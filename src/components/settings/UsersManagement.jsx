@@ -126,11 +126,7 @@ export default function UsersManagement({ currentUserProfile }) {
     setIsCreating(true);
     try {
       const token = await getAuthToken();
-      if (!token) {
-        setModalError('Authentication session not found. Please refresh the page and try again.');
-        return;
-      }
-      const res = await createUserAccount(token, newUserData);
+      const res = await createUserAccount(token || '', newUserData);
       if (res.ok) {
         showNotification(res.message || 'Staff member created successfully.');
         setIsAddModalOpen(false);

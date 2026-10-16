@@ -23,6 +23,7 @@ import { validateImportRows } from '../../lib/importer/validator';
 import { executeBatchImport } from '../../lib/importer/batchWriter';
 import {
   downloadSampleTemplate,
+  downloadAllInOneTemplate,
   downloadFailedRowsCSV,
 } from '../../lib/importer/templateGenerator';
 
@@ -499,14 +500,23 @@ export default function BulkImportModal({
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <Button
+                variant="gold"
+                size="sm"
+                icon={Download}
+                onClick={() => downloadAllInOneTemplate('xlsx')}
+                title="Complete school database template (Students, Courses, Batches, Guardians in 1 file)"
+              >
+                All-in-One Master (.xlsx)
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
                 icon={Download}
                 onClick={() => downloadSampleTemplate(selectedEntityId, 'xlsx')}
               >
-                Excel Template (.xlsx)
+                {activeSchema.title} Excel
               </Button>
               <Button
                 variant="outline"
@@ -514,7 +524,7 @@ export default function BulkImportModal({
                 icon={FileText}
                 onClick={() => downloadSampleTemplate(selectedEntityId, 'csv')}
               >
-                CSV Template (.csv)
+                CSV
               </Button>
             </div>
           </div>

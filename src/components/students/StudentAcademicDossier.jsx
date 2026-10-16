@@ -34,6 +34,7 @@ import Input from '../common/Input';
 import Select from '../common/Select';
 import ReportCardModal from '../exams/ReportCardModal';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import { getStoredAcademySettings, fetchAcademySettings } from '../../lib/academySettings';
 import {
   getStudentFeeRecord,
   recordFeePayment,
@@ -95,6 +96,13 @@ export default function StudentAcademicDossier({
   const [selectedReportExam, setSelectedReportExam] = useState(null);
 
   const [toastMessage, setToastMessage] = useState('');
+  const [branding, setBranding] = useState(() => getStoredAcademySettings());
+
+  useEffect(() => {
+    fetchAcademySettings().then((s) => {
+      if (s) setBranding(s);
+    });
+  }, []);
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -453,10 +461,68 @@ export default function StudentAcademicDossier({
         </div>
       }
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          #printable-student-dossier, #printable-student-dossier * {
+            visibility: visible !important;
+          }
+          #printable-student-dossier {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            padding: 16px !important;
+            background: #ffffff !important;
+            color: #0f172a !important;
+            box-shadow: none !important;
+            border: none !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .dossier-print-header {
+            display: flex !important;
+            align-items: center;
+            justifyContent: space-between;
+            border-bottom: 2px solid #0f172a;
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+          }
+          .dossier-no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
+
+      <div id="printable-student-dossier" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {/* Printable Official Institutional Header (Visible during Print) */}
+        <div
+          className="dossier-print-header"
+          style={{ display: 'none', alignItems: 'center', gap: '16px' }}
+        >
+          {branding.logo_url && (
+            <img
+              src={branding.logo_url}
+              alt="Logo"
+              style={{ maxHeight: '48px', maxWidth: '100px', objectFit: 'contain' }}
+            />
+          )}
+          <div>
+            <h2 style={{ fontSize: '18px', fontWeight: 800, margin: 0, color: '#0f172a' }}>
+              {branding.academy_name}
+            </h2>
+            <div style={{ fontSize: '11px', color: '#475569' }}>
+              {branding.branch_name} &bull; {branding.address}
+            </div>
+          </div>
+        </div>
+
         {/* Toast Feedback */}
         {toastMessage && (
           <div
+            className="dossier-no-print"
             style={{
               padding: '10px 14px',
               backgroundColor: 'var(--status-present-bg)',
@@ -568,6 +634,24 @@ export default function StudentAcademicDossier({
             >
               FEE: {computedFee.label.toUpperCase()}
             </span>
+
+            <Button
+              variant="outline"
+              size="sm"
+              icon={Printer}
+              onClick={() => window.print()}
+              className="dossier-no-print"
+              style={{
+                color: '#ffffff',
+                borderColor: 'rgba(255, 255, 255, 0.3)',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                padding: '3px 9px',
+                fontSize: '11px',
+              }}
+              title="Print Official Dossier"
+            >
+              Print
+            </Button>
           </div>
         </div>
 

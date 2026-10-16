@@ -16,7 +16,7 @@ import { supabase, isSupabaseConfigured, reinitializeSupabaseClient } from './li
 import { fetchUserProfile, hasPermission, getFallbackOwnerProfile, getFallbackStaffProfile, OWNER_EMAIL } from './lib/authService';
 import { validateLicense, isTauriDesktop, getStoredLicense } from './lib/licenseService';
 import SchoolActivationModal from './components/license/SchoolActivationModal';
-import TrialBanner from './components/license/TrialBanner';
+import DraggableTrialCapsule from './components/license/DraggableTrialCapsule';
 import TrialExpiredLockout from './components/license/TrialExpiredLockout';
 import { RefreshCw, GraduationCap } from 'lucide-react';
 
@@ -210,6 +210,21 @@ export default function App() {
     }
   }, [user, activePage, refreshCounts]);
 
+  // Secret Developer Portal Shortcut: Ctrl + Shift + D
+  useEffect(() => {
+    const handleDevKeyDown = (e) => {
+      if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+        e.preventDefault();
+        try {
+          sessionStorage.setItem('sms_dev_console_unlocked', 'true');
+        } catch {}
+        setActivePage('master-portal');
+      }
+    };
+    window.addEventListener('keydown', handleDevKeyDown);
+    return () => window.removeEventListener('keydown', handleDevKeyDown);
+  }, []);
+
   // Authentication Handlers
   const handleLoginSuccess = (authenticatedUser) => {
     setUser(authenticatedUser);
@@ -313,9 +328,9 @@ export default function App() {
   // 4. Route Protection: If unauthenticated, render Login Page
   if (!user) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
         {licenseStatus?.status === 'trial_active' && (
-          <TrialBanner
+          <DraggableTrialCapsule
             daysRemaining={licenseStatus?.daysRemaining}
             onOpenActivation={() => setIsActivationModalOpen(true)}
           />
@@ -334,12 +349,19 @@ export default function App() {
     );
   }
 
+  const storedLic = getStoredLicense();
+  const showTrialCapsule =
+    licenseStatus?.status === 'trial_active' ||
+    licenseStatus?.status === 'trial' ||
+    storedLic?.status === 'trial_active' ||
+    (storedLic?.daysRemaining !== undefined && storedLic?.daysRemaining <= 30);
+
   // 5. Render Protected Administrative ERP Console
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      {licenseStatus?.status === 'trial_active' && (
-        <TrialBanner
-          daysRemaining={licenseStatus?.daysRemaining}
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
+      {showTrialCapsule && (
+        <DraggableTrialCapsule
+          daysRemaining={licenseStatus?.daysRemaining || storedLic?.daysRemaining}
           onOpenActivation={() => setIsActivationModalOpen(true)}
         />
       )}

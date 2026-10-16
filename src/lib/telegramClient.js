@@ -471,14 +471,58 @@ _SMS — Student Management System_
 }
 
 /**
- * Queries Telegram Bot & Webhook Status from Serverless API
+ * Queries Telegram Bot & Webhook Status from Serverless API or direct Bot Token verification
  */
 export async function getTelegramBotStatus() {
+  const schoolSettings = getSchoolTelegramSettings();
+
+  // 1. If school has configured an individual custom Bot Token, verify it directly
+  if (schoolSettings.botToken) {
+    try {
+      const directTest = await testTelegramBotConnection(schoolSettings.botToken);
+      if (directTest.ok) {
+        return {
+          ok: true,
+          configured: true,
+          valid: true,
+          bot: {
+            id: directTest.id,
+            first_name: directTest.botName,
+            username: directTest.username,
+          },
+          webhook: { url: '' },
+          isCustom: true,
+        };
+      }
+    } catch (testErr) {
+      console.warn('Direct Telegram test error:', testErr);
+    }
+  }
+
+  // 2. Otherwise probe serverless endpoint if available
   try {
     const res = await fetch('/api/telegram-status');
-    return await res.json();
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok && contentType.includes('application/json')) {
+      return await res.json();
+    }
+
+    // If serverless endpoint returned HTML or 404, we are in desktop offline mode
+    return {
+      ok: false,
+      configured: false,
+      valid: false,
+      error: schoolSettings.botToken
+        ? 'Custom bot token invalid or network error.'
+        : 'Desktop Offline Mode: Configure your school bot token above to enable Telegram parent notifications.',
+    };
   } catch (err) {
-    return { configured: false, error: err.message };
+    return {
+      ok: false,
+      configured: false,
+      valid: false,
+      error: 'Desktop Offline Mode: Configure your school bot token above to enable Telegram notifications.',
+    };
   }
 }
 
@@ -492,11 +536,20 @@ export async function setupTelegramWebhook(webhookUrl, action = 'set') {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ webhookUrl, action }),
     });
-    return await res.json();
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return await res.json();
+    }
+    return {
+      ok: false,
+      error:
+        'Webhook setup requires an active cloud deployment with a public HTTPS URL. In Desktop EXE mode, Telegram webhook is routed via the cloud gateway.',
+    };
   } catch (err) {
     return { ok: false, error: err.message };
   }
 }
+
 
 /**
  * Dispatches an official tuition fee reminder notice to verified guardians

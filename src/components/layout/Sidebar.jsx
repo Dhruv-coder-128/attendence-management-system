@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -16,6 +16,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { hasPermission } from '../../lib/authService';
+import { getStoredAcademySettings } from '../../lib/academySettings';
 
 /**
  * Simplified Enterprise Navigation Sidebar
@@ -31,6 +32,9 @@ export default function Sidebar({
   user,
   currentUserProfile,
 }) {
+  const branding = getStoredAcademySettings();
+  const logoClicksRef = useRef({ count: 0, lastTime: 0 });
+
   const staffName =
     currentUserProfile?.full_name ||
     user?.user_metadata?.full_name ||
@@ -48,7 +52,26 @@ export default function Sidebar({
     .substring(0, 2)
     .toUpperCase();
 
-  // Exact 9 primary navigation modules requested
+  // Secret 5-click unlock for Developer SaaS Portal
+  const handleBrandClick = () => {
+    const now = Date.now();
+    if (now - logoClicksRef.current.lastTime < 1000) {
+      logoClicksRef.current.count += 1;
+    } else {
+      logoClicksRef.current.count = 1;
+    }
+    logoClicksRef.current.lastTime = now;
+
+    if (logoClicksRef.current.count >= 5) {
+      logoClicksRef.current.count = 0;
+      try {
+        sessionStorage.setItem('sms_dev_console_unlocked', 'true');
+      } catch {}
+      onNavigate('master-portal');
+    }
+  };
+
+  // Exact 9 primary navigation modules
   const allNavItems = [
     {
       id: 'dashboard',
@@ -108,14 +131,22 @@ export default function Sidebar({
       icon: Settings,
       permission: 'manage_settings',
     },
-    {
+  ];
+
+  // SaaS Developer Console is strictly hidden from regular school users
+  const isDevAuthorized =
+    (user?.email || '').trim().toLowerCase() === 'dushah2007@gmail.com' ||
+    (typeof window !== 'undefined' && sessionStorage.getItem('sms_dev_console_unlocked') === 'true');
+
+  if (isDevAuthorized) {
+    allNavItems.push({
       id: 'master-portal',
       label: 'SaaS Console',
       icon: ShieldAlert,
       badge: 'Dev',
       permission: null,
-    },
-  ];
+    });
+  }
 
   // Filter items by user role and module permissions
   const visibleNavItems = allNavItems.filter((item) => {
@@ -136,9 +167,17 @@ export default function Sidebar({
       <aside className={`erp-sidebar ${isOpen ? 'open' : ''}`}>
         {/* Brand Header */}
         <div className="sidebar-header">
-          <div className="brand-wrapper">
+          <div className="brand-wrapper" onClick={handleBrandClick} style={{ cursor: 'pointer' }}>
             <div className="brand-crest">
-              <GraduationCap size={22} />
+              {branding.logo_url ? (
+                <img
+                  src={branding.logo_url}
+                  alt="Logo"
+                  style={{ width: '26px', height: '26px', objectFit: 'contain' }}
+                />
+              ) : (
+                <GraduationCap size={22} />
+              )}
             </div>
             <div>
               <div className="brand-title">SMS</div>
@@ -153,6 +192,7 @@ export default function Sidebar({
             </span>
           </div>
         </div>
+
 
         {/* Navigation Section */}
         <nav className="sidebar-nav">

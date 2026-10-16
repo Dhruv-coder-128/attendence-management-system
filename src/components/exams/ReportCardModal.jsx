@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import Button from '../common/Button';
 import Badge from '../common/Badge';
-import { getStoredAcademySettings } from '../../lib/academySettings';
+import { getStoredAcademySettings, fetchAcademySettings } from '../../lib/academySettings';
 
 /**
  * Printable Academic Report Card Modal
@@ -27,7 +27,13 @@ export default function ReportCardModal({
 }) {
   if (!isOpen || !student) return null;
 
-  const branding = getStoredAcademySettings();
+  const [branding, setBranding] = React.useState(() => getStoredAcademySettings());
+
+  React.useEffect(() => {
+    fetchAcademySettings().then((s) => {
+      if (s) setBranding(s);
+    });
+  }, []);
 
   const handlePrint = () => {
     window.print();
@@ -85,12 +91,21 @@ export default function ReportCardModal({
             box-shadow: none !important;
             border: none !important;
             background: #ffffff !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          #printable-report-card img {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            max-height: 52px !important;
+            display: inline-block !important;
           }
           .no-print {
             display: none !important;
           }
         }
       `}</style>
+
 
       {/* Modal Backdrop */}
       <div

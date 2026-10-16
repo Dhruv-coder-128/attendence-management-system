@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
+import { getStorageMode } from './databaseAdapter.js';
 
 /**
  * Standard Granular Permission Keys & Human-Readable Labels
@@ -175,74 +176,252 @@ export function isModerator(profile) {
 }
 
 /**
- * API Client Helpers for /api/manage-users
+ * API Client Helpers for /api/manage-users & Local Database Fallback
  */
 export async function fetchUsersList(token) {
-  const res = await fetch('/api/manage-users?action=list', {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-  return await res.json();
+  // 1. Try serverless endpoint if online and token provided
+  if (getStorageMode() !== 'offline' && token) {
+    try {
+      const res = await fetch('/api/manage-users?action=list', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.users)) {
+          return data;
+        }
+      }
+    } catch (err) {
+      console.warn('Serverless manage-users unavailable, falling back to local database:', err);
+    }
+  }
+
+  // 2. Direct database query via unified Supabase / IndexedDB adapter
+  try {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.warn('Error reading user_profiles table:', error);
+    }
+
+    const profiles = Array.isArray(data) ? [...data] : [];
+    
+    // Ensure the system owner account is represented in the list
+    const hasOwner = profiles.some(
+      (u) => (u.email || '').toLowerCase() === OWNER_EMAIL || u.role === 'owner'
+    );
+    if (!hasOwner) {
+      profiles.unshift({
+        id: 'owner-session',
+        email: OWNER_EMAIL,
+        full_name: 'Dhruv Shah (Owner)',
+        role: 'owner',
+        is_active: true,
+        permissions: getFallbackOwnerProfile().permissions,
+        created_at: new Date().toISOString(),
+      });
+    }
+
+    return { ok: true, users: profiles };
+  } catch (err) {
+    return {
+      ok: true,
+      users: [
+        {
+          id: 'owner-session',
+          email: OWNER_EMAIL,
+          full_name: 'Dhruv Shah (Owner)',
+          role: 'owner',
+          is_active: true,
+          permissions: getFallbackOwnerProfile().permissions,
+          created_at: new Date().toISOString(),
+        },
+      ],
+    };
+  }
 }
 
 export async function createUserAccount(token, payload) {
-  const res = await fetch('/api/manage-users', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ action: 'create_user', ...payload }),
-  });
-  return await res.json();
+  if (getStorageMode() !== 'offline' && token) {
+    try {
+      const res = await fetch('/api/manage-users', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'create_user', ...payload }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.warn('Serverless create user failed, creating in local database:', err);
+    }
+  }
+
+  // Direct database creation
+  try {
+    const cleanEmail = (payload.email || '').trim().toLowerCase();
+    const newId = 'usr_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const permissions =
+      payload.permissions ||
+      (payload.role === 'admin' ? getAdminPermissions() : getModeratorPermissions());
+
+    const newUser = {
+      id: newId,
+      email: cleanEmail,
+      full_name: payload.full_name || cleanEmail.split('@')[0],
+      role: payload.role || 'moderator',
+      permissions,
+      is_active: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase.from('user_profiles').insert(newUser);
+    if (error) {
+      return { ok: false, error: error.message || 'Failed to insert user profile.' };
+    }
+    return { ok: true, message: 'Staff member account created successfully.', user: newUser };
+  } catch (err) {
+    return { ok: false, error: err.message || 'Error creating user profile.' };
+  }
 }
 
 export async function updateUserRole(token, userId, newRole) {
-  const res = await fetch('/api/manage-users', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ action: 'update_role', userId, role: newRole }),
-  });
-  return await res.json();
+  if (getStorageMode() !== 'offline' && token) {
+    try {
+      const res = await fetch('/api/manage-users', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'update_role', userId, role: newRole }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.warn('Serverless update role failed, saving to database:', err);
+    }
+  }
+
+  try {
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({ role: newRole, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, message: 'User role updated successfully.' };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
 
 export async function updateUserPermissions(token, userId, permissions) {
-  const res = await fetch('/api/manage-users', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ action: 'update_permissions', userId, permissions }),
-  });
-  return await res.json();
+  if (getStorageMode() !== 'offline' && token) {
+    try {
+      const res = await fetch('/api/manage-users', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'update_permissions', userId, permissions }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.warn('Serverless update permissions failed, saving to database:', err);
+    }
+  }
+
+  try {
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({ permissions, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, message: 'User permissions updated successfully.' };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
 
 export async function toggleUserActive(token, userId, isActive) {
-  const res = await fetch('/api/manage-users', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ action: 'toggle_active', userId, is_active: isActive }),
-  });
-  return await res.json();
+  if (getStorageMode() !== 'offline' && token) {
+    try {
+      const res = await fetch('/api/manage-users', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'toggle_active', userId, is_active: isActive }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.warn('Serverless toggle active failed, saving to database:', err);
+    }
+  }
+
+  try {
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({ is_active: isActive, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, message: `Account status updated to ${isActive ? 'Active' : 'Inactive'}.` };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
 
 export async function deleteUserAccount(token, userId) {
-  const res = await fetch('/api/manage-users', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ action: 'delete_user', userId }),
-  });
-  return await res.json();
+  if (getStorageMode() !== 'offline' && token) {
+    try {
+      const res = await fetch('/api/manage-users', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'delete_user', userId }),
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        return await res.json();
+      }
+    } catch (err) {
+      console.warn('Serverless delete user failed, deleting from database:', err);
+    }
+  }
+
+  try {
+    const { error } = await supabase.from('user_profiles').delete().eq('id', userId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, message: 'Staff account removed successfully.' };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
+
