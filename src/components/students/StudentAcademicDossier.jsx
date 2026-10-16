@@ -1,31 +1,18 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   User,
-  GraduationCap,
-  Calendar,
-  Clock,
   Phone,
-  Mail,
-  MapPin,
-  CheckCircle2,
-  AlertCircle,
-  AlertTriangle,
-  TrendingDown,
-  TrendingUp,
   CreditCard,
   DollarSign,
   Send,
   Plus,
   ShieldCheck,
-  UserCheck,
-  FileSpreadsheet,
   RefreshCw,
   Sparkles,
-  ChevronRight,
-  Share2,
   Award,
   Printer,
-  ChevronDown,
+  TrendingUp,
+  AlertTriangle,
 } from 'lucide-react';
 import Button from '../common/Button';
 import Badge from '../common/Badge';
@@ -175,8 +162,44 @@ export default function StudentAcademicDossier({
         `)
         .eq('student_id', student.id);
 
-      if (!error && data) {
-        setGuardians(data);
+      let loaded = (!error && data) ? data : [];
+      if (loaded.length > 0) {
+        // Enforce parent object presence
+        const resolved = await Promise.all(
+          loaded.map(async (g) => {
+            if (g.parents && g.parents.full_name) return g;
+            if (g.parent_id) {
+              const { data: pData } = await supabase
+                .from('parents')
+                .select('*')
+                .eq('id', g.parent_id)
+                .maybeSingle();
+              if (pData) return { ...g, parents: pData };
+            }
+            if (student.parents) return { ...g, parents: student.parents };
+            return g;
+          })
+        );
+        setGuardians(resolved);
+      } else if (student.parents || student.guardian_name || student.guardian_phone) {
+        setGuardians([
+          {
+            id: 'syn_' + student.id,
+            relationship: student.guardian_relationship || student.parents?.relationship || 'Guardian',
+            is_primary_contact: true,
+            contact_priority: 'primary',
+            can_receive_alerts: true,
+            alert_preference: 'all',
+            parents: student.parents || {
+              id: 'p_' + student.id,
+              full_name: student.guardian_name || 'Guardian',
+              phone: student.guardian_phone || student.phone || '',
+              relationship: student.guardian_relationship || 'Guardian',
+              is_verified: false,
+              preferred_notification_channel: 'telegram',
+            },
+          },
+        ]);
       } else {
         setGuardians(student.parent_students || []);
       }
@@ -452,7 +475,7 @@ export default function StudentAcademicDossier({
       onClose={onClose}
       title={student.full_name}
       subtitle={`Admission No: ${student.admission_no} • ${student.batches?.name || 'Cohort'} • ${student.courses?.name || 'Course'}`}
-      maxWidth="920px"
+      size="dossier"
       footer={
         <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
           <Button variant="outline" size="sm" onClick={onClose}>
@@ -1091,7 +1114,7 @@ export default function StudentAcademicDossier({
                     No guardians linked to this student yet. Click "Add / Link Guardian" above.
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                     {guardians.map((g) => {
                       const parent = g.parents || {};
                       const isLinked = parent.is_verified && parent.telegram_chat_id;
@@ -1101,45 +1124,101 @@ export default function StudentAcademicDossier({
                         <div
                           key={g.id}
                           style={{
-                            padding: '12px',
+                            padding: '16px 18px',
                             border: '1px solid var(--border-subtle)',
-                            borderRadius: '6px',
+                            borderRadius: '12px',
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',
                             backgroundColor: '#ffffff',
+                            boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
+                            gap: '16px',
+                            flexWrap: 'wrap',
                           }}
                         >
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <strong style={{ fontSize: '13px', color: 'var(--navy-950)' }}>
-                                {parent.full_name || 'Guardian'}
-                              </strong>
-                              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                ({g.relationship || parent.relationship || 'Guardian'})
-                              </span>
-                              {isPrimary && (
-                                <span style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '3px', backgroundColor: 'var(--navy-900)', color: '#ffffff' }}>
-                                  Primary Contact
-                                </span>
-                              )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: '240px' }}>
+                            <div
+                              style={{
+                                width: '44px',
+                                height: '44px',
+                                borderRadius: '12px',
+                                backgroundColor: isPrimary ? 'var(--navy-900)' : 'var(--bg-subtle)',
+                                color: isPrimary ? 'var(--gold-primary)' : 'var(--navy-800)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 700,
+                                fontSize: '15px',
+                                border: '1px solid var(--border-subtle)',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {(parent.full_name || 'G').slice(0, 2).toUpperCase()}
                             </div>
-                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                              Phone: {parent.phone} &bull; Telegram:{' '}
-                              {isLinked ? (
-                                <span style={{ color: 'var(--status-present)', fontWeight: 600 }}>Linked ({parent.telegram_chat_id})</span>
-                              ) : (
-                                <span style={{ color: '#d97706' }}>Not Linked</span>
-                              )}
+
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <strong style={{ fontSize: '14px', color: 'var(--navy-950)' }}>
+                                  {parent.full_name || 'Guardian'}
+                                </strong>
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    padding: '2px 8px',
+                                    borderRadius: '12px',
+                                    backgroundColor: '#f1f5f9',
+                                    color: 'var(--navy-900)',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  {g.relationship || parent.relationship || 'Guardian'}
+                                </span>
+                                {isPrimary && (
+                                  <span
+                                    style={{
+                                      fontSize: '10.5px',
+                                      padding: '2px 8px',
+                                      borderRadius: '12px',
+                                      backgroundColor: 'var(--navy-900)',
+                                      color: 'var(--gold-primary)',
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    ★ Primary Contact
+                                  </span>
+                                )}
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginTop: '6px', fontSize: '12px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                  <Phone size={13} color="var(--navy-700)" />
+                                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                                    {parent.phone || student.guardian_phone || 'No phone'}
+                                  </span>
+                                </span>
+
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                  <span style={{ color: 'var(--text-muted)' }}>Telegram:</span>
+                                  {isLinked ? (
+                                    <span style={{ color: '#15803d', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#f0fdf4', padding: '1px 6px', borderRadius: '4px', border: '1px solid #bbf7d0' }}>
+                                      ✓ Linked ({parent.telegram_chat_id})
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: '#b45309', fontWeight: 600, backgroundColor: '#fffbeb', padding: '1px 6px', borderRadius: '4px', border: '1px solid #fde68a' }}>
+                                      Not Linked
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
                             </div>
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <select
                               value={g.alert_preference || 'all'}
                               onChange={(e) => handleUpdateGuardianPref(g.id, e.target.value)}
                               className="form-select"
-                              style={{ padding: '3px 6px', fontSize: '11px', width: '130px' }}
+                              style={{ padding: '6px 10px', fontSize: '12px', width: '145px', borderRadius: '6px' }}
                             >
                               <option value="all">All Alerts</option>
                               <option value="emergency_only">Emergency Only</option>
@@ -1151,7 +1230,7 @@ export default function StudentAcademicDossier({
                                 type="button"
                                 onClick={() => handleSetPrimaryGuardian(g.id)}
                                 className="btn btn-outline"
-                                style={{ padding: '3px 8px', fontSize: '10px' }}
+                                style={{ padding: '5px 10px', fontSize: '11px', borderRadius: '6px' }}
                               >
                                 Make Primary
                               </button>

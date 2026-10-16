@@ -22,6 +22,7 @@ import {
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
 import UsersManagement from '../components/settings/UsersManagement';
+import MessageCenter from '../components/settings/MessageCenter';
 import { isSupabaseConfigured, checkSupabaseConnection, supabaseConfig } from '../lib/supabase';
 import { getStoredLicense, isTauriDesktop } from '../lib/licenseService';
 import {
@@ -982,6 +983,9 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
           </div>
         </div>
       </div>
+
+      {/* Message Center & Notification Templates Configurator */}
+      <MessageCenter />
 
       {/* Staff & Role-Based Access Control Section */}
       <UsersManagement currentUserProfile={currentUserProfile} />

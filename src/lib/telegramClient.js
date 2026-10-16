@@ -492,7 +492,21 @@ export async function sendBatchAttendanceNotifications({
       }
 
       if (botToken) {
-        const msg = `📚 *Daily Attendance Alert*\n\nStudent: *${student.full_name}*\nRoll No: *${student.roll_no || 'N/A'}*\nCohort: *${batchName}*\nDate: *${date}*\nStatus: *${(record.status || 'Present').toUpperCase()}*\n\n_School Management Notification_`;
+        const normStatus = (record.status || 'Present').toLowerCase();
+        const templateType = normStatus === 'absent'
+          ? 'attendance_absent'
+          : normStatus === 'late'
+          ? 'attendance_late'
+          : 'attendance_present';
+
+        const msg = renderNotificationMessage(templateType, {
+          student_name: student.full_name,
+          roll_no: student.roll_no || 'N/A',
+          batch_name: batchName,
+          date: date,
+          status: (record.status || 'Present').toUpperCase(),
+          school_name: schoolSettings.botName || 'School Management System',
+        });
         const sendRes = await sendDirectTelegramMessage(botToken, parent.telegram_chat_id, msg);
 
         if (sendRes.ok) {
@@ -627,7 +641,21 @@ export async function sendVerifiedAttendanceNotice({
     };
   }
 
-  const msg = `📚 *Daily Attendance Notification*\n\nStudent: *${student.full_name}*\nRoll No: *${student.roll_no || 'N/A'}*\nCohort: *${batchName || 'Regular Session'}*\nDate: *${date}*\nStatus: *${(status || 'Present').toUpperCase()}*\n\n_School Management Notification_`;
+  const normStatus = (status || 'Present').toLowerCase();
+  const templateType = normStatus === 'absent'
+    ? 'attendance_absent'
+    : normStatus === 'late'
+    ? 'attendance_late'
+    : 'attendance_present';
+
+  const msg = renderNotificationMessage(templateType, {
+    student_name: student.full_name,
+    roll_no: student.roll_no || 'N/A',
+    batch_name: batchName || 'Regular Session',
+    date: date,
+    status: (status || 'Present').toUpperCase(),
+    school_name: schoolSettings.botName || 'School Management System',
+  });
   const sendRes = await sendDirectTelegramMessage(botToken, targetParent.telegram_chat_id, msg);
 
   if (sendRes.ok) {
@@ -873,7 +901,14 @@ export async function sendVerifiedFeeReminder(studentOrParams, feeRecordArg, tar
     const totalAmt = Number(feeRecord?.total_amount ?? studentData.tuition_fee ?? 45000);
     const dueDate = feeRecord?.next_due_date || studentData.fee_due_date || 'Promptly';
 
-    const msg = `💳 *Tuition Fee Reminder Notice*\n\nStudent: *${studentData.full_name}*\nAdmission No: *${studentData.admission_no || 'N/A'}*\nOutstanding Balance: *₹${pendingAmt.toLocaleString('en-IN')}* (Total: ₹${totalAmt.toLocaleString('en-IN')})\nPayment Due Date: *${dueDate}*\n\n_Please clear outstanding dues at the administrative accounts office._\n_School Management System_`;
+    const msg = renderNotificationMessage('fee_reminder', {
+      student_name: studentData.full_name,
+      roll_no: studentData.roll_no || studentData.admission_no || 'N/A',
+      pending_amount: pendingAmt.toLocaleString('en-IN'),
+      total_amount: totalAmt.toLocaleString('en-IN'),
+      due_date: dueDate,
+      school_name: schoolSettings.botName || 'School Management System',
+    });
 
     let sent = 0;
     for (const p of parentList) {
@@ -982,7 +1017,16 @@ export async function sendExamResultsTelegram({ examId, studentId = null, examDa
       const scoreText = mark.is_absent ? 'ABSENT' : `${mark.marks_obtained} / ${examData?.total_marks || 100}`;
       const statusText = mark.is_absent ? 'Absent' : (Number(mark.marks_obtained) >= Number(examData?.passing_marks || 35) ? 'PASSED ✅' : 'FAILED ❌');
 
-      const msg = `🏆 *Examination Result Alert*\n\nStudent: *${student?.full_name || 'Student'}*\nExam: *${examData?.name || 'Academic Assessment'}*\nSubject: *${examData?.subject || 'All Subjects'}*\nScore: *${scoreText}*\nResult: *${statusText}*\n\n_School Management System_`;
+      const msg = renderNotificationMessage('exam_result', {
+        student_name: student?.full_name || 'Student',
+        roll_no: student?.roll_no || 'N/A',
+        exam_name: examData?.name || 'Academic Assessment',
+        score: scoreText,
+        max_marks: examData?.total_marks || 100,
+        percentage: mark.is_absent ? 0 : Math.round(((mark.marks_obtained || 0) / (examData?.total_marks || 100)) * 100),
+        grade: statusText,
+        school_name: schoolSettings.botName || 'School Management System',
+      });
 
       const sendRes = await sendDirectTelegramMessage(botToken, parent.telegram_chat_id, msg);
       if (sendRes.ok) {
@@ -1008,4 +1052,101 @@ export async function sendExamResultsTelegram({ examId, studentId = null, examDa
     };
   }
 }
+
+// =====================================================================
+// MESSAGE CENTER & NOTIFICATION TEMPLATES SUBSYSTEM
+// =====================================================================
+
+export const TEMPLATES_STORAGE_KEY = 'sms_notification_templates';
+
+export const DEFAULT_NOTIFICATION_TEMPLATES = {
+  attendance_present: {
+    title: 'Attendance (Present)',
+    template: `📚 *Daily Attendance Notification — Present*\n\nDear Guardian,\nYour ward *{student_name}* (Roll No: *{roll_no}*) of batch *{batch_name}* was marked *PRESENT* on *{date}*.\n\n_{school_name}_`,
+    variables: ['student_name', 'roll_no', 'batch_name', 'date', 'school_name'],
+  },
+  attendance_absent: {
+    title: 'Attendance (Absent)',
+    template: `⚠️ *Daily Attendance Alert — Absent*\n\nDear Guardian,\nYour ward *{student_name}* (Roll No: *{roll_no}*) of batch *{batch_name}* was marked *ABSENT* on *{date}*.\nIf this was unexpected, please contact the academy office immediately.\n\n_{school_name}_`,
+    variables: ['student_name', 'roll_no', 'batch_name', 'date', 'school_name'],
+  },
+  attendance_late: {
+    title: 'Attendance (Late)',
+    template: `⏰ *Daily Attendance Alert — Late Arrival*\n\nDear Guardian,\nYour ward *{student_name}* (Roll No: *{roll_no}*) of batch *{batch_name}* arrived *LATE* on *{date}*.\n\n_{school_name}_`,
+    variables: ['student_name', 'roll_no', 'batch_name', 'date', 'school_name'],
+  },
+  fee_reminder: {
+    title: 'Tuition Fee Milestone Reminder',
+    template: `💳 *Tuition Fee Milestone Reminder*\n\nDear Guardian,\nThis is a gentle reminder that tuition fees for *{student_name}* (Roll No: *{roll_no}*) has a pending balance of *₹{pending_amount}*.\nDue Date: *{due_date}*\n\nPlease clear the pending balance to avoid administrative delay.\n\n_{school_name}_`,
+    variables: ['student_name', 'roll_no', 'pending_amount', 'total_amount', 'due_date', 'school_name'],
+  },
+  exam_result: {
+    title: 'Exam Evaluation & Results',
+    template: `🏆 *Academic Evaluation Report Card*\n\nDear Guardian,\nResults for *{exam_name}* have been published:\nStudent: *{student_name}* (Roll No: *{roll_no}*)\nScore: *{score} / {max_marks}* (*{percentage}%*)\nResult: *{grade}*\n\n_{school_name}_`,
+    variables: ['student_name', 'roll_no', 'exam_name', 'score', 'max_marks', 'percentage', 'grade', 'school_name'],
+  },
+};
+
+/**
+ * Loads notification templates from local storage with fallback to system defaults
+ */
+export function getNotificationTemplates() {
+  if (typeof window === 'undefined') return { ...DEFAULT_NOTIFICATION_TEMPLATES };
+  try {
+    const raw = localStorage.getItem(TEMPLATES_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_NOTIFICATION_TEMPLATES };
+    const parsed = JSON.parse(raw);
+    return {
+      ...DEFAULT_NOTIFICATION_TEMPLATES,
+      ...parsed,
+    };
+  } catch {
+    return { ...DEFAULT_NOTIFICATION_TEMPLATES };
+  }
+}
+
+/**
+ * Saves customized notification templates to local storage
+ */
+export function saveNotificationTemplates(templates) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(templates));
+  } catch (err) {
+    console.warn('Could not save notification templates:', err);
+  }
+}
+
+/**
+ * Resets notification templates to factory defaults
+ */
+export function resetNotificationTemplates() {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem(TEMPLATES_STORAGE_KEY);
+    } catch {}
+  }
+  return { ...DEFAULT_NOTIFICATION_TEMPLATES };
+}
+
+/**
+ * Renders a notification template by replacing dynamic `{variable}` tokens
+ */
+export function renderNotificationMessage(type, variables = {}, customTemplates = null) {
+  const allTemplates = customTemplates || getNotificationTemplates();
+  const entry = allTemplates[type] || DEFAULT_NOTIFICATION_TEMPLATES[type];
+  if (!entry || !entry.template) {
+    return 'Notification Alert';
+  }
+
+  let text = entry.template;
+  Object.keys(variables).forEach((key) => {
+    const val = variables[key] ?? '';
+    const re = new RegExp(`\\{${key}\\}`, 'g');
+    text = text.replace(re, String(val));
+  });
+
+  return text;
+}
+
 

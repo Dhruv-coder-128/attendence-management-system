@@ -1,5 +1,5 @@
 import { supabase } from '../supabase.js';
-import { importDatabaseBackup } from '../databaseAdapter.js';
+import { importDatabaseBackup, generateLocalId } from '../databaseAdapter.js';
 
 /**
  * Normalizes header string for robust fuzzy matching
@@ -368,19 +368,22 @@ export async function commitMasterSpreadsheetData(parseResult, { onProgress = ()
 
   onProgress({ phase: 'parents', message: 'Creating parent linking dossiers & Telegram tokens...', percent: 85 });
 
-  // 4. Insert Parents & Parent Invitations & Fees
+  // 4. Insert Parents & Parent Invitations & Fees & ParentStudents Junctions
   const parentsToInsert = [];
   const invitationsToInsert = [];
   const feeRecordsToInsert = [];
+  const parentStudentsToInsert = [];
 
   parsedRows.forEach((r, idx) => {
     const student = insertedStudents[idx] || null;
     const studentId = student ? student.id : null;
     const token = generateTokenHex();
     const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+    const parentId = generateLocalId();
 
     if (r.guardianPhone || r.guardianName) {
       parentsToInsert.push({
+        id: parentId,
         full_name: r.guardianName,
         phone: r.guardianPhone,
         student_id: studentId,
@@ -394,8 +397,23 @@ export async function commitMasterSpreadsheetData(parseResult, { onProgress = ()
         is_verified: false,
       });
 
+      if (studentId) {
+        parentStudentsToInsert.push({
+          id: generateLocalId(),
+          parent_id: parentId,
+          student_id: studentId,
+          relationship: r.relationship || 'Father',
+          is_primary_contact: true,
+          contact_priority: 'primary',
+          can_receive_alerts: true,
+          alert_preference: 'all',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
+
       invitationsToInsert.push({
-        parent_id: null,
+        parent_id: parentId,
         student_id: studentId,
         token,
         invitation_channel: 'telegram',
@@ -427,6 +445,14 @@ export async function commitMasterSpreadsheetData(parseResult, { onProgress = ()
       await supabase.from('parents').insert(parentsToInsert);
     } catch (pErr) {
       console.warn('Could not insert parent records:', pErr);
+    }
+  }
+
+  if (parentStudentsToInsert.length > 0) {
+    try {
+      await supabase.from('parent_students').insert(parentStudentsToInsert);
+    } catch (psErr) {
+      console.warn('Could not insert parent_students junction records:', psErr);
     }
   }
 

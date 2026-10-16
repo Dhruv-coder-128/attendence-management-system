@@ -236,7 +236,7 @@ export default async function handler(req, res) {
       // Persist profile to public.user_profiles if table exists
       try {
         await dbClient.from('user_profiles').upsert(callerProfile, { onConflict: 'id' });
-      } catch (upsertErr) {
+      } catch (_upsertErr) {
         // Table doesn't exist, safely stored in auth
       }
     } else if (callerProfile.role !== 'owner') {
@@ -244,7 +244,7 @@ export default async function handler(req, res) {
       callerProfile.permissions = getOwnerPermissions();
       try {
         await dbClient.from('user_profiles').update({ role: 'owner', permissions: getOwnerPermissions() }).eq('id', callerProfile.id);
-      } catch (updErr) {}
+      } catch (_updErr) {}
     }
 
     // Ensure app_metadata has role: 'owner' in Supabase Auth
@@ -470,7 +470,7 @@ export default async function handler(req, res) {
             permissions: assignedPerms,
             is_active: true,
           }, { onConflict: 'id' });
-      } catch (err) {
+      } catch (_err) {
         // Table not migrated yet; safely persisted in app_metadata
       }
 
@@ -555,7 +555,7 @@ export default async function handler(req, res) {
             updated_at: new Date().toISOString(),
           })
           .eq('id', userId);
-      } catch (updErr) {}
+      } catch (_updErr) {}
 
       return res.status(200).json({
         ok: true,

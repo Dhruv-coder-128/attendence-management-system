@@ -35,6 +35,7 @@ import BulkImportModal from '../components/importer/BulkImportModal';
 import Pagination from '../components/common/Pagination';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { getParentTelegramDeepLink, getWhatsAppShareUrl, TELEGRAM_BOT_USERNAME } from '../lib/telegramClient';
+import { runAutoRepairIfNecessary } from '../lib/parentRepairService';
 
 export default function ParentsPage({ onRefreshCounts }) {
   const [parents, setParents] = useState([]);
@@ -91,7 +92,7 @@ export default function ParentsPage({ onRefreshCounts }) {
   };
 
   // Fetch Parents with linked students, and student options
-  const fetchData = async () => {
+  const fetchData = async (forceRepair = false) => {
     if (!isSupabaseConfigured || !supabase) {
       setError('Supabase is not configured.');
       setLoading(false);
@@ -102,6 +103,8 @@ export default function ParentsPage({ onRefreshCounts }) {
     setError(null);
 
     try {
+      await runAutoRepairIfNecessary(forceRepair);
+
       // 1. Fetch Students for dropdown
       const { data: studentsData, error: stErr } = await supabase
         .from('students')
@@ -632,7 +635,7 @@ export default function ParentsPage({ onRefreshCounts }) {
             variant="outline"
             size="sm"
             icon={RefreshCw}
-            onClick={fetchData}
+            onClick={() => fetchData(true)}
             disabled={loading}
           >
             {loading ? 'Refreshing...' : 'Refresh'}
@@ -1157,6 +1160,7 @@ export default function ParentsPage({ onRefreshCounts }) {
         }}
         title={parentToEdit ? 'Edit Guardian Details' : 'Register New Parent / Guardian'}
         subtitle="Saved directly to Supabase public.parents"
+        size="lg"
         footer={
           <>
             <Button
@@ -1294,6 +1298,7 @@ export default function ParentsPage({ onRefreshCounts }) {
         onClose={() => setParentToDelete(null)}
         title="Confirm Guardian Deletion"
         subtitle="Supabase Row Deletion"
+        size="sm"
         footer={
           <>
             <Button
@@ -1335,6 +1340,7 @@ export default function ParentsPage({ onRefreshCounts }) {
           }}
           title={`Telegram Linking — ${telegramModalParent.full_name}`}
           subtitle="Automated 1-click invitation flow — no Chat ID entry required"
+          size="lg"
           footer={
             <Button
               variant="outline"
@@ -1620,7 +1626,7 @@ export default function ParentsPage({ onRefreshCounts }) {
         onClose={() => setIsBulkInviteModalOpen(false)}
         title="Send Bulk Parent Invitations"
         subtitle="Generate secure single-use Telegram tokens (7-day validity) & WhatsApp invites"
-        size="lg"
+        size="xl"
         footer={
           <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>

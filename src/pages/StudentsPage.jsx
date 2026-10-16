@@ -1095,7 +1095,7 @@ export default function StudentsPage({ onRefreshCounts }) {
         }}
         title={studentToEdit ? 'Edit Student Record' : 'Register New Student Admission'}
         subtitle="Saved directly to Supabase PostgreSQL table (public.students)"
-        maxWidth="680px"
+        size="lg"
         footer={
           <>
             <Button

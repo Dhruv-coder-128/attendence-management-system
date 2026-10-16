@@ -460,27 +460,141 @@ async function resolveRelations(tableName, records, selectString) {
       });
     }
 
+    if (tableName === 'parents') {
+      const allStudents = await getAllFromStore('students');
+      const allParentStudents = await getAllFromStore('parent_students');
+
+      const studentMap = new Map(allStudents.map((s) => [s.id, s]));
+      const studentByAdmission = new Map(
+        allStudents.map((s) => [String(s.admission_no || '').trim().toLowerCase(), s])
+      );
+
+      return records.map((rec, index) => {
+        const junctions = allParentStudents.filter((ps) => ps.parent_id === rec.id);
+
+        let parentStudents = [];
+        if (junctions.length > 0) {
+          parentStudents = junctions.map((ps) => ({
+            ...ps,
+            students:
+              studentMap.get(ps.student_id) ||
+              studentByAdmission.get(String(rec.admission_no || '').trim().toLowerCase()) ||
+              null,
+          }));
+        } else {
+          // Automatic resilient fallback if junction row has not been migrated yet
+          const matchedStudent =
+            studentMap.get(rec.student_id) ||
+            (rec.admission_no
+              ? studentByAdmission.get(String(rec.admission_no).trim().toLowerCase())
+              : null) ||
+            (allStudents.length === records.length ? allStudents[index] : null);
+
+          if (matchedStudent) {
+            parentStudents = [
+              {
+                id: 'ps_auto_' + rec.id,
+                relationship: rec.relationship || 'Guardian',
+                is_primary_contact: true,
+                contact_priority: 'primary',
+                can_receive_alerts: true,
+                alert_preference: 'all',
+                students: {
+                  id: matchedStudent.id,
+                  full_name: matchedStudent.full_name,
+                  admission_no: matchedStudent.admission_no,
+                },
+              },
+            ];
+          }
+        }
+
+        return {
+          ...rec,
+          parent_students: parentStudents,
+        };
+      });
+    }
+
+    if (tableName === 'parent_students') {
+      const allParents = await getAllFromStore('parents');
+      const allStudents = await getAllFromStore('students');
+
+      const parentMap = new Map(allParents.map((p) => [p.id, p]));
+      const parentByStudentId = new Map(allParents.map((p) => [p.student_id, p]));
+      const studentMap = new Map(allStudents.map((s) => [s.id, s]));
+
+      return records.map((rec) => {
+        const parent =
+          parentMap.get(rec.parent_id) ||
+          parentByStudentId.get(rec.student_id) ||
+          null;
+        const student = studentMap.get(rec.student_id) || null;
+
+        return {
+          ...rec,
+          parents: parent,
+          students: student,
+        };
+      });
+    }
+
     if (tableName === 'students') {
       const allBatches = await getAllFromStore('batches');
       const allCourses = await getAllFromStore('courses');
       const allParents = await getAllFromStore('parents');
+      const allParentStudents = await getAllFromStore('parent_students');
 
       const batchMap = new Map(allBatches.map((b) => [b.id, b]));
       const courseMap = new Map(allCourses.map((c) => [c.id, c]));
+      const parentMap = new Map(allParents.map((p) => [p.id, p]));
 
-      return records.map((rec) => {
-        const parent = allParents.find((p) => p.student_id === rec.id || p.admission_no === rec.admission_no);
+      return records.map((rec, index) => {
+        const junctions = allParentStudents.filter((ps) => ps.student_id === rec.id);
+        let parentStudents = [];
+
+        if (junctions.length > 0) {
+          parentStudents = junctions.map((ps) => ({
+            ...ps,
+            parents: parentMap.get(ps.parent_id) || null,
+          }));
+        } else {
+          // Fallback matching by student_id or admission_no or 1:1 index
+          const matchedParent =
+            allParents.find(
+              (p) =>
+                p.student_id === rec.id ||
+                (p.admission_no && p.admission_no === rec.admission_no)
+            ) || (allParents.length === records.length ? allParents[index] : null);
+
+          if (matchedParent) {
+            parentStudents = [
+              {
+                id: 'ps_syn_' + rec.id,
+                relationship: matchedParent.relationship || 'Guardian',
+                is_primary_contact: true,
+                contact_priority: 'primary',
+                can_receive_alerts: true,
+                alert_preference: 'all',
+                parents: matchedParent,
+              },
+            ];
+          }
+        }
+
         return {
           ...rec,
           batches: batchMap.get(rec.batch_id) || null,
           courses: courseMap.get(rec.course_id) || null,
-          parents: parent || null,
+          parents: parentStudents[0]?.parents || null,
+          parent_students: parentStudents,
         };
       });
     }
 
     return records;
-  } catch {
+  } catch (err) {
+    console.warn('Error resolving offline relations:', err);
     return records;
   }
 }

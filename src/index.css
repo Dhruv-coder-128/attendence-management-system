@@ -826,31 +826,48 @@ textarea {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(10, 20, 36, 0.55);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  z-index: 50;
+  background-color: rgba(10, 20, 36, 0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 100;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 20px;
 }
 
 .modal-dialog {
   background-color: #ffffff;
-  border-radius: 16px;
+  border-radius: 18px;
   width: 100%;
-  max-width: 600px;
-  max-height: 90vh;
+  max-height: 92vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 40px -10px rgba(15, 23, 42, 0.18), 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 25px 60px -12px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(15, 23, 42, 0.06);
   border: 1px solid rgba(226, 232, 240, 0.95);
   overflow: hidden;
+  animation: modalScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes modalScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal-dialog.modal-sm { max-width: min(92vw, 500px); }
+.modal-dialog.modal-md { max-width: min(94vw, 680px); }
+.modal-dialog.modal-lg { max-width: min(94vw, 880px); }
+.modal-dialog.modal-xl { max-width: min(96vw, 1060px); }
+.modal-dialog.modal-dossier { max-width: min(96vw, 1160px); }
+
 .modal-header {
-  padding: 20px 24px;
+  padding: 22px 28px;
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
@@ -860,20 +877,20 @@ textarea {
 
 .modal-title {
   font-family: var(--font-heading);
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 700;
   letter-spacing: -0.2px;
   color: var(--navy-950);
 }
 
 .modal-body {
-  padding: 24px;
+  padding: 24px 28px;
   overflow-y: auto;
   flex: 1;
 }
 
 .modal-footer {
-  padding: 18px 24px;
+  padding: 18px 28px;
   border-top: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
