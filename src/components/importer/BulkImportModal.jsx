@@ -184,6 +184,61 @@ export default function BulkImportModal({
     }
   };
 
+  // 1-Click Fast Import Handler (Skips intermediate manual screens)
+  const handleExecuteFastImport = async () => {
+    if (!parsedData || !parsedData.rawRows) return;
+    setIsImporting(true);
+    setStep(4);
+
+    try {
+      const valResult = await validateImportRows(
+        selectedEntityId,
+        parsedData.rawRows,
+        columnMapping
+      );
+      setValidationResult(valResult);
+
+      const validRows = valResult.validatedRows.filter((r) => r.status === 'valid');
+      if (validRows.length === 0) {
+        alert('No valid records found to import.');
+        setStep(3);
+        return;
+      }
+
+      setImportProgress({ percentage: 0, current: 0, total: validRows.length });
+
+      const result = await executeBatchImport(
+        selectedEntityId,
+        validRows,
+        (progress) => setImportProgress(progress)
+      );
+
+      const finalSummary = {
+        totalProcessed: valResult.summary.total,
+        successCount: result.successCount,
+        skippedCount: valResult.summary.duplicates,
+        failedCount: valResult.summary.errors + result.failedCount,
+        failedRows: [
+          ...valResult.validatedRows.filter((r) => r.status === 'error'),
+          ...result.failedRows,
+        ],
+      };
+
+      setImportSummary(finalSummary);
+      setStep(5);
+
+      if (onImportSuccess) {
+        onImportSuccess(finalSummary);
+      }
+    } catch (err) {
+      console.error('Fast import failed:', err);
+      alert('Fast import error: ' + err.message);
+      setStep(3);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   // STEP 3: Execute Database Import
   const handleStartImport = async () => {
     if (!validationResult) return;
@@ -604,49 +659,74 @@ export default function BulkImportModal({
             </div>
           )}
 
-          {/* Parsed File Summary Card */}
+          {/* Parsed File Summary Card & 1-Click Fast Import */}
           {parsedData && !isParsing && (
             <div
               style={{
-                padding: '14px 16px',
-                backgroundColor: 'var(--status-present-bg)',
-                border: '1px solid var(--status-present-border)',
-                borderRadius: '6px',
+                marginTop: '16px',
+                padding: '16px 18px',
+                backgroundColor: '#f8fafc',
+                border: '1.5px solid #cbd5e1',
+                borderRadius: '8px',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <CheckCircle2 size={20} color="var(--status-present)" />
+                  <CheckCircle2 size={24} color="#16a34a" />
                   <div>
-                    <strong style={{ fontSize: '13px', color: 'var(--navy-950)' }}>
+                    <strong style={{ fontSize: '14px', color: '#0f172a' }}>
                       {parsedData.fileName}
                     </strong>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: '12px', color: '#64748b' }}>
                       {(parsedData.fileSize / 1024).toFixed(1)} KB &bull;{' '}
                       <strong>{parsedData.rowCount} data rows detected</strong> &bull;{' '}
-                      {parsedData.headers.length} headers
+                      {parsedData.headers.length} headers auto-matched
                     </div>
                   </div>
                 </div>
 
-                {/* Multiple sheet selector */}
-                {parsedData.sheetNames.length > 1 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Sheet:</span>
-                    <select
-                      value={activeSheet}
-                      onChange={(e) => handleSheetChange(e.target.value)}
-                      className="form-select"
-                      style={{ fontSize: '12px', padding: '4px 8px' }}
-                    >
-                      {parsedData.sheetNames.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {/* Multiple sheet selector */}
+                  {parsedData.sheetNames.length > 1 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>Sheet:</span>
+                      <select
+                        value={activeSheet}
+                        onChange={(e) => handleSheetChange(e.target.value)}
+                        className="form-select"
+                        style={{ fontSize: '11px', padding: '3px 6px' }}
+                      >
+                        {parsedData.sheetNames.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <Button
+                    variant="gold"
+                    size="md"
+                    icon={Sparkles}
+                    onClick={handleExecuteFastImport}
+                    disabled={isImporting}
+                    style={{ fontWeight: 700, padding: '8px 16px', fontSize: '13px' }}
+                  >
+                    ⚡ Fast 1-Click Import ({parsedData.rowCount} Rows)
+                  </Button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '10px', marginTop: '10px', borderTop: '1px solid #e2e8f0', fontSize: '12px', color: '#64748b' }}>
+                <span>✨ Auto-resolves codes, batches, and links without fatal errors.</span>
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  Or customize column mappings (Step-by-step) &rarr;
+                </button>
               </div>
             </div>
           )}

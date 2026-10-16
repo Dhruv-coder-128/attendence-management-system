@@ -23,6 +23,7 @@ import SqlImportModal from '../components/importer/SqlImportModal';
 import { RECOMMENDED_IMPORT_SEQUENCE } from '../lib/importer/entitySchemas';
 import { downloadSampleTemplate, downloadAllInOneTemplate } from '../lib/importer/templateGenerator';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { autoDistributeMisassignedStudents } from '../lib/batchRepairService';
 
 /**
  * Central Enterprise Bulk Data Import Center
@@ -34,14 +35,22 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
   const [selectedEntity, setSelectedEntity] = useState('students');
   const [toastMessage, setToastMessage] = useState('');
 
-  // Database Counts
+  // Database Counts & Real Data Summaries
   const [counts, setCounts] = useState({
     courses: 0,
     batches: 0,
     students: 0,
     parents: 0,
   });
+  const [dataSummaries, setDataSummaries] = useState({
+    courses: [],
+    batches: [],
+    students: [],
+    parents: [],
+  });
   const [loadingCounts, setLoadingCounts] = useState(true);
+  const [isDistributingBatches, setIsDistributingBatches] = useState(false);
+  const [needsBatchRedistribution, setNeedsBatchRedistribution] = useState(false);
 
   const fetchDatabaseCounts = async () => {
     if (!supabase || !isSupabaseConfigured) return;
@@ -53,22 +62,57 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
         { count: studentsCount, data: studentsData },
         { count: parentsCount, data: parentsData },
       ] = await Promise.all([
-        supabase.from('courses').select('id', { count: 'exact' }),
-        supabase.from('batches').select('id', { count: 'exact' }),
-        supabase.from('students').select('id', { count: 'exact' }),
-        supabase.from('parents').select('id', { count: 'exact' }),
+        supabase.from('courses').select('id, name, code', { count: 'exact' }).limit(10),
+        supabase.from('batches').select('id, name, code, is_active', { count: 'exact' }).limit(10),
+        supabase.from('students').select('id, full_name, admission_no, roll_no, batch_id', { count: 'exact' }).limit(150),
+        supabase.from('parents').select('id, full_name, phone, student_id', { count: 'exact' }).limit(10),
       ]);
+
+      const sList = studentsData || [];
+      const bList = batchesData || [];
+
+      // Calculate real student distribution across batches
+      const batchesWithCounts = bList.map((b) => {
+        const count = sList.filter((s) => s.batch_id === b.id).length;
+        return { ...b, studentCount: count };
+      });
+
+      const maxInOne = Math.max(0, ...batchesWithCounts.map((b) => b.studentCount));
+      const hasEmptyBatches = batchesWithCounts.some((b) => b.studentCount === 0);
+      const isSkewed = sList.length >= 10 && maxInOne > sList.length * 0.7 && hasEmptyBatches;
+      setNeedsBatchRedistribution(isSkewed);
 
       setCounts({
         courses: coursesCount ?? (coursesData?.length || 0),
         batches: batchesCount ?? (batchesData?.length || 0),
-        students: studentsCount ?? (studentsData?.length || 0),
+        students: studentsCount ?? (sList.length || 0),
         parents: parentsCount ?? (parentsData?.length || 0),
+      });
+
+      setDataSummaries({
+        courses: coursesData || [],
+        batches: batchesWithCounts,
+        students: sList.slice(0, 5),
+        parents: parentsData || [],
       });
     } catch (err) {
       console.error('Failed to query counts:', err);
     } finally {
       setLoadingCounts(false);
+    }
+  };
+
+  const handleAutoDistributeBatches = async () => {
+    setIsDistributingBatches(true);
+    try {
+      const res = await autoDistributeMisassignedStudents();
+      setToastMessage(res.message);
+      await fetchDatabaseCounts();
+      if (onRefreshCounts) onRefreshCounts();
+    } catch (err) {
+      alert('Failed to distribute students: ' + err.message);
+    } finally {
+      setIsDistributingBatches(false);
     }
   };
 
@@ -126,6 +170,16 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
         </div>
 
         <div className="page-actions">
+          <Button
+            variant="gold"
+            size="md"
+            icon={Sparkles}
+            onClick={handleAutoDistributeBatches}
+            disabled={isDistributingBatches || loadingCounts}
+          >
+            {isDistributingBatches ? 'Distributing...' : '⚡ Rebalance Batches (1-Click)'}
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
@@ -382,9 +436,84 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
                   </span>
                 </div>
 
-                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 16px 0' }}>
-                  {item.description}
-                </p>
+                {/* Live Data Records in Database if populated */}
+                {isPopulated && (
+                  <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px', marginBottom: '14px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', color: '#166534', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <CheckCircle2 size={13} color="#16a34a" />
+                      <span>Active in Your School Database ({currentCount})</span>
+                    </div>
+
+                    {item.id === 'courses' && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {dataSummaries.courses.map((c, cIdx) => (
+                          <span key={cIdx} style={{ fontSize: '11px', fontWeight: 600, backgroundColor: '#ffffff', color: '#166534', padding: '3px 8px', borderRadius: '6px', border: '1px solid #bbf7d0' }}>
+                            {c.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {item.id === 'batches' && (
+                      <div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {dataSummaries.batches.map((b, bIdx) => (
+                            <span key={bIdx} style={{ fontSize: '11px', fontWeight: 600, backgroundColor: '#ffffff', color: b.studentCount > 0 ? '#166534' : '#991b1b', padding: '3px 8px', borderRadius: '6px', border: `1px solid ${b.studentCount > 0 ? '#bbf7d0' : '#fecaca'}` }}>
+                              {b.name || b.code}: <strong>{b.studentCount} students</strong>
+                            </span>
+                          ))}
+                        </div>
+                        {needsBatchRedistribution && (
+                          <div style={{ marginTop: '8px', padding: '8px 10px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                            <span style={{ fontSize: '11px', color: '#92400e', fontWeight: 600 }}>
+                              ⚠️ All students are in 1 batch. Rebalance to enable Attendance!
+                            </span>
+                            <Button
+                              variant="gold"
+                              size="sm"
+                              icon={Sparkles}
+                              onClick={handleAutoDistributeBatches}
+                              disabled={isDistributingBatches}
+                              style={{ fontSize: '11px', padding: '4px 8px' }}
+                            >
+                              {isDistributingBatches ? 'Rebalancing...' : '⚡ Fix Batches'}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {item.id === 'students' && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {dataSummaries.students.map((s, sIdx) => (
+                          <span key={sIdx} style={{ fontSize: '11px', fontWeight: 600, backgroundColor: '#ffffff', color: '#1e3a8a', padding: '3px 8px', borderRadius: '6px', border: '1px solid #bfdbfe' }}>
+                            {s.full_name} {s.roll_no ? `(Roll: ${s.roll_no})` : ''}
+                          </span>
+                        ))}
+                        {currentCount > 5 && (
+                          <span style={{ fontSize: '11px', color: '#64748b', alignSelf: 'center', fontWeight: 500 }}>
+                            +{currentCount - 5} more students
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {item.id === 'parents' && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {dataSummaries.parents.map((p, pIdx) => (
+                          <span key={pIdx} style={{ fontSize: '11px', fontWeight: 600, backgroundColor: '#ffffff', color: '#166534', padding: '3px 8px', borderRadius: '6px', border: '1px solid #bbf7d0' }}>
+                            {p.full_name || 'Guardian'} {p.phone ? `(${p.phone})` : ''}
+                          </span>
+                        ))}
+                        {currentCount > 5 && (
+                          <span style={{ fontSize: '11px', color: '#64748b', alignSelf: 'center', fontWeight: 500 }}>
+                            +{currentCount - 5} more guardians
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Expected Schema Fields Preview Pills */}
                 <div style={{ backgroundColor: 'var(--bg-subtle)', padding: '12px', borderRadius: '8px', marginBottom: '16px', border: '1px solid var(--border-subtle)' }}>

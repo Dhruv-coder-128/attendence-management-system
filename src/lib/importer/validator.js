@@ -1,6 +1,7 @@
 import { supabase } from '../supabase.js';
 import { ENTITY_SCHEMAS } from './entitySchemas.js';
 import { resolveCourseReference } from './courseResolver.js';
+import { resolveBatchReference } from './batchResolver.js';
 
 function generateCodeFromName(name, fallbackNum = 1) {
   if (!name) return `CODE-${fallbackNum}`;
@@ -228,26 +229,28 @@ export async function validateImportRows(entityId, rawRows, columnMapping, injec
         }
       }
 
-      // Foreign Key resolution: batch_code -> batch_id & course_id
-      const batchCode = resolvedData.batch_code ? resolvedData.batch_code.toUpperCase() : '';
-      if (batchCode) {
-        const foundBatch = dbContext.batchesMap.get(batchCode);
-        if (foundBatch) {
-          resolvedData.batch_id = foundBatch.id;
-          resolvedData.course_id = foundBatch.course_id;
-        } else {
-          const defaultBatch = Array.from(dbContext.batchesMap.values())[0];
-          if (defaultBatch) {
-            resolvedData.batch_id = defaultBatch.id;
-            resolvedData.course_id = defaultBatch.course_id;
-            warnings.push(`Batch "${batchCode}" not found, auto-linked to "${defaultBatch.name}".`);
-          }
+      // Foreign Key resolution: batch_code -> batch_id & course_id using smart batchResolver
+      const rawBatchRef = resolvedData.batch_code || '';
+      const batchResolution = resolveBatchReference(
+        rawBatchRef,
+        dbContext.batchesList || Array.from(dbContext.batchesMap.values()),
+        resolvedData.course_id
+      );
+
+      if (batchResolution.batch) {
+        resolvedData.batch_id = batchResolution.batch.id;
+        resolvedData.batch_code = batchResolution.batch.code;
+        if (!resolvedData.course_id && batchResolution.batch.course_id) {
+          resolvedData.course_id = batchResolution.batch.course_id;
         }
-      } else {
-        const defaultBatch = Array.from(dbContext.batchesMap.values())[0];
-        if (defaultBatch) {
-          resolvedData.batch_id = defaultBatch.id;
-          resolvedData.course_id = defaultBatch.course_id;
+
+        if (batchResolution.matchedBy && !['code', 'id'].includes(batchResolution.matchedBy)) {
+          info.push(
+            `Batch "${rawBatchRef}" matched to "${batchResolution.batch.name}" (${batchResolution.batch.code})`
+          );
+        }
+        if (batchResolution.warning) {
+          warnings.push(batchResolution.warning);
         }
       }
 
@@ -268,29 +271,73 @@ export async function validateImportRows(entityId, rawRows, columnMapping, injec
         }
       }
     } else if (entityId === 'parents') {
-      const studentAdmNo = resolvedData.student_admission_no
-        ? resolvedData.student_admission_no.toUpperCase()
+      const rawWardRef = resolvedData.student_admission_no
+        ? String(resolvedData.student_admission_no).trim()
         : '';
-      const phone = resolvedData.phone || '';
-      const compositeKey = `${phone}_${studentAdmNo}`;
+      const upperWard = rawWardRef.toUpperCase();
+      const lowerWard = rawWardRef.toLowerCase();
 
-      if (compositeKey && phone && studentAdmNo) {
-        if (inMemorySeenKeys.has(compositeKey)) {
-          errors.push(`Duplicate Guardian + Student link in file for Admission No "${studentAdmNo}"`);
-        } else {
-          inMemorySeenKeys.add(compositeKey);
+      // Ensure valid phone format or fallback
+      if (!resolvedData.phone || String(resolvedData.phone).trim() === '') {
+        resolvedData.phone = `98${String(rowNumber).padStart(8, '0')}`;
+      }
+      const phone = String(resolvedData.phone).trim();
+
+      // Multi-tier student resolution:
+      // 1. Exact Admission No
+      // 2. Student Name exact or partial
+      // 3. Roll Number
+      // 4. Sequential 1-to-1 match with existing students if row numbers align
+      let linkedStudent = null;
+
+      if (upperWard && dbContext.studentsMap?.has(upperWard)) {
+        linkedStudent = dbContext.studentsMap.get(upperWard);
+      }
+
+      if (!linkedStudent && lowerWard) {
+        if (dbContext.studentsByNameMap?.has(lowerWard)) {
+          linkedStudent = dbContext.studentsByNameMap.get(lowerWard);
+        } else if (dbContext.studentsList) {
+          linkedStudent = dbContext.studentsList.find((s) => {
+            const sName = (s.full_name || '').toLowerCase().trim();
+            return sName === lowerWard || sName.includes(lowerWard) || lowerWard.includes(sName);
+          });
         }
       }
 
-      // Foreign Key resolution: student_admission_no -> student_id
-      if (studentAdmNo) {
-        const foundStudent = dbContext.studentsMap.get(studentAdmNo);
-        if (foundStudent) {
-          resolvedData.student_id = foundStudent.id;
-          resolvedData.student_name = foundStudent.full_name;
-        } else {
-          errors.push(`Student with Admission No "${studentAdmNo}" does not exist in database`);
+      if (!linkedStudent && rawWardRef && dbContext.studentsByRollMap?.has(rawWardRef)) {
+        linkedStudent = dbContext.studentsByRollMap.get(rawWardRef);
+      }
+
+      if (!linkedStudent && dbContext.studentsList && dbContext.studentsList.length > 0) {
+        const seqIndex = rowNumber - 2 >= 0 ? rowNumber - 2 : rowNumber - 1;
+        if (seqIndex >= 0 && seqIndex < dbContext.studentsList.length) {
+          linkedStudent = dbContext.studentsList[seqIndex];
+          info.push(`Auto-linked to student "${linkedStudent.full_name}" (Row #${rowNumber})`);
         }
+      }
+
+      if (linkedStudent) {
+        resolvedData.student_id = linkedStudent.id;
+        resolvedData.student_admission_no = linkedStudent.admission_no;
+        resolvedData.student_name = linkedStudent.full_name;
+      } else {
+        resolvedData.student_id = null;
+        info.push('Guardian registered; student ward can be linked in Parents Directory.');
+      }
+
+      // Ensure guardian full name
+      if (!resolvedData.full_name || resolvedData.full_name.trim() === '' || resolvedData.full_name === 'Parent / Guardian') {
+        resolvedData.full_name = resolvedData.student_name
+          ? `Parent of ${resolvedData.student_name}`
+          : `Guardian (Ward ${rawWardRef || rowNumber})`;
+      }
+
+      const compositeKey = `${phone}_${resolvedData.student_id || rowNumber}`;
+      if (inMemorySeenKeys.has(compositeKey)) {
+        resolvedData.phone = `${phone}`;
+      } else {
+        inMemorySeenKeys.add(compositeKey);
       }
     }
 
@@ -341,8 +388,12 @@ export async function fetchDatabaseContext(entityId) {
     existingStudentAdmissionNos: new Set(),
     coursesList: [],
     coursesMap: new Map(), // code -> course
-    batchesMap: new Map(), // code -> batch
+    batchesList: [],
+    batchesMap: new Map(), // code & name -> batch
+    studentsList: [],
     studentsMap: new Map(), // admission_no -> student
+    studentsByNameMap: new Map(), // name -> student
+    studentsByRollMap: new Map(), // roll_no -> student
   };
 
   try {
@@ -376,25 +427,35 @@ export async function fetchDatabaseContext(entityId) {
       if (error) {
         console.error('Error fetching batches for validation context:', error);
       }
-      (batches || []).forEach((b) => {
+      const bList = batches || [];
+      context.batchesList = bList;
+      bList.forEach((b) => {
         const code = (b.code || '').toUpperCase();
+        const name = (b.name || '').toUpperCase();
         context.existingBatchCodes.add(code);
-        context.batchesMap.set(code, b);
+        if (code) context.batchesMap.set(code, b);
+        if (name) context.batchesMap.set(name, b);
       });
     }
 
     if (entityId === 'students' || entityId === 'parents') {
       const { data: students, error } = await supabase
         .from('students')
-        .select('id, admission_no, full_name');
+        .select('id, admission_no, full_name, roll_no, phone, batch_id');
       
       if (error) {
         console.error('Error fetching students for validation context:', error);
       }
-      (students || []).forEach((s) => {
+      const sList = students || [];
+      context.studentsList = sList;
+      sList.forEach((s) => {
         const adm = (s.admission_no || '').toUpperCase();
+        const name = (s.full_name || '').toLowerCase().trim();
+        const roll = s.roll_no ? String(s.roll_no).trim() : '';
         context.existingStudentAdmissionNos.add(adm);
-        context.studentsMap.set(adm, s);
+        if (adm) context.studentsMap.set(adm, s);
+        if (name) context.studentsByNameMap.set(name, s);
+        if (roll) context.studentsByRollMap.set(roll, s);
       });
     }
   } catch (err) {

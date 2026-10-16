@@ -23,6 +23,7 @@ import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import BulkImportModal from '../components/importer/BulkImportModal';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { autoDistributeMisassignedStudents } from '../lib/batchRepairService';
 
 /**
  * Courses & Batches Management Page — Real Supabase Integration
@@ -261,18 +262,44 @@ export default function BatchesPage({ onRefreshCounts }) {
     }
   };
 
+  const [isDistributing, setIsDistributing] = useState(false);
+
+  const handleAutoDistributeStudents = async () => {
+    setIsDistributing(true);
+    try {
+      const res = await autoDistributeMisassignedStudents();
+      showToast(res.message);
+      await fetchData();
+      if (onRefreshCounts) onRefreshCounts();
+    } catch (err) {
+      alert('Failed to distribute students: ' + err.message);
+    } finally {
+      setIsDistributing(false);
+    }
+  };
+
   return (
     <div>
       {/* Page Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Batches</h1>
+          <h1 className="page-title">Batches &amp; Cohorts</h1>
           <p className="page-description">
             Manage academic cohorts, assign courses, and monitor classroom capacities
           </p>
         </div>
 
         <div className="page-actions">
+          <Button
+            variant="gold"
+            size="md"
+            icon={Sparkles}
+            onClick={handleAutoDistributeStudents}
+            disabled={isDistributing || loading}
+          >
+            {isDistributing ? 'Distributing...' : '⚡ Rebalance Batches (1-Click)'}
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
