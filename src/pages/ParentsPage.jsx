@@ -33,6 +33,7 @@ import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import BulkImportModal from '../components/importer/BulkImportModal';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { getParentTelegramDeepLink, TELEGRAM_BOT_USERNAME } from '../lib/telegramClient';
 
 export default function ParentsPage({ onRefreshCounts }) {
   const [parents, setParents] = useState([]);

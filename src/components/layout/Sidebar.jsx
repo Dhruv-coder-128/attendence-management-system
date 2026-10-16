@@ -36,19 +36,30 @@ export default function Sidebar({
   const branding = getStoredAcademySettings();
   const logoClicksRef = useRef({ count: 0, lastTime: 0 });
 
-  const staffName =
+  const rawStaffName =
     currentUserProfile?.full_name ||
     user?.user_metadata?.full_name ||
     user?.email?.split('@')[0] ||
-    'Staff User';
+    branding.owner_name ||
+    'Institution Administrator';
 
-  const userRole = (currentUserProfile?.role || 'owner').toLowerCase();
+  const isPersonalDev =
+    rawStaffName.toLowerCase().includes('dhruv') ||
+    rawStaffName.toLowerCase().includes('dushah') ||
+    (user?.email || '').toLowerCase().includes('dushah');
+
+  const staffName = isPersonalDev
+    ? (branding.owner_name || 'Institution Administrator')
+    : rawStaffName;
+
+  const userRole = (currentUserProfile?.role || user?.role || 'owner').toLowerCase();
   const roleDisplay =
     userRole === 'owner' ? 'Owner' : userRole === 'admin' ? 'Admin' : 'Moderator';
 
-  const userInitials = (staffName || 'SU')
+  const userInitials = (staffName || 'IA')
     .split(' ')
     .map((n) => n[0])
+    .filter(Boolean)
     .join('')
     .substring(0, 2)
     .toUpperCase();

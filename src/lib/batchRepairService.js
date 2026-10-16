@@ -1,10 +1,129 @@
 import { supabase } from './supabase.js';
 
 /**
- * Service to inspect, re-distribute, and repair student batch assignments.
- * Solves the issue where all imported students were clustered in a single batch (e.g., FY)
- * leaving B11, B12, and other batches empty with 0 students in Attendance.
+ * Service to inspect, re-distribute, and repair student batch assignments and batch course linkages.
+ * Solves:
+ * 1. Misassignment where all batches were linked to the same course (FY-BCA).
+ * 2. Misassignment where all students were clustered in a single batch (FY).
  */
+
+/**
+ * Intelligently matches a batch to its proper academic course based on standard school naming patterns.
+ */
+export function matchCourseForBatch(batchName, batchCode, coursesList = []) {
+  if (!coursesList || coursesList.length === 0) return null;
+
+  const combined = `${batchName || ''} ${batchCode || ''}`.toUpperCase();
+
+  // 1. 11th Commerce
+  if ((combined.includes('11') || combined.includes('XI')) && (combined.includes('COM') || combined.includes('COMMERCE'))) {
+    const match = coursesList.find((c) => {
+      const cUpper = `${c.name || ''} ${c.code || ''}`.toUpperCase();
+      return (cUpper.includes('11') || cUpper.includes('XI')) && (cUpper.includes('COM') || cUpper.includes('COMMERCE'));
+    });
+    if (match) return match;
+  }
+
+  // 2. 12th Commerce
+  if ((combined.includes('12') || combined.includes('XII')) && (combined.includes('COM') || combined.includes('COMMERCE'))) {
+    const match = coursesList.find((c) => {
+      const cUpper = `${c.name || ''} ${c.code || ''}`.toUpperCase();
+      return (cUpper.includes('12') || cUpper.includes('XII')) && (cUpper.includes('COM') || cUpper.includes('COMMERCE'));
+    });
+    if (match) return match;
+  }
+
+  // 3. 11th Science
+  if ((combined.includes('11') || combined.includes('XI')) && (combined.includes('SCI') || combined.includes('SCIENCE'))) {
+    const match = coursesList.find((c) => {
+      const cUpper = `${c.name || ''} ${c.code || ''}`.toUpperCase();
+      return (cUpper.includes('11') || cUpper.includes('XI')) && (cUpper.includes('SCI') || cUpper.includes('SCIENCE'));
+    });
+    if (match) return match;
+  }
+
+  // 4. 12th Science
+  if ((combined.includes('12') || combined.includes('XII')) && (combined.includes('SCI') || combined.includes('SCIENCE'))) {
+    const match = coursesList.find((c) => {
+      const cUpper = `${c.name || ''} ${c.code || ''}`.toUpperCase();
+      return (cUpper.includes('12') || cUpper.includes('XII')) && (cUpper.includes('SCI') || cUpper.includes('SCIENCE'));
+    });
+    if (match) return match;
+  }
+
+  // 5. FY / First Year
+  if (combined.includes('FY') || combined.includes('FIRST YEAR')) {
+    const match = coursesList.find((c) => {
+      const cUpper = `${c.name || ''} ${c.code || ''}`.toUpperCase();
+      return cUpper.includes('FY') || cUpper.includes('FIRST YEAR');
+    });
+    if (match) return match;
+  }
+
+  // 6. SY / Second Year
+  if (combined.includes('SY') || combined.includes('SECOND YEAR')) {
+    const match = coursesList.find((c) => {
+      const cUpper = `${c.name || ''} ${c.code || ''}`.toUpperCase();
+      return cUpper.includes('SY') || cUpper.includes('SECOND YEAR');
+    });
+    if (match) return match;
+  }
+
+  // 7. TY / Third Year
+  if (combined.includes('TY') || combined.includes('THIRD YEAR')) {
+    const match = coursesList.find((c) => {
+      const cUpper = `${c.name || ''} ${c.code || ''}`.toUpperCase();
+      return cUpper.includes('TY') || cUpper.includes('THIRD YEAR');
+    });
+    if (match) return match;
+  }
+
+  // 8. General match by token intersection
+  for (const c of coursesList) {
+    const cTokens = `${c.name} ${c.code}`.toUpperCase().split(/[^A-Z0-9]+/).filter((t) => t.length > 2);
+    const hasIntersection = cTokens.some((t) => combined.includes(t));
+    if (hasIntersection) return c;
+  }
+
+  return coursesList[0] || null;
+}
+
+/**
+ * Repairs batch course linkages so that B11 links to 11th Commerce, B12 to 12th Commerce, etc.
+ */
+export async function repairBatchCourseLinkages() {
+  if (!supabase) return { repaired: 0 };
+
+  try {
+    const { data: courses } = await supabase.from('courses').select('id, name, code');
+    const { data: batches } = await supabase.from('batches').select('id, name, code, course_id');
+
+    if (!courses || !batches || courses.length === 0 || batches.length === 0) {
+      return { repaired: 0 };
+    }
+
+    let repaired = 0;
+    for (const batch of batches) {
+      const targetCourse = matchCourseForBatch(batch.name, batch.code, courses);
+      if (targetCourse && targetCourse.id !== batch.course_id) {
+        const { error } = await supabase
+          .from('batches')
+          .update({ course_id: targetCourse.id })
+          .eq('id', batch.id);
+
+        if (!error) {
+          repaired++;
+          batch.course_id = targetCourse.id;
+        }
+      }
+    }
+
+    return { repaired, batches };
+  } catch (err) {
+    console.error('Failed to repair batch course linkages:', err);
+    return { repaired: 0 };
+  }
+}
 
 /**
  * Inspects the current distribution of students across batches
@@ -15,7 +134,7 @@ export async function getBatchDistributionStats() {
   try {
     const { data: batches } = await supabase
       .from('batches')
-      .select('id, name, code, is_active')
+      .select('id, name, code, course_id, is_active')
       .order('name');
 
     const { data: students } = await supabase
@@ -33,7 +152,6 @@ export async function getBatchDistributionStats() {
       };
     });
 
-    // Check if one batch has nearly all students while other batches have 0
     const activeBatchesWithZero = distribution.filter((b) => b.is_active && b.studentCount === 0);
     const maxInSingleBatch = Math.max(0, ...distribution.map((b) => b.studentCount));
     const isMislabeled = studentList.length > 10 && activeBatchesWithZero.length >= 2 && maxInSingleBatch > studentList.length * 0.7;
@@ -50,13 +168,16 @@ export async function getBatchDistributionStats() {
 }
 
 /**
- * Distributes students across active batches evenly or by course match
- * Fixes the 100/25 capacity overflow in FY and populates B11, B12, etc. so Attendance works.
+ * Distributes students across active batches evenly or by course match,
+ * and ensures all batches are correctly mapped to their respective courses.
  */
 export async function autoDistributeMisassignedStudents() {
   if (!supabase) throw new Error('Database connection is not available.');
 
-  // 1. Fetch active batches
+  // 1. First, repair batch course linkages so B11 -> 11th Commerce, B12 -> 12th Commerce, etc.
+  await repairBatchCourseLinkages();
+
+  // 2. Fetch updated batches with joined course
   const { data: batches, error: bErr } = await supabase
     .from('batches')
     .select('id, name, code, course_id, max_capacity')
@@ -67,7 +188,7 @@ export async function autoDistributeMisassignedStudents() {
     throw new Error('No batches available to distribute students into.');
   }
 
-  // 2. Fetch all students
+  // 3. Fetch all students
   const { data: students, error: sErr } = await supabase
     .from('students')
     .select('id, full_name, admission_no, roll_no, course_id, batch_id')
@@ -87,13 +208,12 @@ export async function autoDistributeMisassignedStudents() {
     const student = students[i];
     const targetBatch = activeBatches[i % numBatches];
 
-    // Only update if student is not already in the target batch
-    if (student.batch_id !== targetBatch.id) {
+    // Update student's batch_id and synchronize course_id
+    if (student.batch_id !== targetBatch.id || (targetBatch.course_id && student.course_id !== targetBatch.course_id)) {
       const { error: uErr } = await supabase
         .from('students')
         .update({
           batch_id: targetBatch.id,
-          // Sync course_id with batch course if batch has one
           ...(targetBatch.course_id ? { course_id: targetBatch.course_id } : {}),
         })
         .eq('id', student.id);
@@ -109,6 +229,6 @@ export async function autoDistributeMisassignedStudents() {
     count: updatedCount,
     totalStudents: students.length,
     batchesCount: numBatches,
-    message: `Successfully distributed ${updatedCount} students across ${numBatches} cohorts (e.g. B11 - 11th Commerce, B12 - 12th Commerce, FY, SY, TY).`,
+    message: `Successfully rebalanced ${updatedCount} students across ${numBatches} batches and linked each batch to its proper course!`,
   };
 }

@@ -648,7 +648,7 @@ export default function ExamsPage() {
         isOpen={isExamModalOpen}
         onClose={() => setIsExamModalOpen(false)}
         title={examToEdit ? 'Edit Examination Schedule' : 'Create New Examination'}
-        subtitle="Saved to public.exams in Supabase PostgreSQL"
+        subtitle="Schedule tests, term exams, and academic assessments"
         footer={
           <>
             <Button variant="outline" size="sm" onClick={() => setIsExamModalOpen(false)} disabled={isSavingExam}>

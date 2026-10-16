@@ -232,6 +232,26 @@ export function createLocalTableQueryBuilder(tableName) {
       return builder;
     },
 
+    gte(col, val) {
+      state.filters.push({ type: 'gte', col, val });
+      return builder;
+    },
+
+    lte(col, val) {
+      state.filters.push({ type: 'lte', col, val });
+      return builder;
+    },
+
+    gt(col, val) {
+      state.filters.push({ type: 'gt', col, val });
+      return builder;
+    },
+
+    lt(col, val) {
+      state.filters.push({ type: 'lt', col, val });
+      return builder;
+    },
+
     order(col, options = {}) {
       state.sortCol = col;
       state.sortAscending = options.ascending !== false;
@@ -296,6 +316,18 @@ async function executeLocalQuery(state) {
         if (f.type === 'eq' && row[f.col] !== f.val) return false;
         if (f.type === 'neq' && row[f.col] === f.val) return false;
         if (f.type === 'in' && Array.isArray(f.val) && !f.val.includes(row[f.col])) return false;
+        if (f.type === 'gte') {
+          if (row[f.col] === undefined || row[f.col] === null || String(row[f.col]) < String(f.val)) return false;
+        }
+        if (f.type === 'lte') {
+          if (row[f.col] === undefined || row[f.col] === null || String(row[f.col]) > String(f.val)) return false;
+        }
+        if (f.type === 'gt') {
+          if (row[f.col] === undefined || row[f.col] === null || String(row[f.col]) <= String(f.val)) return false;
+        }
+        if (f.type === 'lt') {
+          if (row[f.col] === undefined || row[f.col] === null || String(row[f.col]) >= String(f.val)) return false;
+        }
         if (f.type === 'like' || f.type === 'ilike') {
           const str = String(row[f.col] || '');
           const cleanPattern = String(f.val).replace(/%/g, '');

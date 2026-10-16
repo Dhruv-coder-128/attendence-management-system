@@ -2,6 +2,7 @@ import { supabase } from '../supabase.js';
 import { ENTITY_SCHEMAS } from './entitySchemas.js';
 import { resolveCourseReference } from './courseResolver.js';
 import { resolveBatchReference } from './batchResolver.js';
+import { matchCourseForBatch } from '../batchRepairService.js';
 
 function generateCodeFromName(name, fallbackNum = 1) {
   if (!name) return `CODE-${fallbackNum}`;
@@ -173,11 +174,11 @@ export async function validateImportRows(entityId, rawRows, columnMapping, injec
       // Foreign Key resolution: course_code -> course_id using multi-tiered resolver
       const rawCourseRef = resolvedData.course_code;
       if (!rawCourseRef || !String(rawCourseRef).trim()) {
-        const defaultCourse = dbContext.coursesList?.[0];
-        if (defaultCourse) {
-          resolvedData.course_id = defaultCourse.id;
-          resolvedData.course_code = defaultCourse.code;
-          warnings.push(`Course reference omitted, auto-assigned to "${defaultCourse.name}".`);
+        const smartMatchedCourse = matchCourseForBatch(resolvedData.name, resolvedData.code, dbContext.coursesList);
+        if (smartMatchedCourse) {
+          resolvedData.course_id = smartMatchedCourse.id;
+          resolvedData.course_code = smartMatchedCourse.code;
+          info.push(`Course auto-matched to "${smartMatchedCourse.name}" (${smartMatchedCourse.code}).`);
         } else {
           resolvedData.course_code = 'GEN-COURSE';
           resolvedData.course_id = null;

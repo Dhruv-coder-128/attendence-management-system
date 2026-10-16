@@ -23,7 +23,7 @@ import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import BulkImportModal from '../components/importer/BulkImportModal';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { autoDistributeMisassignedStudents } from '../lib/batchRepairService';
+import { autoDistributeMisassignedStudents, repairBatchCourseLinkages } from '../lib/batchRepairService';
 
 /**
  * Courses & Batches Management Page — Real Supabase Integration
@@ -83,6 +83,9 @@ export default function BatchesPage({ onRefreshCounts }) {
         .select('id, name, code, level')
         .order('name');
       if (coursesErr) throw coursesErr;
+
+      // Auto-repair batch course linkages so cohorts link to their matching courses
+      await repairBatchCourseLinkages();
 
       // 2. Fetch batches with joined courses and student count
       const { data: batchesData, error: batchesErr } = await supabase
