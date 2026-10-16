@@ -30,6 +30,7 @@ import Select from '../components/common/Select';
 import BulkImportModal from '../components/importer/BulkImportModal';
 import MasterImportModal from '../components/importer/MasterImportModal';
 import StudentAcademicDossier from '../components/students/StudentAcademicDossier';
+import Pagination from '../components/common/Pagination';
 import { computeFeeStatus, getStandardCoursePolicy } from '../lib/feeService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { exportStudentsToExcel, exportStudentsToCSV } from '../lib/studentExporter';
@@ -47,7 +48,9 @@ export default function StudentsPage({ onRefreshCounts }) {
   const [error, setError] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
 
-  // Filter States
+  // Pagination & Filter States
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCourseId, setSelectedCourseId] = useState('All');
   const [selectedBatchId, setSelectedBatchId] = useState('All');
@@ -285,6 +288,20 @@ export default function StudentsPage({ onRefreshCounts }) {
       return matchSearch && matchCourse && matchBatch && matchStatus && matchFee;
     });
   }, [students, searchTerm, selectedCourseId, selectedBatchId, selectedStatus, selectedFeeStatus]);
+
+  // Pagination calculation
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, currentPage, pageSize]);
+
+  // Adjust page if data length shrinks
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
 
   // Close export menu on outside click
   useEffect(() => {
@@ -811,7 +828,10 @@ export default function StudentsPage({ onRefreshCounts }) {
           <input
             type="text"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
             placeholder="Search by student name, admission no, roll no, or phone..."
             className="form-input"
             style={{ paddingLeft: '32px' }}
@@ -822,7 +842,10 @@ export default function StudentsPage({ onRefreshCounts }) {
         <div style={{ width: '180px' }}>
           <select
             value={selectedCourseId}
-            onChange={(e) => setSelectedCourseId(e.target.value)}
+            onChange={(e) => {
+              setSelectedCourseId(e.target.value);
+              setCurrentPage(1);
+            }}
             className="form-select"
           >
             <option value="All">All Courses</option>
@@ -838,7 +861,10 @@ export default function StudentsPage({ onRefreshCounts }) {
         <div style={{ width: '180px' }}>
           <select
             value={selectedBatchId}
-            onChange={(e) => setSelectedBatchId(e.target.value)}
+            onChange={(e) => {
+              setSelectedBatchId(e.target.value);
+              setCurrentPage(1);
+            }}
             className="form-select"
           >
             <option value="All">All Batches</option>
@@ -854,7 +880,10 @@ export default function StudentsPage({ onRefreshCounts }) {
         <div style={{ width: '140px' }}>
           <select
             value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
+            onChange={(e) => {
+              setSelectedStatus(e.target.value);
+              setCurrentPage(1);
+            }}
             className="form-select"
           >
             <option value="All">All Statuses</option>
@@ -869,7 +898,10 @@ export default function StudentsPage({ onRefreshCounts }) {
         <div style={{ width: '160px' }}>
           <select
             value={selectedFeeStatus}
-            onChange={(e) => setSelectedFeeStatus(e.target.value)}
+            onChange={(e) => {
+              setSelectedFeeStatus(e.target.value);
+              setCurrentPage(1);
+            }}
             className="form-select"
           >
             <option value="All">All Fee Status</option>
@@ -930,7 +962,7 @@ export default function StudentsPage({ onRefreshCounts }) {
                   </td>
                 </tr>
               ) : (
-                filteredStudents.map((student) => (
+                paginatedStudents.map((student) => (
                   <tr key={student.id}>
                     <td>
                       <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', fontWeight: 600, color: 'var(--navy-900)' }}>
@@ -1031,6 +1063,14 @@ export default function StudentsPage({ onRefreshCounts }) {
             </tbody>
           </table>
         </div>
+
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredStudents.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* STUDENT ACADEMIC DOSSIER MODAL (Phase 4) */}

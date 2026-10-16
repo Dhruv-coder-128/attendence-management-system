@@ -19,6 +19,7 @@ import Select from '../components/common/Select';
 import StatsCard from '../components/common/StatsCard';
 import StudentAcademicDossier from '../components/students/StudentAcademicDossier';
 import FeeReceiptModal from '../components/fees/FeeReceiptModal';
+import Pagination from '../components/common/Pagination';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   recordFeePayment,
@@ -38,7 +39,9 @@ export default function FeesPage({ onRefreshCounts }) {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
 
-  // Filters & Search
+  // Filters, Search & Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedBatch, setSelectedBatch] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
@@ -207,6 +210,13 @@ export default function FeesPage({ onRefreshCounts }) {
       return matchesSearch && matchesBatch && matchesStatus;
     });
   }, [students, searchTerm, selectedBatch, selectedStatus]);
+
+  // 20-Row Pagination Calculation
+  const totalPages = Math.ceil(filteredStudents.length / pageSize) || 1;
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, currentPage, pageSize]);
 
   // Handle Record Payment Submit
   const handleRecordPayment = async (e) => {
@@ -401,7 +411,10 @@ export default function FeesPage({ onRefreshCounts }) {
                 type="text"
                 placeholder="Search student or admission no..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="form-input"
                 style={{ paddingLeft: '32px', fontSize: '13px' }}
               />
@@ -409,7 +422,10 @@ export default function FeesPage({ onRefreshCounts }) {
 
             <select
               value={selectedBatch}
-              onChange={(e) => setSelectedBatch(e.target.value)}
+              onChange={(e) => {
+                setSelectedBatch(e.target.value);
+                setCurrentPage(1);
+              }}
               className="form-input"
               style={{ width: 'auto', fontSize: '13px' }}
             >
@@ -423,7 +439,10 @@ export default function FeesPage({ onRefreshCounts }) {
 
             <select
               value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
+              onChange={(e) => {
+                setSelectedStatus(e.target.value);
+                setCurrentPage(1);
+              }}
               className="form-input"
               style={{ width: 'auto', fontSize: '13px' }}
             >
@@ -469,7 +488,7 @@ export default function FeesPage({ onRefreshCounts }) {
                   </td>
                 </tr>
               ) : (
-                filteredStudents.map((s) => {
+                paginatedStudents.map((s) => {
                   const total = Number(s.tuition_fee || 45000);
                   const paid = Number(s.fee_paid || 0);
                   const pending = Math.max(0, total - paid);
@@ -589,6 +608,14 @@ export default function FeesPage({ onRefreshCounts }) {
             </tbody>
           </table>
         </div>
+
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredStudents.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* RECORD PAYMENT MODAL */}

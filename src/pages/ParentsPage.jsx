@@ -32,8 +32,9 @@ import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import BulkImportModal from '../components/importer/BulkImportModal';
+import Pagination from '../components/common/Pagination';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { getParentTelegramDeepLink, TELEGRAM_BOT_USERNAME } from '../lib/telegramClient';
+import { getParentTelegramDeepLink, getWhatsAppShareUrl, TELEGRAM_BOT_USERNAME } from '../lib/telegramClient';
 
 export default function ParentsPage({ onRefreshCounts }) {
   const [parents, setParents] = useState([]);
@@ -42,7 +43,9 @@ export default function ParentsPage({ onRefreshCounts }) {
   const [error, setError] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
 
-  // Filters
+  // Pagination & Filters
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
   const [searchTerm, setSearchTerm] = useState('');
   const [channelFilter, setChannelFilter] = useState('All');
 
@@ -227,6 +230,20 @@ export default function ParentsPage({ onRefreshCounts }) {
       return matchSearch && matchChannel;
     });
   }, [parents, searchTerm, channelFilter]);
+
+  // Pagination calculation
+  const totalPages = Math.max(1, Math.ceil(filteredParents.length / pageSize));
+  const paginatedParents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredParents.slice(start, start + pageSize);
+  }, [filteredParents, currentPage, pageSize]);
+
+  // Adjust page if data length shrinks
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
 
   // Open Add Modal
   const handleOpenAdd = () => {
@@ -782,7 +799,10 @@ export default function ParentsPage({ onRefreshCounts }) {
           <input
             type="text"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
             placeholder="Search guardians by name, phone, email, or student ward..."
             className="form-input"
             style={{ paddingLeft: '32px' }}
@@ -792,7 +812,10 @@ export default function ParentsPage({ onRefreshCounts }) {
         <div style={{ width: '200px' }}>
           <select
             value={channelFilter}
-            onChange={(e) => setChannelFilter(e.target.value)}
+            onChange={(e) => {
+              setChannelFilter(e.target.value);
+              setCurrentPage(1);
+            }}
             className="form-select"
           >
             <option value="All">All Notification Channels</option>
@@ -853,7 +876,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                   </td>
                 </tr>
               ) : (
-                filteredParents.map((parent) => {
+                paginatedParents.map((parent) => {
                   const linkedWards = (parent.parent_students || [])
                     .map((ps) => ps.students)
                     .filter(Boolean);
@@ -1115,6 +1138,14 @@ export default function ParentsPage({ onRefreshCounts }) {
             </tbody>
           </table>
         </div>
+
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredParents.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* ADD / EDIT PARENT MODAL */}

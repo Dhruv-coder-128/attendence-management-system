@@ -24,6 +24,7 @@ import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import ReportCardModal from '../components/exams/ReportCardModal';
+import Pagination from '../components/common/Pagination';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   fetchExams,
@@ -43,7 +44,9 @@ export default function ExamsPage() {
   const [error, setError] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
 
-  // Filter state
+  // Pagination & Filter state
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCourseId, setSelectedCourseId] = useState('All');
   const [selectedBatchId, setSelectedBatchId] = useState('All');
@@ -349,6 +352,13 @@ export default function ExamsPage() {
     });
   }, [exams, searchTerm, selectedCourseId, selectedBatchId, selectedType]);
 
+  // 20-Row Pagination Calculation
+  const totalPages = Math.ceil(filteredExams.length / pageSize) || 1;
+  const paginatedExams = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredExams.slice(start, start + pageSize);
+  }, [filteredExams, currentPage, pageSize]);
+
   // Batches for the modal form filtered by selected course
   const formBatches = useMemo(() => {
     if (!examFormData.course_id) return batches;
@@ -438,7 +448,10 @@ export default function ExamsPage() {
           <input
             type="text"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
             placeholder="Search exam by title, subject, or syllabus..."
             className="form-input"
             style={{ paddingLeft: '32px' }}
@@ -448,7 +461,10 @@ export default function ExamsPage() {
         <div style={{ width: '180px' }}>
           <select
             value={selectedCourseId}
-            onChange={(e) => setSelectedCourseId(e.target.value)}
+            onChange={(e) => {
+              setSelectedCourseId(e.target.value);
+              setCurrentPage(1);
+            }}
             className="form-select"
           >
             <option value="All">All Courses</option>
@@ -463,7 +479,10 @@ export default function ExamsPage() {
         <div style={{ width: '180px' }}>
           <select
             value={selectedBatchId}
-            onChange={(e) => setSelectedBatchId(e.target.value)}
+            onChange={(e) => {
+              setSelectedBatchId(e.target.value);
+              setCurrentPage(1);
+            }}
             className="form-select"
           >
             <option value="All">All Batches</option>
@@ -478,7 +497,10 @@ export default function ExamsPage() {
         <div style={{ width: '150px' }}>
           <select
             value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value)}
+            onChange={(e) => {
+              setSelectedType(e.target.value);
+              setCurrentPage(1);
+            }}
             className="form-select"
           >
             <option value="All">All Types</option>
@@ -534,7 +556,7 @@ export default function ExamsPage() {
                   </td>
                 </tr>
               ) : (
-                filteredExams.map((exam) => (
+                paginatedExams.map((exam) => (
                   <tr key={exam.id}>
                     <td>
                       <div style={{ fontWeight: 600, color: 'var(--navy-950)' }}>
@@ -641,6 +663,14 @@ export default function ExamsPage() {
             </tbody>
           </table>
         </div>
+
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredExams.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* CREATE / EDIT EXAM MODAL */}

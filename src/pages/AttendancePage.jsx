@@ -26,6 +26,7 @@ import Badge from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import MonthlyAttendanceRegister from '../components/attendance/MonthlyAttendanceRegister';
+import Pagination from '../components/common/Pagination';
 import { exportDailyRegisterToExcel } from '../lib/attendanceExporter';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
@@ -48,6 +49,10 @@ export default function AttendancePage({ onRefreshCounts }) {
   const [batches, setBatches] = useState([]);
   const [selectedBatchId, setSelectedBatchId] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
 
   // Students in selected batch & Attendance records
   const [students, setStudents] = useState([]);
@@ -494,6 +499,13 @@ export default function AttendancePage({ onRefreshCounts }) {
   const markedCount = presentCount + absentCount + lateCount + excusedCount;
   const attendanceRate = totalCount > 0 ? Math.round(((presentCount + lateCount) / totalCount) * 100) : 0;
 
+  // 20-Row Pagination Calculation
+  const totalPages = Math.ceil(students.length / pageSize) || 1;
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return students.slice(start, start + pageSize);
+  }, [students, currentPage, pageSize]);
+
   return (
     <div>
       {/* Page Header */}
@@ -700,7 +712,10 @@ export default function AttendancePage({ onRefreshCounts }) {
           <input
             type="date"
             value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
+            onChange={(e) => {
+              setSelectedDate(e.target.value);
+              setCurrentPage(1);
+            }}
             className="form-input"
           />
         </div>
@@ -711,7 +726,10 @@ export default function AttendancePage({ onRefreshCounts }) {
           </label>
           <select
             value={selectedBatchId}
-            onChange={(e) => setSelectedBatchId(e.target.value)}
+            onChange={(e) => {
+              setSelectedBatchId(e.target.value);
+              setCurrentPage(1);
+            }}
             className="form-select"
           >
             {batches.length === 0 ? (
@@ -895,14 +913,15 @@ export default function AttendancePage({ onRefreshCounts }) {
                   </td>
                 </tr>
               ) : (
-                students.map((student, index) => {
+                paginatedStudents.map((student, index) => {
                   const record = attendanceMap[student.id];
                   const currentStatus = record?.status || 'Unmarked';
                   const isRowSaving = savingId === student.id;
+                  const rowNumber = (currentPage - 1) * pageSize + index + 1;
 
                   return (
                     <tr key={student.id}>
-                      <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{index + 1}</td>
+                      <td style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{rowNumber}</td>
                       <td>
                         <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', fontWeight: 600 }}>
                           {student.admission_no}
@@ -1113,6 +1132,14 @@ export default function AttendancePage({ onRefreshCounts }) {
             </tbody>
           </table>
         </div>
+
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={students.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* Telegram Parent Alert & Deep Link Verification Modal */}

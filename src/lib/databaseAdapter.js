@@ -18,10 +18,12 @@ const ALL_TABLES = [
   'batches',
   'students',
   'parents',
+  'parent_students',
   'parent_invitations',
   'attendance',
   'fee_records',
   'fee_installments',
+  'student_fees',
   'exams',
   'exam_marks',
   'academy_settings',
@@ -119,6 +121,9 @@ async function getAllFromStore(tableName) {
 async function putRecordsInStore(tableName, records) {
   const db = await openOfflineDB();
   return new Promise((resolve, reject) => {
+    if (!db.objectStoreNames.contains(tableName)) {
+      return resolve(Array.isArray(records) ? records : [records]);
+    }
     const tx = db.transaction(tableName, 'readwrite');
     const store = tx.objectStore(tableName);
     const list = Array.isArray(records) ? records : [records];

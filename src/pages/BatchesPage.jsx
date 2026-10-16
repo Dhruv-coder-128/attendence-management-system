@@ -22,6 +22,7 @@ import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import BulkImportModal from '../components/importer/BulkImportModal';
+import Pagination from '../components/common/Pagination';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { autoDistributeMisassignedStudents, repairBatchCourseLinkages } from '../lib/batchRepairService';
 
@@ -35,7 +36,9 @@ export default function BatchesPage({ onRefreshCounts }) {
   const [error, setError] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
 
-  // Filters
+  // Pagination & Filters
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCourseId, setSelectedCourseId] = useState('All');
 
@@ -140,6 +143,13 @@ export default function BatchesPage({ onRefreshCounts }) {
       return matchSearch && matchCourse;
     });
   }, [batches, searchTerm, selectedCourseId]);
+
+  // 20-Row Pagination Calculation
+  const totalPages = Math.ceil(filteredBatches.length / pageSize) || 1;
+  const paginatedBatches = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredBatches.slice(start, start + pageSize);
+  }, [filteredBatches, currentPage, pageSize]);
 
   // Open Create Modal
   const handleOpenCreate = () => {
@@ -396,7 +406,10 @@ export default function BatchesPage({ onRefreshCounts }) {
           <input
             type="text"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
             placeholder="Search batches by code, name, classroom, or course..."
             className="form-input"
             style={{ paddingLeft: '32px' }}
@@ -406,7 +419,10 @@ export default function BatchesPage({ onRefreshCounts }) {
         <div style={{ width: '220px' }}>
           <select
             value={selectedCourseId}
-            onChange={(e) => setSelectedCourseId(e.target.value)}
+            onChange={(e) => {
+              setSelectedCourseId(e.target.value);
+              setCurrentPage(1);
+            }}
             className="form-select"
           >
             <option value="All">All Academic Courses</option>
@@ -467,7 +483,7 @@ export default function BatchesPage({ onRefreshCounts }) {
                   </td>
                 </tr>
               ) : (
-                filteredBatches.map((batch) => {
+                paginatedBatches.map((batch) => {
                   const enrolledCount = batch.students?.[0]?.count || 0;
                   const ratio = Math.round((enrolledCount / batch.max_capacity) * 100);
 
@@ -570,6 +586,14 @@ export default function BatchesPage({ onRefreshCounts }) {
             </tbody>
           </table>
         </div>
+
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredBatches.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* CREATE / EDIT BATCH MODAL */}

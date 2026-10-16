@@ -334,8 +334,35 @@ async function getAuthHeaders() {
 }
 
 /**
+ * Direct client-side message sender to Telegram Bot API
+ */
+export async function sendDirectTelegramMessage(botToken, chatId, text, parseMode = 'Markdown') {
+  if (!botToken || !chatId) {
+    return { ok: false, error: 'Bot token and Chat ID are required.' };
+  }
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: parseMode,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      return { ok: true, messageId: data.result?.message_id };
+    }
+    return { ok: false, error: data.description || `HTTP ${res.status}` };
+  } catch (err) {
+    return { ok: false, error: err.message || 'Network error reaching Telegram API' };
+  }
+}
+
+/**
  * Dispatches one-click attendance notifications for an entire batch.
- * The serverless backend authorizes student-parent relationships and resolves chat IDs.
+ * Supports both cloud serverless backend and direct client-side desktop execution.
  */
 export async function sendBatchAttendanceNotifications({
   batchId,
@@ -348,6 +375,7 @@ export async function sendBatchAttendanceNotifications({
     return { success: false, error: 'Cohort / Batch and Date are required.' };
   }
 
+  // 1. Try serverless endpoint first if running in web deployment
   try {
     const headers = await getAuthHeaders();
     const response = await fetch('/api/telegram-notify', {
@@ -362,32 +390,176 @@ export async function sendBatchAttendanceNotifications({
       }),
     });
 
-    const result = await response.json();
-    if (response.ok && result.ok) {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const result = await response.json();
+      if (response.ok && result.ok) {
+        return {
+          success: true,
+          summary: result.summary,
+          details: result.details,
+          batchName: result.batchName,
+          date: result.date,
+        };
+      }
       return {
-        success: true,
+        success: false,
+        error: result.error || `Server responded with HTTP ${response.status}`,
         summary: result.summary,
-        details: result.details,
-        batchName: result.batchName,
-        date: result.date,
+      };
+    }
+  } catch (err) {
+    console.warn('Serverless notification endpoint unavailable, using client-side dispatcher:', err);
+  }
+
+  // 2. Client-side Desktop / Offline Resilient Dispatcher
+  try {
+    const schoolSettings = getSchoolTelegramSettings();
+    const botToken = schoolSettings.botToken?.trim();
+
+    // Fetch batch details
+    const { data: batchData } = await supabase
+      .from('batches')
+      .select('id, name, code')
+      .eq('id', batchId)
+      .maybeSingle();
+
+    const batchName = batchData?.name || 'Academic Cohort';
+
+    // Fetch all attendance records for this batch and date
+    const { data: attendanceRecords } = await supabase
+      .from('attendance')
+      .select('id, student_id, status, session_name, remarks, telegram_notified')
+      .eq('batch_id', batchId)
+      .eq('date', date);
+
+    const records = attendanceRecords || [];
+    if (records.length === 0) {
+      return {
+        success: false,
+        error: 'No attendance records recorded for this batch on the selected date.',
       };
     }
 
+    // Fetch students in this batch with joined parents
+    const { data: studentsData } = await supabase
+      .from('students')
+      .select(`
+        id,
+        full_name,
+        roll_no,
+        admission_no,
+        parent_students:parent_students (
+          id,
+          alert_preference,
+          parents:parents (
+            id,
+            full_name,
+            phone,
+            telegram_chat_id,
+            is_verified
+          )
+        )
+      `)
+      .eq('batch_id', batchId);
+
+    const studentMap = {};
+    (studentsData || []).forEach((s) => {
+      studentMap[s.id] = s;
+    });
+
+    let sentCount = 0;
+    let failedCount = 0;
+    let pendingLinkingCount = 0;
+    const details = [];
+
+    for (const record of records) {
+      const student = studentMap[record.student_id];
+      const parentLink = student?.parent_students?.[0];
+      const parent = parentLink?.parents;
+      const isLinked = Boolean(parent?.is_verified && parent?.telegram_chat_id);
+
+      if (!isLinked) {
+        pendingLinkingCount++;
+        details.push({
+          studentName: student?.full_name || 'Student',
+          rollNo: student?.roll_no || 'N/A',
+          parentName: parent?.full_name || 'Unlinked Guardian',
+          status: 'pending_linking',
+          reason: 'Guardian Telegram account not yet linked or verified',
+        });
+        continue;
+      }
+
+      if (botToken) {
+        const msg = `📚 *Daily Attendance Alert*\n\nStudent: *${student.full_name}*\nRoll No: *${student.roll_no || 'N/A'}*\nCohort: *${batchName}*\nDate: *${date}*\nStatus: *${(record.status || 'Present').toUpperCase()}*\n\n_School Management Notification_`;
+        const sendRes = await sendDirectTelegramMessage(botToken, parent.telegram_chat_id, msg);
+
+        if (sendRes.ok) {
+          sentCount++;
+          // Update attendance record
+          await supabase
+            .from('attendance')
+            .update({
+              telegram_notified: true,
+              telegram_notified_at: new Date().toISOString(),
+            })
+            .eq('id', record.id);
+
+          details.push({
+            studentName: student.full_name,
+            rollNo: student.roll_no || 'N/A',
+            parentName: parent.full_name,
+            status: 'sent',
+            chatId: parent.telegram_chat_id,
+          });
+        } else {
+          failedCount++;
+          details.push({
+            studentName: student.full_name,
+            rollNo: student.roll_no || 'N/A',
+            parentName: parent.full_name,
+            status: 'failed',
+            reason: sendRes.error,
+          });
+        }
+      } else {
+        // No custom bot token: record local notification verification
+        details.push({
+          studentName: student.full_name,
+          rollNo: student.roll_no || 'N/A',
+          parentName: parent.full_name,
+          status: 'token_required',
+          reason: 'Telegram Bot Token not configured in Settings',
+        });
+      }
+    }
+
     return {
-      success: false,
-      error: result.error || `Server responded with HTTP ${response.status}`,
-      summary: result.summary,
+      success: true,
+      summary: {
+        total: records.length,
+        sent: sentCount,
+        failed: failedCount,
+        alreadyNotified: 0,
+        pendingLinking: pendingLinkingCount,
+        botConfigured: Boolean(botToken),
+      },
+      details,
+      batchName,
+      date,
     };
-  } catch (err) {
+  } catch (clientErr) {
+    console.error('Client-side batch attendance dispatcher error:', clientErr);
     return {
       success: false,
-      error: err.message || 'Network error communicating with notification dispatcher.',
+      error: 'Error processing batch dispatch: ' + clientErr.message,
     };
   }
 }
 
 /**
- * Dispatches a single student attendance notice via server API
+ * Dispatches a single student attendance notice via server API or direct bot
  */
 export async function sendVerifiedAttendanceNotice({
   student,
@@ -400,6 +572,7 @@ export async function sendVerifiedAttendanceNotice({
     return { success: false, error: 'Student details required.' };
   }
 
+  // 1. Try serverless endpoint first
   try {
     const headers = await getAuthHeaders();
     const response = await fetch('/api/telegram-notify', {
@@ -413,26 +586,63 @@ export async function sendVerifiedAttendanceNotice({
       }),
     });
 
-    const result = await response.json();
-    if (response.ok && result.ok) {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const result = await response.json();
+      if (response.ok && result.ok) {
+        return {
+          success: true,
+          messageId: result.messageId,
+          parentName: result.parentName,
+          chatId: result.chatId,
+        };
+      }
       return {
-        success: true,
-        messageId: result.messageId,
-        parentName: result.parentName,
-        chatId: result.chatId,
+        success: false,
+        error: result.error || `HTTP ${response.status} error from notification API`,
       };
     }
-
-    return {
-      success: false,
-      error: result.error || `HTTP ${response.status} error from notification API`,
-    };
   } catch (err) {
+    console.warn('Serverless notice endpoint unavailable, checking client bot dispatch:', err);
+  }
+
+  // 2. Client-side direct bot dispatch
+  const schoolSettings = getSchoolTelegramSettings();
+  const botToken = schoolSettings.botToken?.trim();
+  const targetParent = parent || student.parent_students?.[0]?.parents;
+
+  if (!targetParent || !targetParent.telegram_chat_id || !targetParent.is_verified) {
     return {
       success: false,
-      error: err.message || 'Notification service connection failure.',
+      requiresLinking: true,
+      error: 'Guardian Telegram account is not yet linked or verified.',
+      deepLink: getParentTelegramDeepLink(student.id),
     };
   }
+
+  if (!botToken) {
+    return {
+      success: false,
+      error: 'Please configure your School Telegram Bot Token in Settings to send live alerts.',
+    };
+  }
+
+  const msg = `📚 *Daily Attendance Notification*\n\nStudent: *${student.full_name}*\nRoll No: *${student.roll_no || 'N/A'}*\nCohort: *${batchName || 'Regular Session'}*\nDate: *${date}*\nStatus: *${(status || 'Present').toUpperCase()}*\n\n_School Management Notification_`;
+  const sendRes = await sendDirectTelegramMessage(botToken, targetParent.telegram_chat_id, msg);
+
+  if (sendRes.ok) {
+    return {
+      success: true,
+      messageId: sendRes.messageId,
+      parentName: targetParent.full_name,
+      chatId: targetParent.telegram_chat_id,
+    };
+  }
+
+  return {
+    success: false,
+    error: sendRes.error || 'Failed to dispatch Telegram message via Telegram Bot API.',
+  };
 }
 
 /**
@@ -553,17 +763,31 @@ export async function setupTelegramWebhook(webhookUrl, action = 'set') {
 
 /**
  * Dispatches an official tuition fee reminder notice to verified guardians
- * via the serverless Telegram Bot API, strictly respecting alert preferences.
+ * Supports both serverless API and resilient client-side Telegram Bot dispatch.
  */
-export async function sendVerifiedFeeReminder({
-  student,
-  feeRecord,
-  targetParentId = null,
-}) {
-  if (!student || !student.id) {
-    return { success: false, error: 'Valid student details are required.' };
+export async function sendVerifiedFeeReminder(studentOrParams, feeRecordArg, targetParentIdArg = null) {
+  let studentObj = null;
+  let studentId = null;
+  let feeRecord = feeRecordArg;
+  let targetParentId = targetParentIdArg;
+
+  if (studentOrParams && typeof studentOrParams === 'object' && studentOrParams.student) {
+    studentObj = studentOrParams.student;
+    studentId = studentOrParams.student.id;
+    feeRecord = studentOrParams.feeRecord || feeRecordArg;
+    targetParentId = studentOrParams.targetParentId || targetParentIdArg;
+  } else if (studentOrParams && typeof studentOrParams === 'object' && studentOrParams.id) {
+    studentObj = studentOrParams;
+    studentId = studentOrParams.id;
+  } else if (typeof studentOrParams === 'string') {
+    studentId = studentOrParams;
   }
 
+  if (!studentId) {
+    return { success: false, ok: false, error: 'Valid student ID or student details are required.' };
+  }
+
+  // 1. Try serverless endpoint first if running in web deployment
   try {
     const headers = await getAuthHeaders();
     const response = await fetch('/api/telegram-notify', {
@@ -571,43 +795,124 @@ export async function sendVerifiedFeeReminder({
       headers,
       body: JSON.stringify({
         action: 'fee_reminder',
-        studentId: student.id,
+        studentId,
         feeRecord,
         targetParentId,
       }),
     });
 
-    const result = await response.json();
-    if (response.ok && result.ok) {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const result = await response.json();
+      if (response.ok && result.ok) {
+        return {
+          success: true,
+          ok: true,
+          message: result.message || 'Tuition fee reminder dispatched successfully!',
+          recipientsCount: result.recipientsCount || 1,
+          details: result.details || [],
+        };
+      }
+      return {
+        success: false,
+        ok: false,
+        error: result.error || `Server responded with HTTP ${response.status}`,
+      };
+    }
+  } catch (err) {
+    console.warn('Serverless fee reminder endpoint unavailable, using direct client dispatch:', err);
+  }
+
+  // 2. Client-side Direct Bot Fallback
+  try {
+    const schoolSettings = getSchoolTelegramSettings();
+    const botToken = schoolSettings.botToken?.trim();
+
+    let studentData = studentObj;
+    if (!studentData || !studentData.full_name) {
+      const { data: fetchedStudent } = await supabase
+        .from('students')
+        .select(`
+          id, full_name, roll_no, admission_no, tuition_fee, fee_paid, fee_status, fee_due_date,
+          parent_students:parent_students(
+            id,
+            alert_preference,
+            parents:parents(id, full_name, phone, telegram_chat_id, is_verified)
+          )
+        `)
+        .eq('id', studentId)
+        .maybeSingle();
+      studentData = fetchedStudent;
+    }
+
+    if (!studentData) {
+      return { success: false, ok: false, error: 'Student record could not be found.' };
+    }
+
+    const parentList = (studentData.parent_students || [])
+      .map((ps) => ps.parents)
+      .filter((p) => Boolean(p && p.telegram_chat_id && p.is_verified));
+
+    if (parentList.length === 0) {
+      return {
+        success: false,
+        ok: false,
+        error: `Guardian Telegram account is not yet linked or verified for ${studentData.full_name}.`,
+      };
+    }
+
+    if (!botToken) {
+      return {
+        success: false,
+        ok: false,
+        error: 'Please configure your School Telegram Bot Token in Settings to send live fee reminders.',
+      };
+    }
+
+    const pendingAmt = Number(feeRecord?.pending_amount ?? ((studentData.tuition_fee || 45000) - (studentData.fee_paid || 0)));
+    const totalAmt = Number(feeRecord?.total_amount ?? studentData.tuition_fee ?? 45000);
+    const dueDate = feeRecord?.next_due_date || studentData.fee_due_date || 'Promptly';
+
+    const msg = `💳 *Tuition Fee Reminder Notice*\n\nStudent: *${studentData.full_name}*\nAdmission No: *${studentData.admission_no || 'N/A'}*\nOutstanding Balance: *₹${pendingAmt.toLocaleString('en-IN')}* (Total: ₹${totalAmt.toLocaleString('en-IN')})\nPayment Due Date: *${dueDate}*\n\n_Please clear outstanding dues at the administrative accounts office._\n_School Management System_`;
+
+    let sent = 0;
+    for (const p of parentList) {
+      const res = await sendDirectTelegramMessage(botToken, p.telegram_chat_id, msg);
+      if (res.ok) sent++;
+    }
+
+    if (sent > 0) {
       return {
         success: true,
-        message: result.message || 'Tuition fee reminder dispatched successfully!',
-        recipientsCount: result.recipientsCount || 1,
-        details: result.details || [],
+        ok: true,
+        message: `Tuition fee reminder sent to ${sent} verified guardian(s) of ${studentData.full_name}!`,
+        recipientsCount: sent,
       };
     }
 
     return {
       success: false,
-      error: result.error || `Server responded with HTTP ${response.status}`,
+      ok: false,
+      error: 'Failed to deliver message via Telegram Bot API. Please check Bot Token validity.',
     };
-  } catch (err) {
+  } catch (clientErr) {
     return {
       success: false,
-      error: err.message || 'Network error communicating with fee reminder gateway.',
+      ok: false,
+      error: 'Error dispatching fee reminder: ' + clientErr.message,
     };
   }
 }
 
 /**
- * Dispatches verified examination results to linked guardians via the serverless Telegram Bot API,
- * strictly respecting each guardian's notification preference (all vs emergency_only).
+ * Dispatches verified examination results to linked guardians via serverless API or direct bot
  */
 export async function sendExamResultsTelegram({ examId, studentId = null, examData = null, marksData = null }) {
   if (!examId && !examData) {
-    return { success: false, error: 'Valid examId or examData is required.' };
+    return { success: false, ok: false, error: 'Valid examId or examData is required.' };
   }
 
+  // 1. Try serverless endpoint first
   try {
     const headers = await getAuthHeaders();
     const response = await fetch('/api/telegram-notify', {
@@ -622,26 +927,84 @@ export async function sendExamResultsTelegram({ examId, studentId = null, examDa
       }),
     });
 
-    const result = await response.json();
-    if (response.ok && result.ok) {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const result = await response.json();
+      if (response.ok && result.ok) {
+        return {
+          success: true,
+          ok: true,
+          message: result.message || 'Exam results dispatched to guardians successfully!',
+          sentCount: result.sentCount || 0,
+          failedCount: result.failedCount || 0,
+          skippedCount: result.skippedCount || 0,
+          details: result.details || [],
+        };
+      }
+
       return {
-        success: true,
-        message: result.message || 'Exam results dispatched to guardians successfully!',
-        sentCount: result.sentCount || 0,
-        failedCount: result.failedCount || 0,
-        skippedCount: result.skippedCount || 0,
-        details: result.details || [],
+        success: false,
+        ok: false,
+        error: result.error || `Server responded with HTTP ${response.status}`,
+      };
+    }
+  } catch (err) {
+    console.warn('Serverless exam alert endpoint unavailable, checking direct client dispatch:', err);
+  }
+
+  // 2. Client-side Direct Bot Fallback
+  try {
+    const schoolSettings = getSchoolTelegramSettings();
+    const botToken = schoolSettings.botToken?.trim();
+
+    if (!botToken) {
+      return {
+        success: false,
+        ok: false,
+        error: 'Please configure your School Telegram Bot Token in Settings to send live exam alerts.',
       };
     }
 
+    const marks = marksData || [];
+    let sentCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
+
+    for (const mark of marks) {
+      const student = mark.students;
+      const parent = student?.parent_students?.[0]?.parents;
+
+      if (!parent || !parent.telegram_chat_id || !parent.is_verified) {
+        skippedCount++;
+        continue;
+      }
+
+      const scoreText = mark.is_absent ? 'ABSENT' : `${mark.marks_obtained} / ${examData?.total_marks || 100}`;
+      const statusText = mark.is_absent ? 'Absent' : (Number(mark.marks_obtained) >= Number(examData?.passing_marks || 35) ? 'PASSED ✅' : 'FAILED ❌');
+
+      const msg = `🏆 *Examination Result Alert*\n\nStudent: *${student?.full_name || 'Student'}*\nExam: *${examData?.name || 'Academic Assessment'}*\nSubject: *${examData?.subject || 'All Subjects'}*\nScore: *${scoreText}*\nResult: *${statusText}*\n\n_School Management System_`;
+
+      const sendRes = await sendDirectTelegramMessage(botToken, parent.telegram_chat_id, msg);
+      if (sendRes.ok) {
+        sentCount++;
+      } else {
+        failedCount++;
+      }
+    }
+
     return {
-      success: false,
-      error: result.error || `Server responded with HTTP ${response.status}`,
+      success: true,
+      ok: true,
+      message: `Exam notices dispatched: ${sentCount} sent, ${failedCount} failed, ${skippedCount} unlinked guardians.`,
+      sentCount,
+      failedCount,
+      skippedCount,
     };
-  } catch (err) {
+  } catch (clientErr) {
     return {
       success: false,
-      error: err.message || 'Network error communicating with exam alert gateway.',
+      ok: false,
+      error: 'Error dispatching exam results: ' + clientErr.message,
     };
   }
 }

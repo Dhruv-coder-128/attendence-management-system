@@ -888,267 +888,96 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
             </div>
           </div>
 
-          <div className="erp-card" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Bot size={18} color="var(--gold-dark)" />
+          <div className="erp-card" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
+              <div
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  backgroundColor: 'var(--navy-900)',
+                  color: 'var(--gold-primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Bot size={20} />
+              </div>
+              <div>
                 <h2
                   style={{
                     fontFamily: 'var(--font-heading)',
-                    fontSize: '15px',
+                    fontSize: '16px',
                     fontWeight: 700,
                     color: 'var(--navy-950)',
+                    margin: 0,
                   }}
                 >
-                  Telegram Bot API Gateway &amp; Webhook
+                  Telegram Bot Settings
                 </h2>
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                icon={RefreshCw}
-                onClick={fetchTelegramStatus}
-                disabled={telegramStatus.loading}
-              >
-                {telegramStatus.loading ? 'Checking...' : 'Check Status'}
-              </Button>
-            </div>
-
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
-              Multi-Bot Gateway: Configure your school's individual Telegram bot token from @BotFather
-            </p>
-
-            {/* Per-School Custom Telegram Bot Form */}
-            <div
-              style={{
-                backgroundColor: 'var(--bg-subtle)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '8px',
-                padding: '14px',
-                marginBottom: '16px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--navy-900)' }}>
-                  Your School's Dedicated Bot Setup:
-                </span>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    backgroundColor: customBotToken ? '#f0fdf4' : 'var(--gold-subtle-bg)',
-                    color: customBotToken ? '#166534' : 'var(--gold-dark)',
-                    border: `1px solid ${customBotToken ? '#bbf7d0' : 'var(--gold-border)'}`,
-                  }}
-                >
-                  {customBotToken ? 'Custom Bot Configured' : 'Default Shared Bot'}
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px' }}>
-                <Input
-                  label="School Telegram Bot Username"
-                  value={customBotUsername}
-                  onChange={(e) => setCustomBotUsername(e.target.value)}
-                  placeholder="e.g. NobleAcademyBot (without @)"
-                  helperText="Parents will open https://t.me/<username> to connect"
-                />
-
-                <Input
-                  label="Telegram Bot API Token (from @BotFather)"
-                  type="password"
-                  value={customBotToken}
-                  onChange={(e) => setCustomBotToken(e.target.value)}
-                  placeholder="e.g. 7123456789:AAHk3xyz-ABC_123456789"
-                  helperText="Issued by @BotFather when creating your school's bot"
-                />
-              </div>
-
-              {/* Bot Test Notice */}
-              {botNotice && (
-                <div
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    backgroundColor: botNotice.type === 'success' ? 'var(--status-present-bg)' : 'var(--status-absent-bg)',
-                    border: `1px solid ${botNotice.type === 'success' ? 'var(--status-present-border)' : 'var(--status-absent-border)'}`,
-                    color: botNotice.type === 'success' ? 'var(--status-present)' : 'var(--status-absent)',
-                    fontSize: '11.5px',
-                    fontWeight: 600,
-                    marginBottom: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  {botNotice.type === 'success' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
-                  <span>{botNotice.message}</span>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginBottom: '12px' }}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  icon={RefreshCw}
-                  onClick={handleTestCustomBot}
-                  disabled={testingBot || !customBotToken}
-                >
-                  {testingBot ? 'Testing...' : 'Test Bot Connection'}
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={Save}
-                  onClick={handleSaveCustomBot}
-                >
-                  Save School Bot
-                </Button>
-              </div>
-
-              {/* 3-Step Setup Guide */}
-              <div
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: '6px',
-                  backgroundColor: '#ffffff',
-                  border: '1px solid var(--border-subtle)',
-                  fontSize: '11px',
-                  color: 'var(--text-secondary)',
-                  lineHeight: 1.5,
-                }}
-              >
-                <strong style={{ color: 'var(--navy-950)', display: 'block', marginBottom: '4px' }}>
-                  💡 How to create your school bot in 60 seconds:
-                </strong>
-                1. Open Telegram and search <strong>@BotFather</strong> &bull; Click Start.<br />
-                2. Send <code>/newbot</code>, give it a name (e.g. <em>Noble High School Attendance</em>), and choose a unique username ending in <code>bot</code>.<br />
-                3. Copy the <strong>HTTP API Token</strong> provided by BotFather, paste it above, and click <strong>Test Bot Connection</strong>.
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                  Enter your school Telegram bot details to dispatch automated parent attendance alerts.
+                </p>
               </div>
             </div>
 
-            {/* Webhook Operation Notice */}
-            {webhookNotice && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '18px' }}>
+              <Input
+                label="Telegram Bot Username"
+                value={customBotUsername}
+                onChange={(e) => setCustomBotUsername(e.target.value)}
+                placeholder="e.g. SMSAttendanceBot"
+              />
+
+              <Input
+                label="Telegram Bot API Token"
+                type="password"
+                value={customBotToken}
+                onChange={(e) => setCustomBotToken(e.target.value)}
+                placeholder="e.g. 7123456789:AAHk3xyz-ABC_123456789"
+              />
+            </div>
+
+            {botNotice && (
               <div
                 style={{
-                  marginBottom: '14px',
                   padding: '10px 14px',
-                  backgroundColor: webhookNotice.type === 'success' ? 'var(--status-present-bg)' : 'var(--status-absent-bg)',
-                  border: `1px solid ${webhookNotice.type === 'success' ? 'var(--status-present-border)' : 'var(--status-absent-border)'}`,
-                  borderRadius: '6px',
-                  color: webhookNotice.type === 'success' ? 'var(--status-present)' : 'var(--status-absent)',
+                  borderRadius: '8px',
+                  backgroundColor: botNotice.type === 'success' ? 'var(--status-present-bg)' : 'var(--status-absent-bg)',
+                  border: `1px solid ${botNotice.type === 'success' ? 'var(--status-present-border)' : 'var(--status-absent-border)'}`,
+                  color: botNotice.type === 'success' ? 'var(--status-present)' : 'var(--status-absent)',
                   fontSize: '12px',
+                  fontWeight: 600,
+                  marginBottom: '14px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
                 }}
               >
-                {webhookNotice.type === 'success' ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
-                <span>{webhookNotice.message}</span>
+                {botNotice.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                <span>{botNotice.message}</span>
               </div>
             )}
 
-            {/* Live Gateway Diagnostics Banner */}
-            <div
-              style={{
-                padding: '12px 14px',
-                borderRadius: '6px',
-                backgroundColor: telegramStatus.data?.ok
-                  ? 'var(--status-present-bg)'
-                  : telegramStatus.checked
-                  ? 'var(--status-absent-bg)'
-                  : '#f8fafc',
-                border: `1px solid ${
-                  telegramStatus.data?.ok
-                    ? 'var(--status-present-border)'
-                    : telegramStatus.checked
-                    ? 'var(--status-absent-border)'
-                    : 'var(--border-subtle)'
-                }`,
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '10px',
-                marginBottom: '14px',
-              }}
-            >
-              {telegramStatus.data?.ok ? (
-                <CheckCircle2 size={18} color="var(--status-present)" style={{ marginTop: '2px', flexShrink: 0 }} />
-              ) : (
-                <AlertCircle size={18} color="var(--status-absent)" style={{ marginTop: '2px', flexShrink: 0 }} />
-              )}
-              <div style={{ flex: 1, minWidth: 0, fontSize: '12px' }}>
-                <div style={{ fontWeight: 600, color: 'var(--navy-950)' }}>
-                  {telegramStatus.data?.ok
-                    ? `Bot Active: @${telegramStatus.data.bot?.username || TELEGRAM_BOT_USERNAME} (${telegramStatus.data.bot?.first_name || 'ERP Bot'})`
-                    : telegramStatus.error || 'Telegram Bot Token not configured on server'}
-                </div>
-                {telegramStatus.data?.webhook && (
-                  <div style={{ color: 'var(--text-secondary)', marginTop: '4px' }}>
-                    <span>Registered Webhook: </span>
-                    <code>{telegramStatus.data.webhook.url || 'None (Polling / Inactive)'}</code>
-                    {telegramStatus.data.webhook.pending_update_count > 0 && (
-                      <span style={{ marginLeft: '8px', color: 'var(--gold-dark)', fontWeight: 600 }}>
-                        ({telegramStatus.data.webhook.pending_update_count} pending updates)
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Webhook Registration Tool */}
-            <div
-              style={{
-                padding: '14px',
-                backgroundColor: '#ffffff',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '6px',
-                marginBottom: '14px',
-              }}
-            >
-              <label className="form-label" style={{ marginBottom: '6px' }}>
-                Production Webhook URL (HTTPS Required)
-              </label>
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                Telegram requires an active HTTPS URL to forward <code>/start tk_...</code> linking events. Enter your deployed Vercel domain URL below.
-              </p>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <input
-                  type="url"
-                  placeholder="https://your-domain.vercel.app/api/telegram-webhook"
-                  value={webhookUrlInput}
-                  onChange={(e) => setWebhookUrlInput(e.target.value)}
-                  className="form-input"
-                  style={{ flex: '1 1 240px', fontFamily: 'var(--font-mono)', fontSize: '11px' }}
-                />
-                <Button
-                  variant="primary"
-                  size="sm"
-                  icon={Link}
-                  onClick={() => handleSetWebhook('set')}
-                  disabled={isConfiguringWebhook}
-                >
-                  {isConfiguringWebhook ? 'Registering...' : 'Register Webhook'}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  icon={Trash2}
-                  onClick={() => handleSetWebhook('delete')}
-                  disabled={isConfiguringWebhook}
-                  title="Remove webhook to switch to polling or reset"
-                >
-                  Clear Webhook
-                </Button>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--text-muted)' }}>
-              <Shield size={13} color="var(--status-present)" />
-              <span>Zero client exposure: <code>TELEGRAM_BOT_TOKEN</code> resides securely on the server</span>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={RefreshCw}
+                onClick={handleTestCustomBot}
+                disabled={testingBot || !customBotToken}
+              >
+                {testingBot ? 'Testing...' : 'Test Bot Connection'}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={Save}
+                onClick={handleSaveCustomBot}
+              >
+                Save Settings
+              </Button>
             </div>
           </div>
         </div>

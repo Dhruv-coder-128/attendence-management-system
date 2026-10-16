@@ -324,25 +324,30 @@ export async function recordFeePayment({
   };
 
   if (supabase && isSupabaseConfigured) {
+    // 1. ALWAYS update the primary students table directly so UI, metrics, and exports immediately reflect the payment!
+    try {
+      await supabase
+        .from('students')
+        .update({
+          fee_paid: newPaidAmount,
+          fee_status: computed.status,
+          fee_due_date: nextDueDate,
+          tuition_fee: totalAmount,
+        })
+        .eq('id', studentId);
+    } catch (stErr) {
+      console.warn('Direct student table fee update warning:', stErr);
+    }
+
+    // 2. Also record in student_fees for historical tracking
     try {
       const { data, error } = await supabase
         .from('student_fees')
         .upsert(payload, { onConflict: 'student_id,academic_year' })
         .select()
-        .single();
+        .maybeSingle();
 
       if (!error && data) {
-        // Also update students table convenience columns
-        await supabase
-          .from('students')
-          .update({
-            fee_paid: newPaidAmount,
-            fee_status: computed.status,
-            fee_due_date: nextDueDate,
-            tuition_fee: totalAmount,
-          })
-          .eq('id', studentId);
-
         return {
           success: true,
           feeRecord: { ...data, installment_schedule: schedule },
@@ -350,7 +355,7 @@ export async function recordFeePayment({
         };
       }
     } catch (dbErr) {
-      console.warn('Direct student_fees upsert issue, updating in-memory:', dbErr);
+      console.warn('Direct student_fees upsert issue:', dbErr);
     }
   }
 
