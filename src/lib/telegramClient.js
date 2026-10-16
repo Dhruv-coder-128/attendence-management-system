@@ -11,7 +11,7 @@ import { supabase } from './supabase.js';
  * - Honest tracking of WhatsApp manual share mode vs automated gateway.
  */
 
-export const TELEGRAM_BOT_USERNAME = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TELEGRAM_BOT_USERNAME) || 'RuparelAttendanceBot';
+export const TELEGRAM_BOT_USERNAME = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TELEGRAM_BOT_USERNAME) || 'SMSAttendanceBot';
 
 /**
  * Helper to generate a random hex string for linking tokens
@@ -48,7 +48,7 @@ export function formatStartParam(tokenOrId) {
 
 /**
  * Generates an official Telegram universal HTTPS deep link for parent registration
- * (e.g. https://t.me/RuparelAttendanceBot?start=tk_...)
+ * (e.g. https://t.me/SMSAttendanceBot?start=tk_...)
  */
 export function getParentTelegramDeepLink(tokenOrId, botUsername = TELEGRAM_BOT_USERNAME) {
   if (!tokenOrId) return '';
