@@ -24,6 +24,7 @@ import {
   ChevronUp,
   Zap,
   Key,
+  RotateCcw,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -34,7 +35,13 @@ import Select from '../components/common/Select';
 import BulkImportModal from '../components/importer/BulkImportModal';
 import Pagination from '../components/common/Pagination';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { getParentTelegramDeepLink, getWhatsAppShareUrl, TELEGRAM_BOT_USERNAME } from '../lib/telegramClient';
+import {
+  getParentTelegramDeepLink,
+  getParentTelegramAppUri,
+  getWhatsAppShareUrl,
+  TELEGRAM_BOT_USERNAME,
+  syncTelegramBotUpdates,
+} from '../lib/telegramClient';
 import { runAutoRepairIfNecessary } from '../lib/parentRepairService';
 
 export default function ParentsPage({ onRefreshCounts }) {
@@ -208,8 +215,37 @@ export default function ParentsPage({ onRefreshCounts }) {
     }
   };
 
+  const [isSyncingTelegram, setIsSyncingTelegram] = useState(false);
+
+  const handleSyncTelegram = async (isSilent = false) => {
+    if (!isSilent) setIsSyncingTelegram(true);
+    try {
+      const res = await syncTelegramBotUpdates();
+      if (res.success && res.count > 0) {
+        showToast(`🎉 Linked! ${res.count} guardian(s) verified via Telegram: ${res.linkedParents.join(', ')}`);
+        await fetchData(false);
+      } else if (!isSilent) {
+        if (!res.success && res.error) {
+          showToast(`ℹ️ Telegram: ${res.error}`);
+        } else {
+          showToast('✓ Telegram check complete: No new confirmations.');
+        }
+      }
+    } catch (err) {
+      if (!isSilent) showToast(`Sync Error: ${err.message}`);
+    } finally {
+      if (!isSilent) setIsSyncingTelegram(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+
+    // Auto-sync incoming Telegram confirmations every 15 seconds
+    const syncTimer = setInterval(() => {
+      handleSyncTelegram(true);
+    }, 15000);
+    return () => clearInterval(syncTimer);
   }, []);
 
   // Filtered Parents
@@ -629,6 +665,17 @@ export default function ParentsPage({ onRefreshCounts }) {
             }}
           >
             Send Parent Invitations
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            icon={RotateCcw}
+            onClick={() => handleSyncTelegram(false)}
+            disabled={isSyncingTelegram}
+            title="Poll Telegram Bot for parent /start confirmations and link accounts automatically"
+          >
+            {isSyncingTelegram ? 'Syncing...' : 'Sync Telegram'}
           </Button>
 
           <Button
@@ -1060,6 +1107,30 @@ export default function ParentsPage({ onRefreshCounts }) {
                                 >
                                   <Clock size={11} /> Invite Active (7d)
                                 </span>
+                                {waUrl && (
+                                  <a
+                                    href={waUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="btn btn-outline"
+                                    style={{
+                                      padding: '2px 7px',
+                                      fontSize: '10px',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      backgroundColor: '#25D366',
+                                      color: '#ffffff',
+                                      borderColor: '#22c55e',
+                                      textDecoration: 'none',
+                                      fontWeight: 600,
+                                      borderRadius: '4px',
+                                    }}
+                                    title="Send Deep Link directly via WhatsApp"
+                                  >
+                                    <MessageCircle size={10} /> WhatsApp
+                                  </a>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -1072,7 +1143,6 @@ export default function ParentsPage({ onRefreshCounts }) {
                                 >
                                   <Copy size={10} /> Copy
                                 </button>
-
                               </div>
                             );
                           }
@@ -1478,6 +1548,28 @@ export default function ParentsPage({ onRefreshCounts }) {
                     >
                       Copy Link
                     </Button>
+                    {waUrl && (
+                      <a
+                        href={waUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn btn-sm"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          backgroundColor: '#25D366',
+                          color: '#ffffff',
+                          textDecoration: 'none',
+                          fontWeight: 600,
+                          borderRadius: '4px',
+                          padding: '5px 10px',
+                        }}
+                        title="Open WhatsApp chat with guardian to send invitation link"
+                      >
+                        <MessageCircle size={13} /> Send on WhatsApp
+                      </a>
+                    )}
                     <a
                       href={appUri}
                       className="btn btn-sm btn-primary"
@@ -1763,17 +1855,35 @@ export default function ParentsPage({ onRefreshCounts }) {
               </div>
 
               {/* Action buttons inside result */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
                 <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)' }}>
-                  Generated Invitation Links &amp; Actions
+                  Generated Invitation Links &amp; WhatsApp Actions
                 </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setBulkInviteResults(null)}
-                >
-                  Generate New Batch
-                </Button>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={Copy}
+                    onClick={() => {
+                      const allLinks = bulkInviteResults.items
+                        .filter((i) => i.success)
+                        .map((i) => `${i.parentName} (${i.phone}): ${i.deepLink}`)
+                        .join('\n');
+                      navigator.clipboard.writeText(allLinks);
+                      showToast(`Copied ${bulkInviteResults.successCount} links to clipboard!`);
+                    }}
+                    title="Copy all links as text"
+                  >
+                    Copy All Links
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBulkInviteResults(null)}
+                  >
+                    Generate New Batch
+                  </Button>
+                </div>
               </div>
 
               {/* Scrollable List */}
@@ -1824,6 +1934,30 @@ export default function ParentsPage({ onRefreshCounts }) {
                           <td style={{ textAlign: 'right' }}>
                             {item.success && (
                               <div style={{ display: 'inline-flex', gap: '4px' }}>
+                                {waShareUrl && (
+                                  <a
+                                    href={waShareUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="btn btn-sm"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      backgroundColor: '#25D366',
+                                      color: '#ffffff',
+                                      textDecoration: 'none',
+                                      fontWeight: 600,
+                                      borderRadius: '4px',
+                                      padding: '4px 8px',
+                                      fontSize: '11px',
+                                    }}
+                                    title="Open WhatsApp chat with prefilled invitation message"
+                                  >
+                                    <MessageCircle size={12} />
+                                    WhatsApp
+                                  </a>
+                                )}
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -1836,7 +1970,6 @@ export default function ParentsPage({ onRefreshCounts }) {
                                 >
                                   Copy Link
                                 </Button>
-
                               </div>
                             )}
                           </td>

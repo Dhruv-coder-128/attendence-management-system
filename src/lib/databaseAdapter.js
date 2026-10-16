@@ -474,13 +474,47 @@ async function resolveRelations(tableName, records, selectString) {
 
         let parentStudents = [];
         if (junctions.length > 0) {
-          parentStudents = junctions.map((ps) => ({
-            ...ps,
-            students:
-              studentMap.get(ps.student_id) ||
-              studentByAdmission.get(String(rec.admission_no || '').trim().toLowerCase()) ||
-              null,
-          }));
+          // Deduplicate by student_id
+          const seenStudents = new Set();
+          const uniqueJunctions = [];
+          junctions.forEach((ps) => {
+            if (ps.student_id && !seenStudents.has(ps.student_id)) {
+              seenStudents.add(ps.student_id);
+              uniqueJunctions.push(ps);
+            }
+          });
+
+          parentStudents = uniqueJunctions
+            .map((ps) => ({
+              ...ps,
+              students:
+                studentMap.get(ps.student_id) ||
+                studentByAdmission.get(String(rec.admission_no || '').trim().toLowerCase()) ||
+                null,
+            }))
+            .filter((ps) => Boolean(ps.students));
+
+          // If multiple students attached, prioritize genuine match by admission_no, student_id, or phone
+          if (parentStudents.length > 1) {
+            const cleanAdm = String(rec.admission_no || '').trim().toLowerCase();
+            const cleanPhone = String(rec.phone || '').replace(/[^0-9]/g, '');
+
+            const genuineMatches = parentStudents.filter((ps) => {
+              const s = ps.students;
+              if (!s) return false;
+              if (cleanAdm && String(s.admission_no || '').trim().toLowerCase() === cleanAdm) return true;
+              if (rec.student_id && s.id === rec.student_id) return true;
+              if (cleanPhone.length >= 7) {
+                const sPhone = String(s.guardian_phone || s.phone || '').replace(/[^0-9]/g, '');
+                if (sPhone.length >= 7 && sPhone.slice(-7) === cleanPhone.slice(-7)) return true;
+              }
+              return false;
+            });
+
+            if (genuineMatches.length > 0) {
+              parentStudents = genuineMatches;
+            }
+          }
         } else {
           // Automatic resilient fallback if junction row has not been migrated yet
           const matchedStudent =

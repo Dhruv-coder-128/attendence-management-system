@@ -604,19 +604,19 @@ You will receive real-time roll call notifications whenever attendance is marked
 
 Welcome to <b>SMS — Student Management System</b>.
 
-You are connecting your Telegram account to receive official daily roll call attendance alerts for your student ward(s):
+❓ <b>Is this your child / student ward?</b>
 
 👥 <b>Registered Student Ward(s):</b>
 ${wardsList}
 
-Please confirm below to connect this Telegram account.
+Please confirm below to connect this Telegram account and start receiving instant attendance alerts:
 `.trim();
 
       const inlineKeyboard = {
         inline_keyboard: [
           [
-            { text: '✅ Confirm & Connect', callback_data: `confirm_link:${param}` },
-            { text: '❌ Cancel', callback_data: `cancel_link:${param}` },
+            { text: '✅ Yes, This is my child', callback_data: `confirm_link:${param}` },
+            { text: '❌ No, Cancel', callback_data: `cancel_link:${param}` },
           ],
         ],
       };

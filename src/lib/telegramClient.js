@@ -1149,4 +1149,164 @@ export function renderNotificationMessage(type, variables = {}, customTemplates 
   return text;
 }
 
+/**
+ * Direct Telegram Bot Poller & Sync Service
+ * Enables 100% automated parent linking in Desktop Offline mode or local development
+ * without requiring external webhooks or public server URLs.
+ */
+export async function syncTelegramBotUpdates() {
+  const schoolSettings = getSchoolTelegramSettings();
+  const envToken = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_TELEGRAM_BOT_TOKEN : '';
+  const botToken = (schoolSettings.botToken || envToken || '').trim();
+
+  if (!botToken) {
+    return {
+      success: false,
+      configured: false,
+      error: 'Telegram Bot Token is not configured. Please save your Bot Token in Settings.',
+    };
+  }
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=-50`);
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      return {
+        success: false,
+        error: data.description || `Telegram API returned status ${res.status}`,
+      };
+    }
+
+    const updates = data.result || [];
+    if (updates.length === 0) {
+      return { success: true, count: 0, linkedParents: [], message: 'No new updates from Telegram.' };
+    }
+
+    // 1. Fetch current parents and invitations to match tokens
+    const [pRes, invRes] = await Promise.all([
+      supabase.from('parents').select('*'),
+      supabase.from('parent_invitations').select('*'),
+    ]);
+
+    const parents = pRes.data || [];
+    const invitations = invRes.data || [];
+
+    if (parents.length === 0) {
+      return { success: true, count: 0, linkedParents: [] };
+    }
+
+    let linkedCount = 0;
+    const linkedNames = [];
+
+    for (const update of updates) {
+      let chatId = null;
+      let token = null;
+      let callbackId = null;
+
+      if (update.callback_query) {
+        callbackId = update.callback_query.id;
+        chatId = String(update.callback_query.message?.chat?.id || update.callback_query.from?.id || '');
+        const cbData = String(update.callback_query.data || '').trim();
+        if (cbData.startsWith('confirm_link:')) {
+          token = cbData.replace(/^confirm_link:/, '').trim();
+        }
+      } else if (update.message?.text) {
+        chatId = String(update.message.chat?.id || '');
+        const msgText = String(update.message.text || '').trim();
+        if (msgText.startsWith('/start ')) {
+          token = msgText.replace(/^\/start\s+/, '').trim();
+        }
+      }
+
+      if (!token || !chatId) continue;
+
+      const cleanToken = token.trim();
+      const cleanTokenNoPrefix = cleanToken.replace(/^tk_/, '');
+
+      // Match parent by token
+      const matchedParent = parents.find((p) => {
+        if (p.linking_token === cleanToken || p.linking_token === cleanTokenNoPrefix || p.linking_token === `tk_${cleanTokenNoPrefix}`) {
+          return true;
+        }
+        if (p.id === cleanToken || p.id === cleanTokenNoPrefix) {
+          return true;
+        }
+        return false;
+      }) || (() => {
+        const matchedInv = invitations.find((inv) =>
+          inv.token === cleanToken || inv.token === cleanTokenNoPrefix || inv.token === `tk_${cleanTokenNoPrefix}`
+        );
+        return matchedInv ? parents.find((p) => p.id === matchedInv.parent_id) : null;
+      })();
+
+      if (matchedParent) {
+        // If not already linked with this chatId
+        if (matchedParent.telegram_chat_id !== chatId || !matchedParent.is_verified) {
+          await supabase
+            .from('parents')
+            .update({
+              telegram_chat_id: chatId,
+              is_verified: true,
+              preferred_notification_channel: 'telegram',
+              invitation_status: 'linked',
+              linking_token: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', matchedParent.id);
+
+          // Also update parent_invitations if exists
+          try {
+            await supabase
+              .from('parent_invitations')
+              .update({
+                linking_status: 'linked',
+                invitation_status: 'delivered',
+                linked_at: new Date().toISOString(),
+              })
+              .eq('parent_id', matchedParent.id);
+          } catch {}
+
+          // Acknowledge callback query
+          if (callbackId) {
+            try {
+              await fetch(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  callback_query_id: callbackId,
+                  text: '🎉 Connected successfully to SMS!',
+                }),
+              });
+            } catch {}
+          }
+
+          // Send confirmation message to parent in Telegram
+          try {
+            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: chatId,
+                text: `🎉 <b>Account Successfully Connected!</b>\n\nNamaste <b>${matchedParent.full_name}</b>,\nYour Telegram account has been linked to <b>SMS — Student Management System</b>.\n\nYou will automatically receive official daily roll call attendance alerts directly in this chat.`,
+                parse_mode: 'HTML',
+              }),
+            });
+          } catch {}
+
+          linkedCount++;
+          linkedNames.push(matchedParent.full_name);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      count: linkedCount,
+      linkedParents: linkedNames,
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 
