@@ -14,11 +14,19 @@ import {
   Send,
   CreditCard,
   Award,
+  FileSpreadsheet,
+  Database,
+  Upload,
+  Download,
+  Sparkles,
+  Plus,
 } from 'lucide-react';
 import StatsCard from '../components/common/StatsCard';
 import Badge from '../components/common/Badge';
 import Button from '../components/common/Button';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import SqlImportModal from '../components/importer/SqlImportModal';
+import { downloadSampleTemplate } from '../lib/importer/templateGenerator';
 
 /**
  * Simplified Executive Dashboard
@@ -28,6 +36,8 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 export default function DashboardPage({ onNavigate, onAlertParent }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
   // 4 Primary Metrics
   const [stats, setStats] = useState({
@@ -273,6 +283,201 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
           </Button>
         </div>
       </div>
+
+      {/* ZERO STATE / FRESH SCHOOL ONBOARDING HUB */}
+      {!loading && stats.totalStudents === 0 && (
+        <div
+          style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '10px',
+            border: '1px solid var(--border-subtle)',
+            boxShadow: 'var(--shadow-md)',
+            padding: '24px',
+            marginBottom: '24px',
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: '4px',
+              backgroundColor: 'var(--gold-primary)',
+            }}
+          />
+
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div
+                style={{
+                  width: '46px',
+                  height: '46px',
+                  borderRadius: '10px',
+                  backgroundColor: 'var(--gold-subtle-bg)',
+                  border: '1px solid var(--gold-border)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--gold-dark)',
+                }}
+              >
+                <Sparkles size={24} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: '18px', fontWeight: 700, color: 'var(--navy-950)', margin: '0 0 4px 0' }}>
+                  Welcome to SMS — School Database Setup &amp; Onboarding
+                </h2>
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>
+                  Your school database is clean with 0 students. Choose how you would like to import or enter your institution's data:
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: '16px',
+            }}
+          >
+            {/* Card 1: Excel / CSV Import */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-subtle)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '18px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                  <FileSpreadsheet size={22} color="#15803d" />
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--navy-950)' }}>
+                    Import Excel / CSV
+                  </h3>
+                </div>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 16px 0' }}>
+                  Upload your existing student list, admission numbers, batches, and parent contact numbers directly.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={Download}
+                  onClick={async () => {
+                    setDownloadingTemplate(true);
+                    try {
+                      await downloadSampleTemplate('students', 'xlsx');
+                    } catch (e) {
+                      console.error(e);
+                    } finally {
+                      setDownloadingTemplate(false);
+                    }
+                  }}
+                  disabled={downloadingTemplate}
+                  style={{ flex: 1, fontSize: '11.5px' }}
+                >
+                  {downloadingTemplate ? '...' : 'Template (.xlsx)'}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={Upload}
+                  onClick={() => onNavigate('bulk-import')}
+                  style={{ flex: 1.2, fontSize: '11.5px' }}
+                >
+                  Import Excel
+                </Button>
+              </div>
+            </div>
+
+            {/* Card 2: SQL Script / Backup */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-subtle)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '18px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                  <Database size={22} color="var(--gold-dark)" />
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--navy-950)' }}>
+                    Import SQL Dump
+                  </h3>
+                </div>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 16px 0' }}>
+                  Already have a database backup or SQL file? Paste or upload INSERT statements to populate tables.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Database}
+                onClick={() => setIsSqlModalOpen(true)}
+                style={{ width: '100%', fontSize: '12px' }}
+              >
+                Upload / Run SQL Script
+              </Button>
+            </div>
+
+            {/* Card 3: Manual Entry */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-subtle)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '18px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                  <Users size={22} color="var(--navy-700)" />
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--navy-950)' }}>
+                    Start Fresh Manually
+                  </h3>
+                </div>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 16px 0' }}>
+                  Create cohorts, set class schedules, and enroll students one-by-one through the administrative registry.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onNavigate('batches')}
+                  style={{ flex: 1, fontSize: '11.5px' }}
+                >
+                  + Add Batch
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => onNavigate('students')}
+                  style={{ flex: 1.2, fontSize: '11.5px' }}
+                >
+                  + Enroll Student
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TWO SECTIONS BELOW STATS: TODAY'S ATTENDANCE & BATCH SUMMARY */}
       <div
@@ -546,6 +751,12 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
           </div>
         </div>
       </div>
+
+      <SqlImportModal
+        isOpen={isSqlModalOpen}
+        onClose={() => setIsSqlModalOpen(false)}
+        onSuccess={() => fetchDashboardData()}
+      />
     </div>
   );
 }

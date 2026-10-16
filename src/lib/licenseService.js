@@ -169,6 +169,40 @@ export async function activateSchoolLicense(licenseKey) {
 }
 
 /**
+ * Configures an explicit dedicated Supabase database for a specific school/client (BYODB)
+ */
+export function configureCustomSchoolDatabase({ schoolName, supabaseUrl, supabaseAnonKey, licenseKey }) {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return { ok: false, error: 'Database URL and Publishable Anon Key are required.' };
+  }
+  const cleanUrl = supabaseUrl.trim().replace(/\/+$/, '');
+  const cleanKey = supabaseAnonKey.trim();
+  const name = schoolName?.trim() || 'Dedicated School Database';
+  const cleanLicKey = licenseKey?.trim() || `SMS-${name.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 8)}-2026`;
+
+  const now = new Date();
+  const data = {
+    licenseKey: cleanLicKey,
+    licenseId: `LIC-${cleanLicKey}`,
+    schoolName: name,
+    status: 'licensed',
+    daysRemaining: 9999,
+    trialStartedAt: now.toISOString(),
+    trialEndsAt: new Date(now.getTime() + 3650 * 24 * 60 * 60 * 1000).toISOString(),
+    databaseConfig: {
+      supabaseUrl: cleanUrl,
+      supabaseAnonKey: cleanKey,
+    },
+    isCustomSchoolDb: true,
+    developerContact: DEFAULT_DEV_CONTACT,
+    lastServerSync: now.toISOString(),
+  };
+
+  saveStoredLicense(data);
+  return { ok: true, data };
+}
+
+/**
  * Validates the school license with the server.
  * Enforces server-authoritative timestamps and detects system clock manipulation.
  */
