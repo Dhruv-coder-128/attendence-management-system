@@ -15,6 +15,9 @@ import {
   Trash2,
   Send,
   KeyRound,
+  Download,
+  Upload,
+  HardDrive,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
@@ -25,7 +28,16 @@ import {
   getTelegramBotStatus,
   setupTelegramWebhook,
   TELEGRAM_BOT_USERNAME,
+  getSchoolTelegramSettings,
+  saveSchoolTelegramSettings,
+  testTelegramBotConnection,
 } from '../lib/telegramClient';
+import {
+  getStorageMode,
+  setStorageMode,
+  exportDatabaseBackup,
+  importDatabaseBackup,
+} from '../lib/databaseAdapter';
 import {
   fetchAcademySettings,
   updateAcademySettings,
@@ -49,6 +61,19 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
   const [lateGracePeriod, setLateGracePeriod] = useState(DEFAULT_ACADEMY_SETTINGS.late_grace_minutes);
   const [isSaving, setIsSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
+
+  // Per-School Custom Telegram Bot State
+  const schoolBotConfig = getSchoolTelegramSettings();
+  const [customBotUsername, setCustomBotUsername] = useState(schoolBotConfig.botUsername || '');
+  const [customBotToken, setCustomBotToken] = useState(schoolBotConfig.botToken || '');
+  const [botTestResult, setBotTestResult] = useState(null);
+  const [testingBot, setTestingBot] = useState(false);
+  const [botNotice, setBotNotice] = useState('');
+
+  // Storage Engine & Backup State
+  const [activeStorageMode, setActiveStorageMode] = useState(getStorageMode());
+  const [backupExporting, setBackupExporting] = useState(false);
+  const [backupNotice, setBackupNotice] = useState('');
 
   // Supabase Connection Diagnostics State
   const [connectionState, setConnectionState] = useState({
@@ -211,6 +236,73 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleTestCustomBot = async () => {
+    if (!customBotToken.trim()) {
+      setBotNotice({ type: 'error', message: 'Please enter a Telegram Bot Token to test.' });
+      return;
+    }
+    setTestingBot(true);
+    setBotNotice('');
+    setBotTestResult(null);
+
+    const res = await testTelegramBotConnection(customBotToken);
+    setTestingBot(false);
+    if (res.ok) {
+      setBotTestResult(res);
+      setCustomBotUsername(res.username);
+      setBotNotice({ type: 'success', message: `Verified! Connected to @${res.username} (${res.botName}) successfully.` });
+    } else {
+      setBotNotice({ type: 'error', message: res.error || 'Failed to connect to Telegram bot.' });
+    }
+  };
+
+  const handleSaveCustomBot = () => {
+    saveSchoolTelegramSettings({
+      botUsername: customBotUsername,
+      botToken: customBotToken,
+      botName: botTestResult?.botName || '',
+    });
+    setBotNotice({ type: 'success', message: 'School Telegram Bot configuration saved successfully!' });
+    setTimeout(() => setBotNotice(''), 4000);
+  };
+
+  const handleExportBackup = async () => {
+    setBackupExporting(true);
+    try {
+      const res = await exportDatabaseBackup();
+      setBackupNotice({ type: 'success', message: `Database backup exported successfully: ${res.filename}` });
+    } catch (err) {
+      setBackupNotice({ type: 'error', message: 'Failed to export database backup: ' + err.message });
+    } finally {
+      setBackupExporting(false);
+      setTimeout(() => setBackupNotice(''), 5000);
+    }
+  };
+
+  const handleRestoreBackupFile = async (e) => {
+    const backupFile = e.target.files?.[0];
+    if (!backupFile) return;
+    try {
+      const text = await backupFile.text();
+      const res = await importDatabaseBackup(text);
+      if (res.ok) {
+        setBackupNotice({ type: 'success', message: 'Database backup restored successfully! Reloading page...' });
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        setBackupNotice({ type: 'error', message: 'Restore failed: ' + res.error });
+      }
+    } catch (err) {
+      setBackupNotice({ type: 'error', message: 'Failed to read backup file: ' + err.message });
+    }
+  };
+
+  const handleToggleStorageMode = (newMode) => {
+    setStorageMode(newMode);
+    setActiveStorageMode(newMode);
+    setBackupNotice({ type: 'success', message: `Switched storage engine to ${newMode === 'offline' ? 'Offline Local DB' : 'Cloud Supabase'}. Reloading...` });
+    setTimeout(() => window.location.reload(), 1200);
   };
 
   return (
@@ -481,8 +573,141 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
             </div>
 
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
-              Backend PostgreSQL connectivity via <code>.env.local</code> publishable credentials
+              Dual-Mode Engine: 100% Offline Local On-Device Storage or Dedicated Cloud Supabase
             </p>
+
+            {/* Storage Engine Toggle & Backup Hub */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-subtle)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '14px',
+                marginBottom: '16px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--navy-900)' }}>
+                  Active Storage Engine:
+                </span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    backgroundColor: activeStorageMode === 'offline' ? '#f0fdf4' : '#eff6ff',
+                    color: activeStorageMode === 'offline' ? '#166534' : '#1e40af',
+                    border: `1px solid ${activeStorageMode === 'offline' ? '#bbf7d0' : '#bfdbfe'}`,
+                  }}
+                >
+                  {activeStorageMode === 'offline' ? '100% Offline On-Device' : 'Cloud PostgreSQL'}
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => handleToggleStorageMode('offline')}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    border: `2px solid ${activeStorageMode === 'offline' ? 'var(--gold-primary)' : 'var(--border-subtle)'}`,
+                    backgroundColor: activeStorageMode === 'offline' ? '#ffffff' : 'transparent',
+                    color: 'var(--navy-950)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <HardDrive size={15} color={activeStorageMode === 'offline' ? 'var(--gold-dark)' : 'var(--text-muted)'} />
+                  <span>Offline Local Engine</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleToggleStorageMode('cloud')}
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    border: `2px solid ${activeStorageMode === 'cloud' ? 'var(--gold-primary)' : 'var(--border-subtle)'}`,
+                    backgroundColor: activeStorageMode === 'cloud' ? '#ffffff' : 'transparent',
+                    color: 'var(--navy-950)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Cloud size={15} color={activeStorageMode === 'cloud' ? 'var(--gold-dark)' : 'var(--text-muted)'} />
+                  <span>Cloud Supabase DB</span>
+                </button>
+              </div>
+
+              {/* 1-Click Backup & Restore */}
+              <div style={{ paddingTop: '10px', borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: '8px' }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={Download}
+                  onClick={handleExportBackup}
+                  disabled={backupExporting}
+                  style={{ flex: 1, fontSize: '11.5px', backgroundColor: '#ffffff' }}
+                >
+                  {backupExporting ? 'Exporting...' : 'Export Backup (.smsdb)'}
+                </Button>
+
+                <label
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-subtle)',
+                    backgroundColor: '#ffffff',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    color: 'var(--navy-900)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Upload size={14} />
+                  <span>Restore Backup</span>
+                  <input
+                    type="file"
+                    accept=".smsdb,.json"
+                    onChange={handleRestoreBackupFile}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              </div>
+
+              {backupNotice && (
+                <div
+                  style={{
+                    marginTop: '10px',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    backgroundColor: backupNotice.type === 'success' ? 'var(--status-present-bg)' : 'var(--status-absent-bg)',
+                    color: backupNotice.type === 'success' ? 'var(--status-present)' : 'var(--status-absent)',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                  }}
+                >
+                  {backupNotice.message}
+                </div>
+              )}
+            </div>
 
             {/* Live Connection Status Banner */}
             <div
@@ -664,8 +889,119 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
             </div>
 
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
-              Official Bot: <strong>@{TELEGRAM_BOT_USERNAME}</strong> &bull; Serverless webhook routing via <code>/api/telegram-webhook</code>
+              Multi-Bot Gateway: Configure your school's individual Telegram bot token from @BotFather
             </p>
+
+            {/* Per-School Custom Telegram Bot Form */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-subtle)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '8px',
+                padding: '14px',
+                marginBottom: '16px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--navy-900)' }}>
+                  Your School's Dedicated Bot Setup:
+                </span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    backgroundColor: customBotToken ? '#f0fdf4' : 'var(--gold-subtle-bg)',
+                    color: customBotToken ? '#166534' : 'var(--gold-dark)',
+                    border: `1px solid ${customBotToken ? '#bbf7d0' : 'var(--gold-border)'}`,
+                  }}
+                >
+                  {customBotToken ? 'Custom Bot Configured' : 'Default Shared Bot'}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '12px' }}>
+                <Input
+                  label="School Telegram Bot Username"
+                  value={customBotUsername}
+                  onChange={(e) => setCustomBotUsername(e.target.value)}
+                  placeholder="e.g. NobleAcademyBot (without @)"
+                  helperText="Parents will open https://t.me/<username> to connect"
+                />
+
+                <Input
+                  label="Telegram Bot API Token (from @BotFather)"
+                  type="password"
+                  value={customBotToken}
+                  onChange={(e) => setCustomBotToken(e.target.value)}
+                  placeholder="e.g. 7123456789:AAHk3xyz-ABC_123456789"
+                  helperText="Issued by @BotFather when creating your school's bot"
+                />
+              </div>
+
+              {/* Bot Test Notice */}
+              {botNotice && (
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    backgroundColor: botNotice.type === 'success' ? 'var(--status-present-bg)' : 'var(--status-absent-bg)',
+                    border: `1px solid ${botNotice.type === 'success' ? 'var(--status-present-border)' : 'var(--status-absent-border)'}`,
+                    color: botNotice.type === 'success' ? 'var(--status-present)' : 'var(--status-absent)',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    marginBottom: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  {botNotice.type === 'success' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                  <span>{botNotice.message}</span>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginBottom: '12px' }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={RefreshCw}
+                  onClick={handleTestCustomBot}
+                  disabled={testingBot || !customBotToken}
+                >
+                  {testingBot ? 'Testing...' : 'Test Bot Connection'}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={Save}
+                  onClick={handleSaveCustomBot}
+                >
+                  Save School Bot
+                </Button>
+              </div>
+
+              {/* 3-Step Setup Guide */}
+              <div
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: '6px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid var(--border-subtle)',
+                  fontSize: '11px',
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.5,
+                }}
+              >
+                <strong style={{ color: 'var(--navy-950)', display: 'block', marginBottom: '4px' }}>
+                  💡 How to create your school bot in 60 seconds:
+                </strong>
+                1. Open Telegram and search <strong>@BotFather</strong> &bull; Click Start.<br />
+                2. Send <code>/newbot</code>, give it a name (e.g. <em>Noble High School Attendance</em>), and choose a unique username ending in <code>bot</code>.<br />
+                3. Copy the <strong>HTTP API Token</strong> provided by BotFather, paste it above, and click <strong>Test Bot Connection</strong>.
+              </div>
+            </div>
 
             {/* Webhook Operation Notice */}
             {webhookNotice && (

@@ -12,6 +12,78 @@ import { supabase } from './supabase.js';
  */
 
 export const TELEGRAM_BOT_USERNAME = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TELEGRAM_BOT_USERNAME) || 'SMSAttendanceBot';
+const TELEGRAM_SETTINGS_KEY = 'sms_school_telegram_settings';
+
+/**
+ * Retrieves per-school Telegram Bot credentials from local settings
+ */
+export function getSchoolTelegramSettings() {
+  if (typeof window === 'undefined') return { botUsername: TELEGRAM_BOT_USERNAME, botToken: '', isCustom: false };
+  try {
+    const raw = localStorage.getItem(TELEGRAM_SETTINGS_KEY);
+    if (!raw) return { botUsername: TELEGRAM_BOT_USERNAME, botToken: '', isCustom: false };
+    const parsed = JSON.parse(raw);
+    return {
+      botUsername: parsed.botUsername || TELEGRAM_BOT_USERNAME,
+      botToken: parsed.botToken || '',
+      botName: parsed.botName || '',
+      isCustom: Boolean(parsed.botToken && parsed.botUsername),
+      testedAt: parsed.testedAt || null,
+    };
+  } catch {
+    return { botUsername: TELEGRAM_BOT_USERNAME, botToken: '', isCustom: false };
+  }
+}
+
+/**
+ * Saves per-school custom Telegram Bot credentials
+ */
+export function saveSchoolTelegramSettings(data) {
+  if (typeof window === 'undefined' || !data) return;
+  try {
+    const existing = getSchoolTelegramSettings();
+    const merged = {
+      ...existing,
+      ...data,
+      botUsername: (data.botUsername || existing.botUsername || '').replace(/^@/, '').trim(),
+      botToken: (data.botToken || existing.botToken || '').trim(),
+      updatedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(TELEGRAM_SETTINGS_KEY, JSON.stringify(merged));
+    return merged;
+  } catch (err) {
+    console.warn('Failed to save telegram settings:', err);
+  }
+}
+
+/**
+ * Directly verifies a Telegram Bot Token against https://api.telegram.org/bot<TOKEN>/getMe
+ */
+export async function testTelegramBotConnection(botToken) {
+  if (!botToken || !botToken.trim()) {
+    return { ok: false, error: 'Telegram Bot Token is required.' };
+  }
+  const cleanToken = botToken.trim();
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${cleanToken}/getMe`);
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      return {
+        ok: true,
+        id: data.result.id,
+        botName: data.result.first_name,
+        username: data.result.username,
+        canJoinGroups: data.result.can_join_groups,
+      };
+    }
+    return {
+      ok: false,
+      error: data.description || `Telegram API returned code ${data.error_code || res.status}`,
+    };
+  } catch (err) {
+    return { ok: false, error: err.message || 'Network error reaching api.telegram.org' };
+  }
+}
 
 /**
  * Helper to generate a random hex string for linking tokens
@@ -28,8 +100,9 @@ function generateRandomTokenHex(byteLength = 16) {
 /**
  * Normalizes bot username by stripping leading '@' and trimming whitespace
  */
-export function normalizeBotUsername(botUsername = TELEGRAM_BOT_USERNAME) {
-  return String(botUsername || TELEGRAM_BOT_USERNAME).replace(/^@/, '').trim();
+export function normalizeBotUsername(botUsername) {
+  const fallback = getSchoolTelegramSettings().botUsername || TELEGRAM_BOT_USERNAME;
+  return String(botUsername || fallback).replace(/^@/, '').trim();
 }
 
 /**

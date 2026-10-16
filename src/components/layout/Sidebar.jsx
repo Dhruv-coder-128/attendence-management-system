@@ -13,6 +13,7 @@ import {
   GraduationCap,
   ShieldCheck,
   Shield,
+  ShieldAlert,
 } from 'lucide-react';
 import { hasPermission } from '../../lib/authService';
 
@@ -106,6 +107,13 @@ export default function Sidebar({
       label: 'Settings',
       icon: Settings,
       permission: 'manage_settings',
+    },
+    {
+      id: 'master-portal',
+      label: 'SaaS Console',
+      icon: ShieldAlert,
+      badge: 'Dev',
+      permission: null,
     },
   ];
 

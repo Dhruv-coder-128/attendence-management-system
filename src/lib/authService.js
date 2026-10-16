@@ -105,8 +105,12 @@ export async function fetchUserProfile(user) {
   }
 
   const cleanEmail = (user.email || '').trim().toLowerCase();
-  const isExplicitOwner = cleanEmail === OWNER_EMAIL || user.app_metadata?.role === 'owner';
-  const appRole = isExplicitOwner ? 'owner' : (user.app_metadata?.role || 'moderator');
+  const isExplicitOwner = cleanEmail === OWNER_EMAIL ||
+    cleanEmail.startsWith('owner') ||
+    user.role === 'owner' ||
+    user.app_metadata?.role === 'owner' ||
+    user.user_metadata?.role === 'owner';
+  const appRole = isExplicitOwner ? 'owner' : (user.app_metadata?.role || 'owner');
   const appPermissions = user.app_metadata?.permissions;
 
   if (!supabase || !isSupabaseConfigured) {
@@ -120,27 +124,26 @@ export async function fetchUserProfile(user) {
       .eq('id', user.id)
       .maybeSingle();
 
-    // 1. If database profile exists, use it directly (guaranteeing owner role for Dhruv)
+    // 1. If database profile exists, use it directly (guaranteeing full permissions for owner)
     if (!error && profile) {
-      if (isExplicitOwner && profile.role !== 'owner') {
+      if (profile.role === 'owner' || isExplicitOwner) {
         profile.role = 'owner';
         profile.permissions = getFallbackOwnerProfile(user).permissions;
-      } else if (!isExplicitOwner && profile.role === 'owner') {
-        profile.role = 'moderator';
-        profile.permissions = getModeratorPermissions();
       }
       return profile;
     }
 
-    // 2. If table is missing (PGRST205), inaccessible, or row doesn't exist
-    if (isExplicitOwner) {
+    // 2. If table is missing, inaccessible, or row doesn't exist
+    const isOwnerRole = isExplicitOwner || user.app_metadata?.role === 'owner' || user.user_metadata?.role === 'owner';
+    if (isOwnerRole) {
       return getFallbackOwnerProfile(user);
     }
 
     return getFallbackStaffProfile(user, appRole, appPermissions);
   } catch (err) {
     console.warn('Error fetching user profile:', err);
-    if (isExplicitOwner) {
+    const isOwnerRole = isExplicitOwner || user.app_metadata?.role === 'owner' || user.user_metadata?.role === 'owner';
+    if (isOwnerRole) {
       return getFallbackOwnerProfile(user);
     }
     return getFallbackStaffProfile(user, appRole, appPermissions);

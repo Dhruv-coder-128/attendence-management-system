@@ -298,6 +298,112 @@ export async function downloadSampleTemplate(entityId, format = 'xlsx') {
   XLSX.writeFile(workbook, `${baseFilename}.xlsx`);
 }
 
+export const ALL_IN_ONE_SAMPLE_RECORDS = [
+  {
+    'Student Full Name': 'Aarav Sharma',
+    'Roll Number': '101',
+    'Admission Number': 'ADM-2026-001',
+    'Course Name': '11th Standard — Science',
+    'Batch Name': 'Grade 11 Science Morning',
+    'Batch Timing': '07:30 AM – 10:30 AM',
+    'Gender': 'Male',
+    'Student Phone': '9876543210',
+    'Guardian Full Name': 'Rajesh Sharma',
+    'Guardian Phone': '9876543210',
+    'Relationship': 'Father',
+    'Annual Tuition Fee': '25000',
+  },
+  {
+    'Student Full Name': 'Diya Patel',
+    'Roll Number': '102',
+    'Admission Number': 'ADM-2026-002',
+    'Course Name': '12th Standard — Commerce',
+    'Batch Name': 'Grade 12 Commerce Afternoon',
+    'Batch Timing': '11:00 AM – 02:00 PM',
+    'Gender': 'Female',
+    'Student Phone': '9823456789',
+    'Guardian Full Name': 'Ketan Patel',
+    'Guardian Phone': '9823456789',
+    'Relationship': 'Father',
+    'Annual Tuition Fee': '28000',
+  },
+  {
+    'Student Full Name': 'Rohan Varma',
+    'Roll Number': '103',
+    'Admission Number': 'ADM-2026-003',
+    'Course Name': 'First Year — Bachelor of Computer Applications',
+    'Batch Name': 'FYBCA Morning Division A',
+    'Batch Timing': '08:00 AM – 11:30 AM',
+    'Gender': 'Male',
+    'Student Phone': '9811223344',
+    'Guardian Full Name': 'Suresh Varma',
+    'Guardian Phone': '9811223344',
+    'Relationship': 'Father',
+    'Annual Tuition Fee': '35000',
+  },
+];
+
+export const ALL_IN_ONE_INSTRUCTIONS = [
+  { 'Column Header': 'Student Full Name', 'Required': 'YES', 'Description': 'Full legal name of student (e.g. Aarav Sharma)' },
+  { 'Column Header': 'Roll Number', 'Required': 'YES', 'Description': 'Class roll number (e.g. 101)' },
+  { 'Column Header': 'Admission Number', 'Required': 'OPTIONAL', 'Description': 'Institute admission number. Auto-generated if blank.' },
+  { 'Column Header': 'Course Name', 'Required': 'YES', 'Description': 'Academic stream (e.g. 11th Science, FY-BCA, 10th Standard)' },
+  { 'Column Header': 'Batch Name', 'Required': 'YES', 'Description': 'Section or division (e.g. Grade 11 Science Morning)' },
+  { 'Column Header': 'Batch Timing', 'Required': 'OPTIONAL', 'Description': 'Class schedule timing (e.g. 07:30 AM – 10:30 AM)' },
+  { 'Column Header': 'Gender', 'Required': 'OPTIONAL', 'Description': 'Male, Female, or Other' },
+  { 'Column Header': 'Student Phone', 'Required': 'OPTIONAL', 'Description': '10-digit mobile number of student' },
+  { 'Column Header': 'Guardian Full Name', 'Required': 'YES', 'Description': 'Parent or emergency guardian full name' },
+  { 'Column Header': 'Guardian Phone', 'Required': 'YES', 'Description': '10-digit phone number for Telegram / WhatsApp alerts' },
+  { 'Column Header': 'Relationship', 'Required': 'OPTIONAL', 'Description': 'Father, Mother, or Guardian (default: Father)' },
+  { 'Column Header': 'Annual Tuition Fee', 'Required': 'OPTIONAL', 'Description': 'Annual fee amount in INR (e.g. 25000)' },
+];
+
+/**
+ * Downloads the All-in-One Master School Data Template (.xlsx or .csv)
+ */
+export async function downloadAllInOneTemplate(format = 'xlsx') {
+  const baseFilename = 'SMS_All_In_One_Master_School_Template';
+
+  if (format === 'csv') {
+    const csvContent = convertToCSV(ALL_IN_ONE_SAMPLE_RECORDS);
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    triggerBlobDownload(blob, `${baseFilename}.csv`);
+    return;
+  }
+
+  const XLSX = await import('xlsx');
+  const workbook = XLSX.utils.book_new();
+
+  // Sheet 1: Master School Data
+  const worksheet = XLSX.utils.json_to_sheet(ALL_IN_ONE_SAMPLE_RECORDS);
+  worksheet['!cols'] = [
+    { wch: 24 }, // Student Full Name
+    { wch: 14 }, // Roll Number
+    { wch: 20 }, // Admission Number
+    { wch: 36 }, // Course Name
+    { wch: 32 }, // Batch Name
+    { wch: 24 }, // Batch Timing
+    { wch: 12 }, // Gender
+    { wch: 16 }, // Student Phone
+    { wch: 24 }, // Guardian Full Name
+    { wch: 18 }, // Guardian Phone
+    { wch: 16 }, // Relationship
+    { wch: 20 }, // Annual Tuition Fee
+  ];
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Master School Data');
+
+  // Sheet 2: Field Instructions & Rules
+  const instructionsSheet = XLSX.utils.json_to_sheet(ALL_IN_ONE_INSTRUCTIONS);
+  instructionsSheet['!cols'] = [
+    { wch: 26 },
+    { wch: 14 },
+    { wch: 60 },
+  ];
+  XLSX.utils.book_append_sheet(workbook, instructionsSheet, 'Column Guide & Instructions');
+
+  XLSX.writeFile(workbook, `${baseFilename}.xlsx`);
+}
+
 /**
  * Exports failed rows into a CSV file with detailed error reasons
  */

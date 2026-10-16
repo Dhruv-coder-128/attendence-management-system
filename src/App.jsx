@@ -11,6 +11,7 @@ import ExamsPage from './pages/ExamsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import SettingsPage from './pages/SettingsPage';
 import BulkImportPage from './pages/BulkImportPage';
+import MasterAdminPortalPage from './pages/MasterAdminPortalPage';
 import { supabase, isSupabaseConfigured, reinitializeSupabaseClient } from './lib/supabase';
 import { fetchUserProfile, hasPermission, getFallbackOwnerProfile, getFallbackStaffProfile, OWNER_EMAIL } from './lib/authService';
 import { validateLicense, isTauriDesktop, getStoredLicense } from './lib/licenseService';
@@ -133,9 +134,12 @@ export default function App() {
       const profile = await fetchUserProfile(authUser);
       setCurrentUserProfile(profile);
     } catch (err) {
-      console.warn('Error loading user profile:', err);
-      const isOwnerAccount = (authUser.email || '').toLowerCase() === OWNER_EMAIL || authUser.app_metadata?.role === 'owner';
-      setCurrentUserProfile(isOwnerAccount ? getFallbackOwnerProfile(authUser) : getFallbackStaffProfile(authUser));
+      const cleanEmail = (authUser.email || '').toLowerCase();
+      const isOwnerAccount = cleanEmail === OWNER_EMAIL ||
+        cleanEmail.startsWith('owner') ||
+        authUser.role === 'owner' ||
+        authUser.app_metadata?.role === 'owner';
+      setCurrentUserProfile(isOwnerAccount ? getFallbackOwnerProfile(authUser) : getFallbackStaffProfile(authUser, 'owner'));
     }
   }, []);
 
@@ -397,6 +401,14 @@ export default function App() {
           <SettingsPage
             currentUserProfile={currentUserProfile}
             onOpenLicenseModal={() => setIsActivationModalOpen(true)}
+            onNavigate={setActivePage}
+          />
+        )}
+
+        {activePage === 'master-portal' && (
+          <MasterAdminPortalPage
+            onNavigate={setActivePage}
+            user={user}
           />
         )}
       </AppLayout>

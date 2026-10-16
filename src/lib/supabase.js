@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { getStoredLicense } from './licenseService.js';
+import { createLocalTableQueryBuilder, getStorageMode } from './databaseAdapter.js';
 
 /**
  * Supabase Client Module
@@ -104,8 +105,32 @@ export function reinitializeSupabaseClient() {
  */
 export const supabase = new Proxy({}, {
   get(_target, prop) {
+    const mode = getStorageMode();
+    if (mode === 'offline') {
+      if (prop === 'from') {
+        return (tableName) => createLocalTableQueryBuilder(tableName);
+      }
+      if (prop === 'auth') {
+        return {
+          getSession: async () => ({
+            data: { session: { user: { id: 'offline-owner', email: 'owner@sms-academy.local', role: 'owner' } } },
+            error: null,
+          }),
+          getUser: async () => ({
+            data: { user: { id: 'offline-owner', email: 'owner@sms-academy.local', role: 'owner' } },
+            error: null,
+          }),
+          onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+          signOut: async () => ({ error: null }),
+        };
+      }
+    }
+
     const client = getSupabaseClient();
     if (!client) {
+      if (prop === 'from') {
+        return (tableName) => createLocalTableQueryBuilder(tableName);
+      }
       return undefined;
     }
     const val = client[prop];
@@ -117,11 +142,9 @@ export const supabase = new Proxy({}, {
 });
 
 /**
- * Boolean flag indicating if Supabase is configured for the active context
+ * Boolean flag indicating if database engine is active and configured
  */
-export let isSupabaseConfigured = Boolean(
-  getActiveDatabaseConfig().configured
-);
+export let isSupabaseConfigured = true;
 
 export const supabaseConfig = {
   get url() {

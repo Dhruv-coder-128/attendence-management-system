@@ -17,6 +17,7 @@ import {
 import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
 import BulkImportModal from '../components/importer/BulkImportModal';
+import MasterImportModal from '../components/importer/MasterImportModal';
 import { RECOMMENDED_IMPORT_SEQUENCE } from '../lib/importer/entitySchemas';
 import { downloadSampleTemplate } from '../lib/importer/templateGenerator';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -26,6 +27,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
  */
 export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMasterModalOpen, setIsMasterModalOpen] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState('students');
   const [toastMessage, setToastMessage] = useState('');
 
@@ -131,12 +133,20 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
             {loadingCounts ? 'Refreshing...' : 'Refresh Database Counts'}
           </Button>
           <Button
+            variant="primary"
+            size="md"
+            icon={FileSpreadsheet}
+            onClick={() => setIsMasterModalOpen(true)}
+          >
+            All-in-One Master Importer
+          </Button>
+          <Button
             variant="gold"
             size="md"
             icon={Upload}
             onClick={() => openImportWizard('students')}
           >
-            Launch Import Wizard
+            Launch Wizard (By Table)
           </Button>
         </div>
       </div>
@@ -354,6 +364,17 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
         onClose={() => setIsModalOpen(false)}
         initialEntity={selectedEntity}
         onImportSuccess={handleImportSuccess}
+      />
+
+      <MasterImportModal
+        isOpen={isMasterModalOpen}
+        onClose={() => setIsMasterModalOpen(false)}
+        onSuccess={(summary) => {
+          fetchDatabaseCounts();
+          if (onRefreshCounts) onRefreshCounts();
+          setToastMessage(`All-in-One Import Success: Created ${summary.studentsCreated} students, ${summary.batchesCreated} batches!`);
+          setTimeout(() => setToastMessage(''), 5000);
+        }}
       />
     </div>
   );

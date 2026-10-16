@@ -26,7 +26,8 @@ import Badge from '../components/common/Badge';
 import Button from '../components/common/Button';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import SqlImportModal from '../components/importer/SqlImportModal';
-import { downloadSampleTemplate } from '../lib/importer/templateGenerator';
+import MasterImportModal from '../components/importer/MasterImportModal';
+import { downloadSampleTemplate, downloadAllInOneTemplate } from '../lib/importer/templateGenerator';
 
 /**
  * Simplified Executive Dashboard
@@ -37,6 +38,7 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
+  const [isMasterModalOpen, setIsMasterModalOpen] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
   // 4 Primary Metrics
@@ -360,11 +362,11 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
                   <FileSpreadsheet size={22} color="#15803d" />
                   <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--navy-950)' }}>
-                    Import Excel / CSV
+                    All-in-One Master Excel
                   </h3>
                 </div>
                 <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 16px 0' }}>
-                  Upload your existing student list, admission numbers, batches, and parent contact numbers directly.
+                  Upload 1 master spreadsheet &bull; Auto-builds all Courses, Batches, Students, Parents &amp; Fees.
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
@@ -375,7 +377,7 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
                   onClick={async () => {
                     setDownloadingTemplate(true);
                     try {
-                      await downloadSampleTemplate('students', 'xlsx');
+                      await downloadAllInOneTemplate('xlsx');
                     } catch (e) {
                       console.error(e);
                     } finally {
@@ -385,16 +387,16 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
                   disabled={downloadingTemplate}
                   style={{ flex: 1, fontSize: '11.5px' }}
                 >
-                  {downloadingTemplate ? '...' : 'Template (.xlsx)'}
+                  {downloadingTemplate ? '...' : 'Master Template (.xlsx)'}
                 </Button>
                 <Button
                   variant="primary"
                   size="sm"
                   icon={Upload}
-                  onClick={() => onNavigate('bulk-import')}
+                  onClick={() => setIsMasterModalOpen(true)}
                   style={{ flex: 1.2, fontSize: '11.5px' }}
                 >
-                  Import Excel
+                  All-in-One Import
                 </Button>
               </div>
             </div>
@@ -755,6 +757,12 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
       <SqlImportModal
         isOpen={isSqlModalOpen}
         onClose={() => setIsSqlModalOpen(false)}
+        onSuccess={() => fetchDashboardData()}
+      />
+
+      <MasterImportModal
+        isOpen={isMasterModalOpen}
+        onClose={() => setIsMasterModalOpen(false)}
         onSuccess={() => fetchDashboardData()}
       />
     </div>

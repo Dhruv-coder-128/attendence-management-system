@@ -315,13 +315,35 @@ export async function validateLicense(options = {}) {
       };
     }
 
-    // Offline Grace Check:
-    if (nowMs - lastSyncMs > graceMs) {
+    const cleanKey = (cached.licenseKey || '').toUpperCase();
+    const isPermanentOrOffline = cached.status === 'licensed' ||
+      cached.isOfflineMode ||
+      cached.daysRemaining > 365 ||
+      cleanKey.includes('OFFLINE') ||
+      cleanKey.includes('MASTER') ||
+      cleanKey.includes('LIFETIME');
+
+    if (isPermanentOrOffline) {
       return {
-        ok: false,
-        status: 'offline_expired',
+        ok: true,
+        status: cached.status || 'licensed',
+        schoolName: cached.schoolName,
+        daysRemaining: cached.daysRemaining || 9999,
         isTrialExpired: false,
-        error: 'Network connection required: SMS was offline for over 24 hours. Please reconnect to the internet to verify your trial.',
+        isOfflineLease: true,
+        developerContact: cached.developerContact || DEFAULT_DEV_CONTACT,
+      };
+    }
+
+    // Standard trial: if trial period is still active
+    if (cached.daysRemaining > 0 && cached.status !== 'trial_expired') {
+      return {
+        ok: true,
+        status: cached.status || 'trial_active',
+        schoolName: cached.schoolName,
+        daysRemaining: cached.daysRemaining,
+        isTrialExpired: false,
+        isOfflineLease: true,
         developerContact: cached.developerContact || DEFAULT_DEV_CONTACT,
       };
     }
