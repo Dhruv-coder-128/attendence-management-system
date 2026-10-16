@@ -331,7 +331,7 @@ export default function StudentsPage({ onRefreshCounts }) {
       ...initialFormState,
       course_id: courses[0]?.id || '',
       batch_id: batches[0]?.id || '',
-      admission_no: `RUP-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      admission_no: `SMS-2026-${Math.floor(1000 + Math.random() * 9000)}`,
     });
     setShowAdvancedFields(false);
     setIsAddModalOpen(true);
@@ -1028,7 +1028,7 @@ export default function StudentsPage({ onRefreshCounts }) {
                 label="Admission Number / Student ID"
                 value={formData.admission_no}
                 onChange={(e) => setFormData({ ...formData, admission_no: e.target.value })}
-                placeholder="e.g. RUP-2026-0101"
+                placeholder="e.g. SMS-2026-0101"
                 required
               />
 

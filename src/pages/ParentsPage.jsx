@@ -1731,7 +1731,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                 </div>
                 <ul style={{ margin: '4px 0 0 16px', padding: 0, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                   <li>
-                    <strong>Telegram:</strong> Secure single-use deep links (<code>https://t.me/RuparelAttendanceBot?start=tk_...</code>) are generated with a 7-day expiration.
+                    <strong>Telegram:</strong> Secure single-use deep links (<code>https://t.me/SMSAttendanceBot?start=tk_...</code>) are generated with a 7-day expiration.
                   </li>
                   <li>
                     <strong>WhatsApp:</strong> Cloud API is currently unconfigured. The system provides <strong>1-click manual WhatsApp share links</strong> with prefilled invitation messages and deep links for each parent.

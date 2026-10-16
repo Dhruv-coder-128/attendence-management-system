@@ -67,8 +67,8 @@ export default async function handler(req, res) {
     const defaultContact = {
       name: 'Dhruv Shah',
       email: 'dushah2007@gmail.com',
-      phone: '+91 98765 43210',
-      whatsapp: '+91 98765 43210',
+      phone: '+91 8866039007',
+      whatsapp: '+91 8866039007',
     };
     const developerContact = license.contact_developer || defaultContact;
 

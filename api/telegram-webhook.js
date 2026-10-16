@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 /**
  * Vercel Serverless Function — Telegram Bot Webhook
- * Automated Parent-Linking Workflow for Ruparel Attendance ERP
+ * Automated Parent-Linking Workflow for SMS — Student Management System
  *
  * Flow:
  * 1. Parent clicks unique invitation link: https://t.me/<Bot>?start=tk_<token>
@@ -421,7 +421,7 @@ You will automatically receive official daily roll call notices directly in this
   const text = (message.text || '').trim();
   const tokens = text.split(/\s+/);
   const rawCommand = tokens[0].toLowerCase();
-  const command = rawCommand.split('@')[0]; // Strips @RuparelAttendanceBot
+  const command = rawCommand.split('@')[0]; // Strips bot mention
   const param = tokens[1] ? tokens[1].trim() : '';
 
   // 2A. HANDLE /confirm <token> (Text command fallback for button confirmation)

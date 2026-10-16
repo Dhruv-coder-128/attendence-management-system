@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { TELEGRAM_BOT_USERNAME } from './telegramClient';
 
 /**
  * Service to manage the real test student (Dhruv Shah)
@@ -127,10 +128,11 @@ export async function ensureDhruvShahTestStudent() {
   }
 }
 
+
 /**
  * Generates a unique, one-time Telegram deep link for parent linking
  */
-export function generateParentDeepLink(studentId, parentId = null, botUsername = 'RuparelAttendanceBot') {
+export function generateParentDeepLink(studentId, parentId = null, botUsername = TELEGRAM_BOT_USERNAME) {
   const token = parentId ? `link_${parentId}` : `enroll_${studentId}`;
   return {
     token,

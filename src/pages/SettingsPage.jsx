@@ -316,13 +316,13 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
                 label="Official Contact Phone"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="+91 98765 43210"
+                placeholder="+91 8866039007"
               />
               <Input
                 label="Official Contact Email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="contact@sms.edu"
+                placeholder="dushah2007@gmail.com"
               />
             </div>
 

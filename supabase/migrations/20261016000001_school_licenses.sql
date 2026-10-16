@@ -21,8 +21,8 @@ CREATE TABLE IF NOT EXISTS public.school_licenses (
     contact_developer JSONB NOT NULL DEFAULT '{
         "name": "Dhruv Shah",
         "email": "dushah2007@gmail.com",
-        "phone": "+91 98765 43210",
-        "whatsapp": "+91 98765 43210"
+        "phone": "+91 8866039007",
+        "whatsapp": "+91 8866039007"
     }'::jsonb,
     notes TEXT DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
@@ -61,8 +61,8 @@ INSERT INTO public.school_licenses (
     notes
 ) VALUES (
     'SMS-SCH-DEFAULT',
-    'Ruparel / SMS Central Academy',
-    'SMS-TRIAL-RUPAREL-2026',
+    'SMS Central Academy',
+    'SMS-TRIAL-2026-DHUV',
     'https://uugvudqbwoyywzbjrfol.supabase.co',
     'sb_publishable_pd2n3DRFhFgn79-SW6FEPw_vqRz2Jut',
     TRUE,

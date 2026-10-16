@@ -54,7 +54,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                 School License Activation
               </h3>
               <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--text-on-navy-muted)' }}>
-                SMS — Student Management System
+                SMS - Student Management System
               </p>
             </div>
           </div>
@@ -116,14 +116,14 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
               <div className="form-group" style={{ marginBottom: '16px' }}>
                 <label className="form-label" style={{ fontWeight: 600, fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
                   <span>School License Key</span>
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '11.5px' }}>e.g. SMS-XXXX-XXXX</span>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '11.5px' }}>e.g. SMS-TRIAL-2026 or SMS-MASTER-2026</span>
                 </label>
                 <div style={{ position: 'relative' }}>
                   <input
                     type="text"
                     value={licenseKey}
                     onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
-                    placeholder="SMS-TRIAL-RUPAREL-2026"
+                    placeholder="SMS-TRIAL-2026-XXXX"
                     className="form-input"
                     style={{
                       fontFamily: 'var(--font-mono)',
