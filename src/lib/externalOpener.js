@@ -12,18 +12,34 @@ export async function openExternalLink(url) {
       await openUrl(url);
       return;
     } catch (tauriErr) {
-      console.warn('Tauri openUrl error, falling back to window.open:', tauriErr);
+      console.warn('Tauri plugin openUrl failed, trying direct invoke:', tauriErr);
+      try {
+        if (window.__TAURI_INTERNALS__?.invoke) {
+          await window.__TAURI_INTERNALS__.invoke('plugin:opener|open_url', { url });
+          return;
+        }
+      } catch (invokeErr) {
+        console.warn('Tauri raw invoke open_url failed:', invokeErr);
+      }
     }
   }
 
-  // 2. Standard browser navigation / window.open
+  // 2. Standard browser navigation: create hidden anchor and click with target=_blank
+  // NEVER use window.location.href which displaces the active application view!
   try {
-    const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-      window.location.href = url;
-    }
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      if (document.body.contains(link)) {
+        document.body.removeChild(link);
+      }
+    }, 150);
   } catch (err) {
-    window.location.href = url;
+    console.warn('Browser window open fallback failed:', err);
   }
 }
 

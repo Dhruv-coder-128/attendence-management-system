@@ -57,3 +57,21 @@ jobs:
           name: SMS-Student-Management-System-Installer
           path: src-tauri/target/**/bundle/nsis/*.exe
           if-no-files-found: error
+
+      - name: Publish GitHub Release (Direct Public Download)
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: v1.0.0
+          name: "SMS — Student Management System (Windows Desktop Release)"
+          body: |
+            ### SMS — Student Management System (Windows Desktop Installer)
+
+            Direct download link for the latest Windows setup installer:
+            - **Developer:** Dhruv Shah
+            - **Email:** dushah2007@gmail.com
+            - **WhatsApp & Phone:** +91 8866039007
+          files: |
+            src-tauri/target/**/bundle/nsis/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -33,20 +33,7 @@ import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import BulkImportModal from '../components/importer/BulkImportModal';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import {
-  getParentTelegramDeepLink,
-  getParentTelegramAppUri,
-  getParentTelegramLinks,
-  createSecureParentInvitation,
-  createBulkParentInvitations,
-  linkParentTelegramAccount,
-  getWhatsAppShareUrl,
-  TELEGRAM_BOT_USERNAME,
-} from '../lib/telegramClient';
 
-/**
- * Parent Directory — Connected directly to Supabase public.parents & public.parent_students
- */
 export default function ParentsPage({ onRefreshCounts }) {
   const [parents, setParents] = useState([]);
   const [students, setStudents] = useState([]);
@@ -1058,25 +1045,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                                 >
                                   <Copy size={10} /> Copy
                                 </button>
-                                <a
-                                  href={waUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="btn btn-outline"
-                                  style={{
-                                    padding: '2px 6px',
-                                    fontSize: '10px',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '2px',
-                                    color: '#15803d',
-                                    borderColor: '#bbf7d0',
-                                    textDecoration: 'none',
-                                  }}
-                                  title="Share Invitation via WhatsApp"
-                                >
-                                  <Share2 size={10} /> WhatsApp
-                                </a>
+
                               </div>
                             );
                           }
@@ -1489,24 +1458,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                     >
                       Web Link
                     </a>
-                    <a
-                      href={waUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-sm btn-outline"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        color: '#15803d',
-                        borderColor: '#bbf7d0',
-                        textDecoration: 'none',
-                        backgroundColor: '#f0fdf4',
-                      }}
-                      title="Share directly to parent on WhatsApp"
-                    >
-                      <Share2 size={12} /> WhatsApp
-                    </a>
+
                   </div>
                 </div>
 
@@ -1846,25 +1798,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                                 >
                                   Copy Link
                                 </Button>
-                                <a
-                                  href={waShareUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="btn btn-sm btn-outline"
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '3px',
-                                    color: '#15803d',
-                                    borderColor: '#bbf7d0',
-                                    textDecoration: 'none',
-                                    padding: '4px 8px',
-                                    fontSize: '11px',
-                                  }}
-                                  title="Share invitation via WhatsApp"
-                                >
-                                  <Share2 size={12} /> WhatsApp
-                                </a>
+
                               </div>
                             )}
                           </td>
