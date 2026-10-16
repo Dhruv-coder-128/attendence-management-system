@@ -23,7 +23,7 @@ import Button from '../components/common/Button';
 import Input from '../components/common/Input';
 import UsersManagement from '../components/settings/UsersManagement';
 import { isSupabaseConfigured, checkSupabaseConnection, supabaseConfig } from '../lib/supabase';
-import { getStoredLicense } from '../lib/licenseService';
+import { getStoredLicense, isTauriDesktop } from '../lib/licenseService';
 import {
   getTelegramBotStatus,
   setupTelegramWebhook,
@@ -543,7 +543,7 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
           </div>
         </div>
 
-        {/* Right Column: Cloud Backend & Supabase Diagnostic Integration */}
+        {/* Right Column: Database Storage Engine & Diagnostics */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div className="erp-card" style={{ padding: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
@@ -557,26 +557,30 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
                     color: 'var(--navy-950)',
                   }}
                 >
-                  Supabase &amp; PostgreSQL Database
+                  {isTauriDesktop() ? 'Institution Database & Storage Engine' : 'Supabase & PostgreSQL Database'}
                 </h2>
               </div>
 
-              <Button
-                variant="outline"
-                size="sm"
-                icon={RefreshCw}
-                onClick={runConnectionTest}
-                disabled={connectionState.loading}
-              >
-                {connectionState.loading ? 'Testing...' : 'Test Connection'}
-              </Button>
+              {!isTauriDesktop() && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={RefreshCw}
+                  onClick={runConnectionTest}
+                  disabled={connectionState.loading}
+                >
+                  {connectionState.loading ? 'Testing...' : 'Test Connection'}
+                </Button>
+              )}
             </div>
 
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
-              Dual-Mode Engine: 100% Offline Local On-Device Storage or Dedicated Cloud Supabase
+              {isTauriDesktop()
+                ? '100% Offline On-Device Storage — Private, High-Performance & Secure (Zero Cloud Dependency)'
+                : 'Dual-Mode Engine: 100% Offline Local On-Device Storage or Dedicated Cloud Supabase'}
             </p>
 
-            {/* Storage Engine Toggle & Backup Hub */}
+            {/* Storage Engine Status & Backup Hub */}
             <div
               style={{
                 backgroundColor: 'var(--bg-subtle)',
@@ -596,63 +600,65 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
                     fontWeight: 700,
                     padding: '2px 8px',
                     borderRadius: '12px',
-                    backgroundColor: activeStorageMode === 'offline' ? '#f0fdf4' : '#eff6ff',
-                    color: activeStorageMode === 'offline' ? '#166534' : '#1e40af',
-                    border: `1px solid ${activeStorageMode === 'offline' ? '#bbf7d0' : '#bfdbfe'}`,
+                    backgroundColor: (isTauriDesktop() || activeStorageMode === 'offline') ? '#f0fdf4' : '#eff6ff',
+                    color: (isTauriDesktop() || activeStorageMode === 'offline') ? '#166534' : '#1e40af',
+                    border: `1px solid ${(isTauriDesktop() || activeStorageMode === 'offline') ? '#bbf7d0' : '#bfdbfe'}`,
                   }}
                 >
-                  {activeStorageMode === 'offline' ? '100% Offline On-Device' : 'Cloud PostgreSQL'}
+                  {isTauriDesktop() || activeStorageMode === 'offline' ? '100% Offline On-Device (SQLite / IndexedDB)' : 'Cloud PostgreSQL'}
                 </span>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-                <button
-                  type="button"
-                  onClick={() => handleToggleStorageMode('offline')}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    border: `2px solid ${activeStorageMode === 'offline' ? 'var(--gold-primary)' : 'var(--border-subtle)'}`,
-                    backgroundColor: activeStorageMode === 'offline' ? '#ffffff' : 'transparent',
-                    color: 'var(--navy-950)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <HardDrive size={15} color={activeStorageMode === 'offline' ? 'var(--gold-dark)' : 'var(--text-muted)'} />
-                  <span>Offline Local Engine</span>
-                </button>
+              {!isTauriDesktop() && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleStorageMode('offline')}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      border: `2px solid ${activeStorageMode === 'offline' ? 'var(--gold-primary)' : 'var(--border-subtle)'}`,
+                      backgroundColor: activeStorageMode === 'offline' ? '#ffffff' : 'transparent',
+                      color: 'var(--navy-950)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <HardDrive size={15} color={activeStorageMode === 'offline' ? 'var(--gold-dark)' : 'var(--text-muted)'} />
+                    <span>Offline Local Engine</span>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => handleToggleStorageMode('cloud')}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    border: `2px solid ${activeStorageMode === 'cloud' ? 'var(--gold-primary)' : 'var(--border-subtle)'}`,
-                    backgroundColor: activeStorageMode === 'cloud' ? '#ffffff' : 'transparent',
-                    color: 'var(--navy-950)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Cloud size={15} color={activeStorageMode === 'cloud' ? 'var(--gold-dark)' : 'var(--text-muted)'} />
-                  <span>Cloud Supabase DB</span>
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleStorageMode('cloud')}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      border: `2px solid ${activeStorageMode === 'cloud' ? 'var(--gold-primary)' : 'var(--border-subtle)'}`,
+                      backgroundColor: activeStorageMode === 'cloud' ? '#ffffff' : 'transparent',
+                      color: 'var(--navy-950)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Cloud size={15} color={activeStorageMode === 'cloud' ? 'var(--gold-dark)' : 'var(--text-muted)'} />
+                    <span>Cloud Supabase DB</span>
+                  </button>
+                </div>
+              )}
 
               {/* 1-Click Backup & Restore */}
-              <div style={{ paddingTop: '10px', borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: '8px' }}>
+              <div style={{ paddingTop: '10px', borderTop: isTauriDesktop() ? 'none' : '1px solid var(--border-subtle)', display: 'flex', gap: '8px' }}>
                 <Button
                   variant="outline"
                   size="sm"
@@ -709,91 +715,93 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
               )}
             </div>
 
-            {/* Live Connection Status Banner */}
-            <div
-              style={{
-                padding: '14px 16px',
-                borderRadius: '6px',
-                backgroundColor: connectionState.ok
-                  ? 'var(--status-present-bg)'
-                  : isSupabaseConfigured
-                  ? 'var(--status-absent-bg)'
-                  : '#f8fafc',
-                border: `1px solid ${
-                  connectionState.ok
-                    ? 'var(--status-present-border)'
+            {/* Live Connection Status Banner — Only shown in web cloud mode */}
+            {!isTauriDesktop() && (
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: '6px',
+                  backgroundColor: connectionState.ok
+                    ? 'var(--status-present-bg)'
                     : isSupabaseConfigured
-                    ? 'var(--status-absent-border)'
-                    : 'var(--border-subtle)'
-                }`,
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '12px',
-                marginBottom: '14px',
-              }}
-            >
-              {connectionState.ok ? (
-                <CheckCircle2 size={20} color="var(--status-present)" style={{ marginTop: '2px', flexShrink: 0 }} />
-              ) : (
-                <AlertCircle
-                  size={20}
-                  color={isSupabaseConfigured ? 'var(--status-absent)' : 'var(--gold-dark)'}
-                  style={{ marginTop: '2px', flexShrink: 0 }}
-                />
-              )}
-
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <strong
-                    style={{
-                      color: connectionState.ok
-                        ? 'var(--status-present)'
-                        : isSupabaseConfigured
-                        ? 'var(--status-absent)'
-                        : 'var(--navy-950)',
-                      fontSize: '13px',
-                    }}
-                  >
-                    {connectionState.ok
-                      ? 'Supabase Connection Active'
+                    ? 'var(--status-absent-bg)'
+                    : '#f8fafc',
+                  border: `1px solid ${
+                    connectionState.ok
+                      ? 'var(--status-present-border)'
                       : isSupabaseConfigured
-                      ? 'Connection Failed'
-                      : 'Configuration Missing'}
-                  </strong>
+                      ? 'var(--status-absent-border)'
+                      : 'var(--border-subtle)'
+                  }`,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px',
+                  marginBottom: '14px',
+                }}
+              >
+                {connectionState.ok ? (
+                  <CheckCircle2 size={20} color="var(--status-present)" style={{ marginTop: '2px', flexShrink: 0 }} />
+                ) : (
+                  <AlertCircle
+                    size={20}
+                    color={isSupabaseConfigured ? 'var(--status-absent)' : 'var(--gold-dark)'}
+                    style={{ marginTop: '2px', flexShrink: 0 }}
+                  />
+                )}
 
-                  {connectionState.latencyMs > 0 && (
-                    <span
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <strong
                       style={{
-                        fontSize: '11px',
-                        padding: '1px 6px',
-                        borderRadius: '3px',
-                        backgroundColor: '#ffffff',
-                        border: '1px solid var(--border-subtle)',
-                        color: 'var(--text-secondary)',
+                        color: connectionState.ok
+                          ? 'var(--status-present)'
+                          : isSupabaseConfigured
+                          ? 'var(--status-absent)'
+                          : 'var(--navy-950)',
+                        fontSize: '13px',
                       }}
                     >
-                      {connectionState.latencyMs}ms
-                    </span>
+                      {connectionState.ok
+                        ? 'Supabase Connection Active'
+                        : isSupabaseConfigured
+                        ? 'Connection Failed'
+                        : 'Configuration Missing'}
+                    </strong>
+
+                    {connectionState.latencyMs > 0 && (
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          padding: '1px 6px',
+                          borderRadius: '3px',
+                          backgroundColor: '#ffffff',
+                          border: '1px solid var(--border-subtle)',
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
+                        {connectionState.latencyMs}ms
+                      </span>
+                    )}
+                  </div>
+
+                  {connectionState.ok ? (
+                    <div style={{ fontSize: '12px', color: '#166534', marginTop: '3px' }}>
+                      Successfully verified connection to endpoint: <code>{connectionState.url}</code>
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        fontSize: '12px',
+                        color: isSupabaseConfigured ? 'var(--status-absent)' : 'var(--text-secondary)',
+                        marginTop: '3px',
+                      }}
+                    >
+                      {connectionState.error || 'Configure VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in .env.local'}
+                    </div>
                   )}
                 </div>
-
-                {connectionState.ok ? (
-                  <div style={{ fontSize: '12px', color: '#166534', marginTop: '3px' }}>
-                    Successfully verified connection to endpoint: <code>{connectionState.url}</code>
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      fontSize: '12px',
-                      color: isSupabaseConfigured ? 'var(--status-absent)' : 'var(--text-secondary)',
-                      marginTop: '3px',
-                    }}
-                  >
-                    {connectionState.error || 'Configure VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in .env.local'}
-                  </div>
-                )}
               </div>
-            </div>
+            )}
 
             {/* Technical Parameters Box */}
             <div
@@ -824,29 +832,48 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Database Isolation:</span>
-                <span style={{ color: supabaseConfig.isCustomSchoolDb ? '#15803d' : 'var(--navy-700)', fontWeight: 600 }}>
-                  {supabaseConfig.isCustomSchoolDb ? 'Dedicated School Supabase DB' : 'Default Project Instance (.env.local)'}
+                <span style={{ color: isTauriDesktop() ? '#15803d' : (supabaseConfig.isCustomSchoolDb ? '#15803d' : 'var(--navy-700)'), fontWeight: 600 }}>
+                  {isTauriDesktop() ? '100% Isolated Local On-Device Database' : (supabaseConfig.isCustomSchoolDb ? 'Dedicated School Supabase DB' : 'Default Project Instance (.env.local)')}
                 </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Configured URL:</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                  {supabaseConfig.url || '(None)'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Publishable Key Status:</span>
-                <span style={{ color: isSupabaseConfigured ? 'var(--status-present)' : 'var(--status-absent)', fontWeight: 600 }}>
-                  {isSupabaseConfigured ? 'Valid Client Key Loaded' : 'Missing in .env.local'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Security Scope:</span>
-                <span style={{ color: 'var(--navy-900)', fontWeight: 500 }}>
-                  Client Publishable Key Only (Zero Secret Exposure)
-                </span>
-              </div>
-              {onOpenLicenseModal && (
+              {isTauriDesktop() ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Engine Architecture:</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#166534' }}>
+                      SQLite / IndexedDB Local Storage
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Data Privacy:</span>
+                    <span style={{ color: 'var(--navy-900)', fontWeight: 600 }}>
+                      Client Private Machine (No Cloud Leakage)
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Configured URL:</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                      {supabaseConfig.url || '(None)'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Publishable Key Status:</span>
+                    <span style={{ color: isSupabaseConfigured ? 'var(--status-present)' : 'var(--status-absent)', fontWeight: 600 }}>
+                      {isSupabaseConfigured ? 'Valid Client Key Loaded' : 'Missing in .env.local'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Security Scope:</span>
+                    <span style={{ color: 'var(--navy-900)', fontWeight: 500 }}>
+                      Client Publishable Key Only (Zero Secret Exposure)
+                    </span>
+                  </div>
+                </>
+              )}
+              {!isTauriDesktop() && onOpenLicenseModal && (
                 <div style={{ marginTop: '6px', paddingTop: '8px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'flex-end' }}>
                   <Button
                     variant="outline"

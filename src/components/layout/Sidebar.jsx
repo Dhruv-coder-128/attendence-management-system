@@ -148,10 +148,13 @@ export default function Sidebar({
     });
   }
 
-  // Filter items by user role and module permissions
+  // Keep all 9 operational modules visible for all school staff.
+  // SaaS Developer Console is strictly restricted to verified developer account.
   const visibleNavItems = allNavItems.filter((item) => {
-    if (!item.permission) return true;
-    return hasPermission(currentUserProfile, item.permission);
+    if (item.id === 'master-portal') {
+      return isDevAuthorized;
+    }
+    return true;
   });
 
   const handleNavClick = (id) => {

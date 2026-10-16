@@ -3,6 +3,8 @@ import { Info, Sparkles, CheckCircle2, AlertCircle, Database } from 'lucide-reac
 import Sidebar from './Sidebar';
 import TopNav from './TopNav';
 import { isSupabaseConfigured } from '../../lib/supabase';
+import { isTauriDesktop } from '../../lib/licenseService';
+import { getStorageMode } from '../../lib/databaseAdapter';
 
 /**
  * Main Enterprise App Layout
@@ -41,8 +43,8 @@ export default function AppLayout({
 
       {/* Main Workspace Area */}
       <div className="erp-main-area">
-        {/* Offline Warning Banner — Only displayed if database credentials are not configured */}
-        {!isSupabaseConfigured && (
+        {/* Offline Warning Banner — Only displayed if database credentials are not configured in web cloud mode */}
+        {!isSupabaseConfigured && !isTauriDesktop() && getStorageMode() !== 'offline' && (
           <div
             style={{
               backgroundColor: 'var(--status-absent-bg)',

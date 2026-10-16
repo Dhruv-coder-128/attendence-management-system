@@ -234,18 +234,27 @@ export const unifiedAuth = {
             error: new Error('This account has been deactivated. Please contact the institution owner.'),
           };
         }
+        const role = profile.role || 'moderator';
+        const hasExistingPerms = profile.permissions && Object.keys(profile.permissions).length > 0;
+        const defaultPerms = role === 'owner'
+          ? { view_students: true, edit_students: true, delete_students: true, view_attendance: true, mark_attendance: true, manage_batches: true, manage_fees: true, manage_exams: true, manage_parents: true, send_notifications: true, export_data: true, manage_users: true, manage_settings: true }
+          : role === 'admin'
+          ? { view_students: true, edit_students: true, delete_students: false, view_attendance: true, mark_attendance: true, manage_batches: true, manage_fees: true, manage_exams: true, manage_parents: true, send_notifications: true, export_data: true, manage_users: true, manage_settings: true }
+          : { view_students: true, edit_students: true, delete_students: false, view_attendance: true, mark_attendance: true, manage_batches: true, manage_fees: true, manage_exams: true, manage_parents: true, send_notifications: true, export_data: true, manage_users: false, manage_settings: true };
+        const staffPermissions = hasExistingPerms ? profile.permissions : defaultPerms;
+
         const staffUser = {
           id: profile.id,
           email: profile.email,
-          role: profile.role || 'moderator',
+          role,
           aud: 'authenticated',
           user_metadata: {
             full_name: profile.full_name || 'Staff User',
-            role: profile.role || 'moderator',
+            role,
           },
           app_metadata: {
-            role: profile.role || 'moderator',
-            permissions: profile.permissions || {},
+            role,
+            permissions: staffPermissions,
             provider: 'email',
           },
         };
@@ -290,12 +299,18 @@ export const unifiedAuth = {
       const role = isOwner ? 'owner' : (options?.data?.role || 'admin');
       const fullName = options?.data?.full_name || cleanEmail.split('@')[0];
       const newId = 'usr_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const defaultPerms = role === 'owner'
+        ? { view_students: true, edit_students: true, delete_students: true, view_attendance: true, mark_attendance: true, manage_batches: true, manage_fees: true, manage_exams: true, manage_parents: true, send_notifications: true, export_data: true, manage_users: true, manage_settings: true }
+        : role === 'admin'
+        ? { view_students: true, edit_students: true, delete_students: false, view_attendance: true, mark_attendance: true, manage_batches: true, manage_fees: true, manage_exams: true, manage_parents: true, send_notifications: true, export_data: true, manage_users: true, manage_settings: true }
+        : { view_students: true, edit_students: true, delete_students: false, view_attendance: true, mark_attendance: true, manage_batches: true, manage_fees: true, manage_exams: true, manage_parents: true, send_notifications: true, export_data: true, manage_users: false, manage_settings: true };
 
       const newUser = {
         id: newId,
         email: cleanEmail,
         full_name: fullName,
         role,
+        permissions: defaultPerms,
         is_active: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -309,7 +324,7 @@ export const unifiedAuth = {
         role,
         aud: 'authenticated',
         user_metadata: { full_name: fullName, role },
-        app_metadata: { role, provider: 'email' },
+        app_metadata: { role, permissions: defaultPerms, provider: 'email' },
       };
       setStoredAuthUser(authUser);
       return {

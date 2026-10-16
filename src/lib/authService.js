@@ -28,18 +28,18 @@ export const OWNER_EMAIL = 'dushah2007@gmail.com';
 export function getModeratorPermissions(custom = {}) {
   return {
     view_students: true,
+    edit_students: true,
+    delete_students: false,
     view_attendance: true,
     mark_attendance: true,
-    edit_students: false,
-    delete_students: false,
-    manage_batches: false,
-    manage_fees: false,
-    manage_exams: false,
-    manage_parents: false,
-    send_notifications: false,
-    export_data: false,
+    manage_batches: true,
+    manage_fees: true,
+    manage_exams: true,
+    manage_parents: true,
+    send_notifications: true,
+    export_data: true,
     manage_users: false,
-    manage_settings: false,
+    manage_settings: true,
     ...custom,
   };
 }
@@ -57,8 +57,8 @@ export function getAdminPermissions(custom = {}) {
     manage_parents: true,
     send_notifications: true,
     export_data: true,
-    manage_users: false,
-    manage_settings: false,
+    manage_users: true,
+    manage_settings: true,
     ...custom,
   };
 }
@@ -130,6 +130,8 @@ export async function fetchUserProfile(user) {
       if (profile.role === 'owner' || isExplicitOwner) {
         profile.role = 'owner';
         profile.permissions = getFallbackOwnerProfile(user).permissions;
+      } else if (!profile.permissions || Object.keys(profile.permissions).length === 0) {
+        profile.permissions = profile.role === 'admin' ? getAdminPermissions() : getModeratorPermissions();
       }
       return profile;
     }
@@ -156,8 +158,10 @@ export async function fetchUserProfile(user) {
  */
 export function hasPermission(profile, permissionKey) {
   if (!profile) return true; // Safe fallback
-  if (profile.role === 'owner') return true; // Owners have unconditional full access
-  return Boolean(profile.permissions?.[permissionKey]);
+  if (profile.role === 'owner' || profile.role === 'admin') return true; // Owners and Admins have unconditional full access
+  if (!permissionKey) return true;
+  if (!profile.permissions) return true;
+  return profile.permissions[permissionKey] !== false;
 }
 
 /**

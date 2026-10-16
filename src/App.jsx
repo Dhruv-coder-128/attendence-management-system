@@ -292,7 +292,7 @@ export default function App() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#cbd5e1' }}>
           <RefreshCw size={16} className="animate-spin" />
-          <span>Verifying Administrative Session with Supabase...</span>
+          <span>Verifying Administrative Session...</span>
         </div>
       </div>
     );

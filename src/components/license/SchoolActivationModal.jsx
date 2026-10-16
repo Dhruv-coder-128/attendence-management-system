@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { KeyRound, ShieldCheck, AlertCircle, Building2, ExternalLink, Mail, Phone, MessageSquare, CheckCircle2, Database } from 'lucide-react';
-import { activateSchoolLicense, configureCustomSchoolDatabase, getContactDeveloperLinks, getStoredLicense } from '../../lib/licenseService';
+import { activateSchoolLicense, configureCustomSchoolDatabase, getContactDeveloperLinks, getStoredLicense, isTauriDesktop } from '../../lib/licenseService';
 import { reinitializeSupabaseClient } from '../../lib/supabase';
 import { openExternalLink, copyToClipboard } from '../../lib/externalOpener';
 
@@ -97,12 +97,14 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
             </div>
           </div>
           <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-on-navy-muted)', lineHeight: 1.5 }}>
-            Each client/school operates on an isolated database. Connect using your School License Key or your own dedicated Supabase cloud project.
+            {isTauriDesktop()
+              ? 'Each institution operates on a private, isolated local on-device database. Enter your School License Key to activate.'
+              : 'Each client/school operates on an isolated database. Connect using your School License Key or your own dedicated Supabase cloud project.'}
           </p>
         </div>
 
-        {/* Tab Selector */}
-        {!successData && (
+        {/* Tab Selector — Only shown in web mode */}
+        {!successData && !isTauriDesktop() && (
           <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', backgroundColor: 'var(--bg-subtle)' }}>
             <button
               type="button"
