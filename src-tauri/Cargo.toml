@@ -1,7 +1,7 @@
 [package]
 name = "sms_app"
 version = "1.0.0"
-description = "SMS — Student Management System"
+description = "SMS - Student Management System"
 authors = ["SMS"]
 license = ""
 repository = ""

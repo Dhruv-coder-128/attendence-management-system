@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "SMS — Student Management System",
+  "productName": "SMS - Student Management System",
   "version": "1.0.0",
   "identifier": "com.sms.studentmanagementsystem",
   "build": {
@@ -12,7 +12,8 @@
   "app": {
     "windows": [
       {
-        "title": "SMS — Student Management System",
+        "label": "main",
+        "title": "SMS - Student Management System",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
