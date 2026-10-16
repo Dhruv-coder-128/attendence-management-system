@@ -11,7 +11,7 @@ import ExamsPage from './pages/ExamsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import SettingsPage from './pages/SettingsPage';
 import BulkImportPage from './pages/BulkImportPage';
-import { supabase, isSupabaseConfigured } from './lib/supabase';
+
 import { fetchUserProfile, hasPermission, getFallbackOwnerProfile, getFallbackStaffProfile, OWNER_EMAIL } from './lib/authService';
 import { validateLicense, isTauriDesktop, getStoredLicense } from './lib/licenseService';
 import SchoolActivationModal from './components/license/SchoolActivationModal';
@@ -281,10 +281,7 @@ export default function App() {
       <SchoolActivationModal
         isOpen={true}
         isForced={true}
-        onActivated={(data) => {
-          checkLicense();
-          refreshCounts();
-        }}
+
       />
     );
   }
@@ -303,10 +300,7 @@ export default function App() {
         <SchoolActivationModal
           isOpen={isActivationModalOpen}
           onClose={() => setIsActivationModalOpen(false)}
-          onActivated={() => {
-            checkLicense();
-            refreshCounts();
-          }}
+
         />
       </div>
     );
@@ -387,10 +381,7 @@ export default function App() {
       <SchoolActivationModal
         isOpen={isActivationModalOpen}
         onClose={() => setIsActivationModalOpen(false)}
-        onActivated={() => {
-          checkLicense();
-          refreshCounts();
-        }}
+
       />
     </div>
   );

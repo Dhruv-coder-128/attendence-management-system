@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { GraduationCap, Shield, Lock, Mail, ArrowRight, CheckCircle2, AlertCircle, UserPlus, LogIn } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getActiveDatabaseConfig } from '../lib/supabase';
 
 /**
  * Enterprise Admin Login Screen with Real Supabase Auth
@@ -21,8 +21,9 @@ export default function LoginPage({ onLoginSuccess }) {
     setErrorMessage('');
     setSuccessMessage('');
 
-    if (!isSupabaseConfigured || !supabase) {
-      setErrorMessage('Supabase is not configured. Please check VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in .env.local.');
+    const dbConfig = getActiveDatabaseConfig();
+    if (!dbConfig.configured || !supabase) {
+      setErrorMessage('Database connection is not initialized. Please ensure your school license is activated.');
       return;
     }
 
@@ -75,7 +76,7 @@ export default function LoginPage({ onLoginSuccess }) {
       console.error('Auth error:', err);
       // Map standard Supabase error messages to friendly enterprise messages
       if (err.message?.includes('Invalid login credentials')) {
-        setErrorMessage('Invalid login credentials. Please verify your email and password, or create an account if you have not registered yet.');
+        setErrorMessage('Invalid login credentials. Please verify your email and password, or click "Register Admin" above to create this account.');
       } else if (err.message?.includes('Email not confirmed')) {
         setErrorMessage('Email address has not been confirmed yet. Please check your inbox or disable email confirmation in Supabase Dashboard -> Auth -> Providers.');
       } else {

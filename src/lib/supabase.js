@@ -3,19 +3,23 @@ import { getStoredLicense } from './licenseService.js';
 
 /**
  * Supabase Client Module
- * Supports both single-tenant web mode (via .env.local) and multi-tenant per-school
- * desktop mode (via school license database configuration).
+ * Supports single-tenant web mode, multi-tenant per-school desktop mode,
+ * and reliable offline/production fallback credentials.
  * Safe for client-side execution (never uses service_role or secret keys).
  */
 
+export const PRODUCTION_SUPABASE_URL = 'https://uugvudqbwoyywzbjrfol.supabase.co';
+export const PRODUCTION_SUPABASE_ANON_KEY = 'sb_publishable_pd2n3DRFhFgn79-SW6FEPw_vqRz2Jut';
+
 const envObj = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env : (typeof process !== 'undefined' ? process.env : {});
-const defaultEnvUrl = (envObj.VITE_SUPABASE_URL || envObj.SUPABASE_URL || '').trim();
-const defaultEnvKey = (envObj.VITE_SUPABASE_PUBLISHABLE_KEY || envObj.VITE_SUPABASE_ANON_KEY || envObj.SUPABASE_ANON_KEY || '').trim();
+const defaultEnvUrl = (envObj.VITE_SUPABASE_URL || envObj.SUPABASE_URL || PRODUCTION_SUPABASE_URL).trim();
+const defaultEnvKey = (envObj.VITE_SUPABASE_PUBLISHABLE_KEY || envObj.VITE_SUPABASE_ANON_KEY || envObj.SUPABASE_ANON_KEY || PRODUCTION_SUPABASE_ANON_KEY).trim();
 
 /**
  * Resolves the currently active database credentials:
  * 1. School-specific database credentials from the activated license (if present)
  * 2. Fallback to production environment variables (.env.local / Vercel envs)
+ * 3. Fallback to dedicated production Supabase instance
  */
 export function getActiveDatabaseConfig() {
   const license = getStoredLicense();
@@ -40,12 +44,15 @@ export function getActiveDatabaseConfig() {
     !defaultEnvKey.includes('your-supabase-publishable')
   );
 
+  const finalUrl = (isEnvValid ? defaultEnvUrl : PRODUCTION_SUPABASE_URL).trim();
+  const finalKey = (isEnvValid ? defaultEnvKey : PRODUCTION_SUPABASE_ANON_KEY).trim();
+
   return {
-    url: defaultEnvUrl,
-    key: defaultEnvKey,
+    url: finalUrl,
+    key: finalKey,
     schoolName: 'Primary Institution',
     isCustomSchoolDb: false,
-    configured: isEnvValid,
+    configured: Boolean(finalUrl && finalKey),
   };
 }
 
@@ -85,7 +92,9 @@ export function reinitializeSupabaseClient() {
   activeClientInstance = null;
   activeClientUrl = null;
   activeClientKey = null;
-  return getSupabaseClient();
+  const client = getSupabaseClient();
+  isSupabaseConfigured = Boolean(getActiveDatabaseConfig().configured);
+  return client;
 }
 
 /**
@@ -97,7 +106,6 @@ export const supabase = new Proxy({}, {
   get(_target, prop) {
     const client = getSupabaseClient();
     if (!client) {
-      // Return a dummy safe proxy or undefined
       return undefined;
     }
     const val = client[prop];
@@ -111,7 +119,7 @@ export const supabase = new Proxy({}, {
 /**
  * Boolean flag indicating if Supabase is configured for the active context
  */
-export const isSupabaseConfigured = Boolean(
+export let isSupabaseConfigured = Boolean(
   getActiveDatabaseConfig().configured
 );
 
