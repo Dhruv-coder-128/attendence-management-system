@@ -1,4 +1,5 @@
 import { supabase } from '../supabase.js';
+import { importDatabaseBackup } from '../databaseAdapter.js';
 
 /**
  * Normalizes header string for robust fuzzy matching
@@ -43,54 +44,146 @@ function generateBatchCode(batchName) {
 }
 
 /**
- * Parses raw file buffer/arrayBuffer (.xlsx or .csv) and returns standardized records
+ * Helper to find value by exact match or substring key
+ */
+function findValue(rowMap, candidates) {
+  for (const c of candidates) {
+    if (rowMap[c] !== undefined && rowMap[c] !== '') return rowMap[c];
+  }
+  const keys = Object.keys(rowMap);
+  for (const c of candidates) {
+    const matchedKey = keys.find((k) => k.includes(c));
+    if (matchedKey && rowMap[matchedKey] !== undefined && rowMap[matchedKey] !== '') {
+      return rowMap[matchedKey];
+    }
+  }
+  return '';
+}
+
+/**
+ * Parses raw file (.xlsx, .xls, .csv, .json, or .smsdb) and returns standardized records
  */
 export async function parseMasterSpreadsheet(file) {
-  const XLSX = await import('xlsx');
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array' });
+  if (!file) throw new Error('No file provided.');
 
-  // Read first sheet or 'Master School Data'
-  const sheetName = workbook.SheetNames.includes('Master School Data')
-    ? 'Master School Data'
-    : workbook.SheetNames[0];
+  const fileNameLower = file.name.toLowerCase();
+  const isJson = fileNameLower.endsWith('.json') || fileNameLower.endsWith('.smsdb');
+  let rawRows = [];
+  let isDatabaseBackup = false;
+  let backupData = null;
 
-  const worksheet = workbook.Sheets[sheetName];
-  const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+  if (isJson) {
+    const text = await file.text();
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error('Failed to parse JSON file: invalid syntax.');
+    }
 
-  if (!rawRows || rawRows.length === 0) {
-    throw new Error('Spreadsheet appears to be empty or has no readable rows.');
+    if (json && json.tables && typeof json.tables === 'object') {
+      isDatabaseBackup = true;
+      backupData = json;
+      rawRows = json.tables.students || [];
+    } else if (Array.isArray(json)) {
+      rawRows = json;
+    } else if (json && Array.isArray(json.students)) {
+      rawRows = json.students;
+    } else {
+      throw new Error('Unrecognized JSON format: expected array of student rows or database backup.');
+    }
+  } else if (fileNameLower.endsWith('.csv')) {
+    const XLSX = await import('xlsx');
+    const text = await file.text();
+    const workbook = XLSX.read(text, { type: 'string', raw: true });
+    const firstSheet = workbook.SheetNames[0] || 'Sheet1';
+    const worksheet = workbook.Sheets[firstSheet];
+    rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+  } else {
+    const XLSX = await import('xlsx');
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+      throw new Error('Spreadsheet has no sheets.');
+    }
+
+    // Multi-sheet detection: preference for Master School Data, Students, or first sheet
+    const targetSheet =
+      workbook.SheetNames.find((s) => {
+        const lower = s.toLowerCase();
+        return lower.includes('master') || lower.includes('student') || lower.includes('all');
+      }) || workbook.SheetNames[0];
+
+    const worksheet = workbook.Sheets[targetSheet];
+    rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
   }
 
-  // Parse and match columns flexibly
+  if (!rawRows || rawRows.length === 0) {
+    throw new Error('The file appears to be empty or has no readable rows.');
+  }
+
+  // Parse and match columns with comprehensive alias detection
   const parsedRows = [];
   const errors = [];
 
   rawRows.forEach((row, idx) => {
-    const rowNum = idx + 2; // Accounting for 1-indexed Excel header
+    const rowNum = idx + 2;
     const normalizedRow = {};
 
     Object.entries(row).forEach(([colHeader, val]) => {
       normalizedRow[normalizeKey(colHeader)] = typeof val === 'string' ? val.trim() : String(val ?? '');
     });
 
-    // Resolve column mappings
-    const studentName = normalizedRow['studentfullname'] || normalizedRow['studentname'] || normalizedRow['name'] || normalizedRow['student'] || '';
-    const rollNo = normalizedRow['rollnumber'] || normalizedRow['rollno'] || normalizedRow['roll'] || '';
-    const admissionNo = normalizedRow['admissionnumber'] || normalizedRow['admissionno'] || normalizedRow['admno'] || `ADM-${new Date().getFullYear()}-${String(rowNum).padStart(4, '0')}`;
-    const courseName = normalizedRow['coursename'] || normalizedRow['course'] || normalizedRow['stream'] || normalizedRow['standard'] || 'Standard Course';
-    const batchName = normalizedRow['batchname'] || normalizedRow['batch'] || normalizedRow['division'] || normalizedRow['section'] || 'General Batch';
-    const batchTiming = normalizedRow['batchtiming'] || normalizedRow['timing'] || normalizedRow['schedule'] || '08:00 AM – 11:00 AM';
-    const gender = normalizedRow['gender'] || normalizedRow['sex'] || 'Other';
-    const studentPhone = normalizedRow['studentphone'] || normalizedRow['phone'] || normalizedRow['mobile'] || '';
-    const guardianName = normalizedRow['guardianfullname'] || normalizedRow['guardianname'] || normalizedRow['parentname'] || normalizedRow['parent'] || (studentName ? `${studentName} Guardian` : '');
-    const guardianPhone = normalizedRow['guardianphone'] || normalizedRow['parentphone'] || normalizedRow['emergencyphone'] || normalizedRow['contact'] || '';
-    const relationship = normalizedRow['relationship'] || normalizedRow['relation'] || 'Parent';
-    const annualFee = parseFloat(normalizedRow['annualtuitionfee'] || normalizedRow['tuitionfee'] || normalizedRow['annualfee'] || normalizedRow['fee'] || '0') || 0;
+    // Flexible column mappings using substring-aware matcher
+    const studentName = findValue(normalizedRow, ['studentfullname', 'studentname', 'fullname', 'name', 'student']);
+    const rollNo = findValue(normalizedRow, ['rollnumber', 'rollno', 'classroll', 'rollnum', 'roll']);
+    const admissionNo =
+      findValue(normalizedRow, ['admissionnumber', 'admissionno', 'admissionid', 'admno', 'grnumber', 'grno', 'studentid', 'enrollmentno']) ||
+      `ADM-${new Date().getFullYear()}-${String(rowNum).padStart(4, '0')}`;
 
-    // Validate minimum required fields
+    const courseName =
+      findValue(normalizedRow, ['coursename', 'course', 'stream', 'standard', 'class', 'grade']) ||
+      'Standard Course';
+
+    const batchName =
+      findValue(normalizedRow, ['batchname', 'batch', 'division', 'section', 'sec', 'div', 'cohort']) ||
+      'General Batch';
+
+    const batchTiming =
+      findValue(normalizedRow, ['batchtiming', 'timing', 'schedule', 'time', 'shift']) ||
+      '08:00 AM – 11:00 AM';
+
+    const gender = findValue(normalizedRow, ['gender', 'sex']) || 'Other';
+    const studentPhone = findValue(normalizedRow, ['studentphone', 'studentmobile', 'phone', 'mobile', 'contact']);
+    const studentEmail = findValue(normalizedRow, ['studentemail', 'email', 'mail']);
+
+    const guardianName =
+      findValue(normalizedRow, ['guardianfullname', 'guardianname', 'parentname', 'fathername', 'mothername', 'parent']) ||
+      (studentName ? `${studentName}'s Guardian` : '');
+
+    const guardianPhone = findValue(normalizedRow, [
+      'guardianphone',
+      'parentphone',
+      'parentmobile',
+      'fathermobile',
+      'mothermobile',
+      'emergencyphone',
+      'guardianmobile',
+    ]);
+
+    const relationship = findValue(normalizedRow, ['relationship', 'relation']) || 'Father';
+    const annualFee =
+      parseFloat(
+        findValue(normalizedRow, ['annualtuitionfee', 'tuitionfee', 'annualfee', 'feetotal', 'totalfee', 'fee', 'fees', 'amount']) || '0'
+      ) || 0;
+    const paidFee =
+      parseFloat(
+        findValue(normalizedRow, ['feepaid', 'paidfee', 'amountpaid', 'paid', 'advance']) || '0'
+      ) || 0;
+
+    // Skip truly empty rows
     if (!studentName && !rollNo && !courseName) {
-      // Empty row, skip safely
       return;
     }
 
@@ -102,41 +195,77 @@ export async function parseMasterSpreadsheet(file) {
     parsedRows.push({
       rowNum,
       studentName,
-      rollNo: rollNo || String(rowNum),
+      rollNo: rollNo || String(parsedRows.length + 1),
       admissionNo,
       courseName,
       batchName,
       batchTiming,
-      gender: ['male', 'm'].includes(gender.toLowerCase()) ? 'Male' : (['female', 'f'].includes(gender.toLowerCase()) ? 'Female' : 'Other'),
+      gender: ['male', 'm'].includes(gender.toLowerCase())
+        ? 'Male'
+        : ['female', 'f'].includes(gender.toLowerCase())
+        ? 'Female'
+        : 'Other',
       studentPhone,
-      guardianName: guardianName || `${studentName}'s Guardian`,
+      studentEmail,
+      guardianName,
       guardianPhone,
       relationship,
       annualFee,
+      paidFee,
       rawData: row,
     });
   });
 
-  return { parsedRows, errors, totalRows: rawRows.length };
+  return {
+    parsedRows,
+    errors,
+    totalRows: rawRows.length,
+    isDatabaseBackup,
+    backupData,
+    summary: {
+      totalStudents: parsedRows.length,
+      distinctCourses: [...new Set(parsedRows.map((r) => r.courseName))],
+      distinctBatches: [...new Set(parsedRows.map((r) => r.batchName))],
+      withFees: parsedRows.filter((r) => r.annualFee > 0).length,
+      withParents: parsedRows.filter((r) => r.guardianName || r.guardianPhone).length,
+    },
+  };
 }
 
 /**
- * Commits the parsed master spreadsheet into the database in one single transactional batch
+ * Commits the parsed master spreadsheet into the database in one unified transactional pipeline
  */
-export async function commitMasterSpreadsheetData(parsedRows, { onProgress = () => {} } = {}) {
+export async function commitMasterSpreadsheetData(parseResult, { onProgress = () => {} } = {}) {
+  // If user dropped an entire database backup (.smsdb / JSON)
+  if (parseResult?.isDatabaseBackup && parseResult?.backupData) {
+    onProgress({ phase: 'backup', message: 'Restoring complete personal database backup...', percent: 50 });
+    const restoreRes = await importDatabaseBackup(parseResult.backupData);
+    if (!restoreRes.ok) {
+      throw new Error(restoreRes.error || 'Failed to restore database backup.');
+    }
+    onProgress({ phase: 'complete', message: 'Personal database restored successfully!', percent: 100 });
+    return {
+      success: true,
+      isBackupRestore: true,
+      summary: restoreRes.summary,
+    };
+  }
+
+  const parsedRows = Array.isArray(parseResult) ? parseResult : parseResult?.parsedRows;
   if (!parsedRows || parsedRows.length === 0) {
     throw new Error('No valid records to import.');
   }
 
-  onProgress({ phase: 'analyzing', message: 'Analyzing courses and batch cohorts...', percent: 10 });
+  onProgress({ phase: 'analyzing', message: 'Configuring courses & academic streams...', percent: 15 });
 
   // 1. Fetch or create unique courses
   const uniqueCourseNames = [...new Set(parsedRows.map((r) => r.courseName))];
   const { data: existingCourses } = await supabase.from('courses').select('id, name, code');
-  const courseMap = new Map((existingCourses || []).map((c) => [c.name.toLowerCase(), c]));
+  const courseMap = new Map((existingCourses || []).map((c) => [c.name.toLowerCase().trim(), c]));
 
   for (const cName of uniqueCourseNames) {
-    if (!courseMap.has(cName.toLowerCase())) {
+    const key = cName.toLowerCase().trim();
+    if (!courseMap.has(key)) {
       const code = generateCourseCode(cName);
       const { data: newCourse, error: cErr } = await supabase
         .from('courses')
@@ -151,28 +280,29 @@ export async function commitMasterSpreadsheetData(parsedRows, { onProgress = () 
         .single();
 
       if (!cErr && newCourse) {
-        courseMap.set(cName.toLowerCase(), newCourse);
+        courseMap.set(key, newCourse);
       }
     }
   }
 
-  onProgress({ phase: 'batches', message: 'Configuring class batches...', percent: 30 });
+  onProgress({ phase: 'batches', message: 'Configuring cohort batches...', percent: 35 });
 
   // 2. Fetch or create unique batches
   const uniqueBatchKeys = new Map();
   parsedRows.forEach((r) => {
-    const key = `${r.courseName}:::${r.batchName}`.toLowerCase();
+    const key = `${r.courseName}:::${r.batchName}`.toLowerCase().trim();
     if (!uniqueBatchKeys.has(key)) {
       uniqueBatchKeys.set(key, { courseName: r.courseName, batchName: r.batchName, timing: r.batchTiming });
     }
   });
 
   const { data: existingBatches } = await supabase.from('batches').select('id, name, code, course_id');
-  const batchMap = new Map((existingBatches || []).map((b) => [b.name.toLowerCase(), b]));
+  const batchMap = new Map((existingBatches || []).map((b) => [b.name.toLowerCase().trim(), b]));
 
   for (const [, info] of uniqueBatchKeys.entries()) {
-    if (!batchMap.has(info.batchName.toLowerCase())) {
-      const course = courseMap.get(info.courseName.toLowerCase());
+    const key = info.batchName.toLowerCase().trim();
+    if (!batchMap.has(key)) {
+      const course = courseMap.get(info.courseName.toLowerCase().trim());
       const batchCode = generateBatchCode(info.batchName);
 
       const { data: newBatch, error: bErr } = await supabase
@@ -191,17 +321,17 @@ export async function commitMasterSpreadsheetData(parsedRows, { onProgress = () 
         .single();
 
       if (!bErr && newBatch) {
-        batchMap.set(info.batchName.toLowerCase(), newBatch);
+        batchMap.set(key, newBatch);
       }
     }
   }
 
-  onProgress({ phase: 'students', message: `Enrolling ${parsedRows.length} students...`, percent: 55 });
+  onProgress({ phase: 'students', message: `Enrolling ${parsedRows.length} students into personal database...`, percent: 60 });
 
-  // 3. Insert Students in batches of 50
+  // 3. Insert Students in chunks of 50
   const studentsToInsert = parsedRows.map((r) => {
-    const batch = batchMap.get(r.batchName.toLowerCase());
-    const course = courseMap.get(r.courseName.toLowerCase());
+    const batch = batchMap.get(r.batchName.toLowerCase().trim());
+    const course = courseMap.get(r.courseName.toLowerCase().trim());
     return {
       full_name: r.studentName,
       roll_no: r.rollNo,
@@ -210,6 +340,9 @@ export async function commitMasterSpreadsheetData(parsedRows, { onProgress = () 
       course_id: course ? course.id : null,
       gender: r.gender,
       phone: r.studentPhone || null,
+      email: r.studentEmail || null,
+      tuition_fee: r.annualFee || 0,
+      fee_paid: r.paidFee || 0,
       enrollment_date: new Date().toISOString().split('T')[0],
       enrollment_status: 'active',
       is_active: true,
@@ -229,13 +362,13 @@ export async function commitMasterSpreadsheetData(parsedRows, { onProgress = () 
     if (sErr) {
       console.warn('Batch insert student error, attempting fallback insert:', sErr);
     } else if (resStudents) {
-      insertedStudents = insertedStudents.concat(resStudents);
+      insertedStudents = insertedStudents.concat(Array.isArray(resStudents) ? resStudents : [resStudents]);
     }
   }
 
-  onProgress({ phase: 'parents', message: 'Linking parents & generating Telegram invite tokens...', percent: 80 });
+  onProgress({ phase: 'parents', message: 'Creating parent linking dossiers & Telegram tokens...', percent: 85 });
 
-  // 4. Insert Parents & Parent Invitations
+  // 4. Insert Parents & Parent Invitations & Fees
   const parentsToInsert = [];
   const invitationsToInsert = [];
   const feeRecordsToInsert = [];
@@ -244,13 +377,14 @@ export async function commitMasterSpreadsheetData(parsedRows, { onProgress = () 
     const student = insertedStudents[idx] || null;
     const studentId = student ? student.id : null;
     const token = generateTokenHex();
-    const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(); // 14 days
+    const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
 
     if (r.guardianPhone || r.guardianName) {
       parentsToInsert.push({
         full_name: r.guardianName,
         phone: r.guardianPhone,
         student_id: studentId,
+        admission_no: r.admissionNo,
         relationship: r.relationship,
         notification_channel: 'telegram',
         linking_token: token,
@@ -261,7 +395,7 @@ export async function commitMasterSpreadsheetData(parsedRows, { onProgress = () 
       });
 
       invitationsToInsert.push({
-        parent_id: null, // Linked via query if needed
+        parent_id: null,
         student_id: studentId,
         token,
         invitation_channel: 'telegram',
@@ -274,12 +408,14 @@ export async function commitMasterSpreadsheetData(parsedRows, { onProgress = () 
 
     // 5. Tuition Fees Record if fee > 0
     if (r.annualFee > 0 && studentId) {
+      const due = Math.max(0, (r.annualFee || 0) - (r.paidFee || 0));
+      const status = due === 0 ? 'paid' : ((r.paidFee || 0) > 0 ? 'partial' : 'pending');
       feeRecordsToInsert.push({
         student_id: studentId,
         total_amount: r.annualFee,
-        paid_amount: 0,
-        due_amount: r.annualFee,
-        status: 'pending',
+        paid_amount: r.paidFee || 0,
+        due_amount: due,
+        status,
         academic_year: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       });

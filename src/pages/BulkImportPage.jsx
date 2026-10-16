@@ -13,11 +13,13 @@ import {
   RefreshCw,
   Sparkles,
   Info,
+  Database,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
 import BulkImportModal from '../components/importer/BulkImportModal';
 import MasterImportModal from '../components/importer/MasterImportModal';
+import SqlImportModal from '../components/importer/SqlImportModal';
 import { RECOMMENDED_IMPORT_SEQUENCE } from '../lib/importer/entitySchemas';
 import { downloadSampleTemplate } from '../lib/importer/templateGenerator';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -28,6 +30,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMasterModalOpen, setIsMasterModalOpen] = useState(false);
+  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState('students');
   const [toastMessage, setToastMessage] = useState('');
 
@@ -118,7 +121,7 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
             </span>
           </div>
           <p className="page-description">
-            Safely onboard institutional datasets into Supabase PostgreSQL with automated column mapping, foreign key resolution &amp; duplicate safeguards
+            Safely onboard institutional datasets into your personal database (Excel, CSV, JSON, or SQL) with automated column mapping &amp; duplicate safeguards
           </p>
         </div>
 
@@ -141,12 +144,20 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
             All-in-One Master Importer
           </Button>
           <Button
+            variant="outline"
+            size="md"
+            icon={Database}
+            onClick={() => setIsSqlModalOpen(true)}
+          >
+            Import SQL Dump
+          </Button>
+          <Button
             variant="gold"
             size="md"
             icon={Upload}
             onClick={() => openImportWizard('students')}
           >
-            Launch Wizard (By Table)
+            Import by Table
           </Button>
         </div>
       </div>
@@ -372,7 +383,18 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
         onSuccess={(summary) => {
           fetchDatabaseCounts();
           if (onRefreshCounts) onRefreshCounts();
-          setToastMessage(`All-in-One Import Success: Created ${summary.studentsCreated} students, ${summary.batchesCreated} batches!`);
+          setToastMessage(summary.isBackupRestore ? 'Personal database backup restored successfully!' : `All-in-One Import Success: Created ${summary.studentsCreated} students, ${summary.batchesCreated} cohorts!`);
+          setTimeout(() => setToastMessage(''), 5000);
+        }}
+      />
+
+      <SqlImportModal
+        isOpen={isSqlModalOpen}
+        onClose={() => setIsSqlModalOpen(false)}
+        onSuccess={() => {
+          fetchDatabaseCounts();
+          if (onRefreshCounts) onRefreshCounts();
+          setToastMessage('SQL Script executed and imported successfully!');
           setTimeout(() => setToastMessage(''), 5000);
         }}
       />

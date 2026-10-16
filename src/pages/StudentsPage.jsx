@@ -28,6 +28,7 @@ import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import BulkImportModal from '../components/importer/BulkImportModal';
+import MasterImportModal from '../components/importer/MasterImportModal';
 import StudentAcademicDossier from '../components/students/StudentAcademicDossier';
 import { computeFeeStatus, getStandardCoursePolicy } from '../lib/feeService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -59,6 +60,8 @@ export default function StudentsPage({ onRefreshCounts }) {
   const [studentToDelete, setStudentToDelete] = useState(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isMasterModalOpen, setIsMasterModalOpen] = useState(false);
+  const [isImportMenuOpen, setIsImportMenuOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -593,14 +596,113 @@ export default function StudentsPage({ onRefreshCounts }) {
             )}
           </div>
 
-          <Button
-            variant="outline"
-            size="md"
-            icon={Upload}
-            onClick={() => setIsImportModalOpen(true)}
-          >
-            Import Students
-          </Button>
+          {/* Import Dropdown Menu */}
+          <div style={{ position: 'relative' }}>
+            <Button
+              variant="outline"
+              size="md"
+              icon={Upload}
+              onClick={() => setIsImportMenuOpen(!isImportMenuOpen)}
+            >
+              Import Data ▾
+            </Button>
+
+            {isImportMenuOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: '6px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  boxShadow: 'var(--shadow-md)',
+                  minWidth: '240px',
+                  zIndex: 50,
+                  padding: '6px',
+                }}
+              >
+                <div
+                  style={{
+                    padding: '6px 10px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    color: 'var(--text-light)',
+                    letterSpacing: '0.5px',
+                  }}
+                >
+                  Import Options
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsImportMenuOpen(false);
+                    setIsMasterModalOpen(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 12px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    color: 'var(--text-primary)',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-subtle)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <Sparkles size={16} style={{ color: '#6366f1', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontWeight: 600 }}>Master File Auto-Import</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Excel, CSV, JSON, .smsdb</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsImportMenuOpen(false);
+                    setIsImportModalOpen(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '8px 12px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                    color: 'var(--text-primary)',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    marginTop: '2px',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-subtle)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <Layers size={16} style={{ color: '#0ea5e9', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontWeight: 600 }}>Per-Table Wizard</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Step-by-step table mapping</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
 
           <Button
             variant="primary"
@@ -1267,6 +1369,17 @@ export default function StudentsPage({ onRefreshCounts }) {
           </div>
         )}
       </Modal>
+
+      {/* Master File Auto-Import Modal */}
+      <MasterImportModal
+        isOpen={isMasterModalOpen}
+        onClose={() => setIsMasterModalOpen(false)}
+        onSuccess={() => {
+          fetchData();
+          if (onRefreshCounts) onRefreshCounts();
+          showToast('Master file imported & personal database updated successfully!');
+        }}
+      />
 
       {/* Bulk Import Modal */}
       <BulkImportModal

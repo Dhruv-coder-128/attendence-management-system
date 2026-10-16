@@ -1,4 +1,4 @@
-import { ENTITY_SCHEMAS } from './entitySchemas';
+import { ENTITY_SCHEMAS } from './entitySchemas.js';
 
 /**
  * Official Reference Courses in SMS — Student Management System database (public.courses)
@@ -374,6 +374,13 @@ export async function downloadAllInOneTemplate(format = 'xlsx') {
     const csvContent = convertToCSV(ALL_IN_ONE_SAMPLE_RECORDS);
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     triggerBlobDownload(blob, `${baseFilename}.csv`);
+    return;
+  }
+
+  if (format === 'json') {
+    const jsonStr = JSON.stringify(ALL_IN_ONE_SAMPLE_RECORDS, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+    triggerBlobDownload(blob, `${baseFilename}.json`);
     return;
   }
 

@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   Shield,
   ShieldAlert,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { hasPermission } from '../../lib/authService';
 import { getStoredAcademySettings } from '../../lib/academySettings';
@@ -124,6 +125,13 @@ export default function Sidebar({
       icon: Bell,
       badge: counts.notifications !== undefined ? String(counts.notifications) : '0',
       permission: 'send_notifications',
+    },
+    {
+      id: 'import',
+      label: 'Import Data',
+      icon: FileSpreadsheet,
+      badge: 'Hub',
+      permission: null,
     },
     {
       id: 'settings',

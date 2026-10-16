@@ -175,7 +175,9 @@ export function createLocalTableQueryBuilder(tableName) {
 
   const builder = {
     select(columns = '*', options = {}) {
-      state.operation = 'select';
+      if (state.operation !== 'insert' && state.operation !== 'upsert' && state.operation !== 'update') {
+        state.operation = 'select';
+      }
       state.selectCols = columns;
       if (options.count) state.countType = options.count;
       if (options.head) state.headOnly = true;
@@ -282,7 +284,7 @@ async function executeLocalQuery(state) {
       await putRecordsInStore(state.tableName, inserted);
 
       return {
-        data: Array.isArray(state.payload) ? inserted : (state.isSingle ? inserted[0] : inserted),
+        data: state.isSingle ? (inserted[0] || null) : (Array.isArray(state.payload) ? inserted : (inserted[0] || inserted)),
         error: null,
         count: inserted.length,
       };

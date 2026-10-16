@@ -29,6 +29,7 @@ export default function MasterImportModal({ isOpen, onClose, onSuccess }) {
   const [progress, setProgress] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const [parseResult, setParseResult] = useState(null);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
   if (!isOpen) return null;
@@ -46,20 +47,22 @@ export default function MasterImportModal({ isOpen, onClose, onSuccess }) {
 
     try {
       const res = await parseMasterSpreadsheet(selectedFile);
+      setParseResult(res);
       setParsedData(res.parsedRows);
-      setParseErrors(res.errors);
+      setParseErrors(res.errors || []);
       setParsing(false);
     } catch (err) {
       setParsing(false);
+      setParseResult(null);
       setParsedData(null);
       setError(err.message || 'Failed to parse master spreadsheet.');
     }
   };
 
-  const handleDownloadTemplate = async () => {
+  const handleDownloadTemplate = async (format = 'xlsx') => {
     setDownloadingTemplate(true);
     try {
-      await downloadAllInOneTemplate('xlsx');
+      await downloadAllInOneTemplate(format);
     } catch (err) {
       console.error('Failed to download template:', err);
     } finally {
@@ -78,7 +81,7 @@ export default function MasterImportModal({ isOpen, onClose, onSuccess }) {
     setResult(null);
 
     try {
-      const res = await commitMasterSpreadsheetData(parsedData, {
+      const res = await commitMasterSpreadsheetData(parseResult || parsedData, {
         onProgress: (p) => setProgress(p),
       });
 
@@ -206,16 +209,39 @@ export default function MasterImportModal({ isOpen, onClose, onSuccess }) {
                 <strong>Zero manual configuration:</strong> Put all your batches, students, and parent phone numbers into one Excel sheet.
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              icon={Download}
-              onClick={handleDownloadTemplate}
-              disabled={downloadingTemplate}
-              style={{ flexShrink: 0, backgroundColor: '#ffffff' }}
-            >
-              {downloadingTemplate ? 'Generating...' : 'Download Template (.xlsx)'}
-            </Button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--navy-900)', fontWeight: 600 }}>Templates:</span>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Download}
+                onClick={() => handleDownloadTemplate('xlsx')}
+                disabled={downloadingTemplate}
+                style={{ flexShrink: 0, backgroundColor: '#ffffff', fontSize: '11px', padding: '4px 8px' }}
+              >
+                .XLSX
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Download}
+                onClick={() => handleDownloadTemplate('csv')}
+                disabled={downloadingTemplate}
+                style={{ flexShrink: 0, backgroundColor: '#ffffff', fontSize: '11px', padding: '4px 8px' }}
+              >
+                .CSV
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Download}
+                onClick={() => handleDownloadTemplate('json')}
+                disabled={downloadingTemplate}
+                style={{ flexShrink: 0, backgroundColor: '#ffffff', fontSize: '11px', padding: '4px 8px' }}
+              >
+                .JSON
+              </Button>
+            </div>
           </div>
 
           {/* File Upload Zone */}
@@ -233,7 +259,7 @@ export default function MasterImportModal({ isOpen, onClose, onSuccess }) {
           >
             <input
               type="file"
-              accept=".xlsx, .xls, .csv"
+              accept=".xlsx, .xls, .csv, .json, .smsdb"
               onChange={handleFileChange}
               style={{
                 position: 'absolute',
@@ -247,10 +273,10 @@ export default function MasterImportModal({ isOpen, onClose, onSuccess }) {
             />
             <Upload size={32} color="var(--navy-700)" style={{ margin: '0 auto 8px auto' }} />
             <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--navy-950)', marginBottom: '4px' }}>
-              {fileName ? fileName : 'Click or drag & drop your Master Excel / CSV file here'}
+              {fileName ? fileName : 'Click or drag & drop Master Excel (.xlsx), CSV, JSON, or DB Backup here'}
             </div>
             <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              Supports Microsoft Excel (.xlsx, .xls) and Comma-Separated Values (.csv)
+              Supports Microsoft Excel (.xlsx, .xls), CSV (.csv), JSON array (.json), or SMS Backup (.smsdb)
             </div>
           </div>
 
@@ -382,10 +408,12 @@ export default function MasterImportModal({ isOpen, onClose, onSuccess }) {
             >
               <CheckCircle2 size={36} color="var(--status-present)" style={{ margin: '0 auto 10px auto' }} />
               <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700 }}>
-                School Database Created Successfully!
+                {result.isBackupRestore ? 'Personal Database Restored Successfully!' : 'Personal School Database Created Successfully!'}
               </h4>
               <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5 }}>
-                Enrolled <strong>{result.studentsCreated} students</strong> across <strong>{result.batchesCreated} cohorts</strong>, linked <strong>{result.parentsCreated} guardians</strong>, and created <strong>{result.feesCreated} fee records</strong>.
+                {result.isBackupRestore
+                  ? 'All institutional tables have been restored into your local on-device database.'
+                  : `Enrolled ${result.studentsCreated} students across ${result.batchesCreated} cohorts, linked ${result.parentsCreated} guardians, and created ${result.feesCreated} fee records.`}
               </p>
             </div>
           )}
