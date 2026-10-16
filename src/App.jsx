@@ -141,46 +141,62 @@ export default function App() {
 
   // Initialize and subscribe to Supabase Auth State
   useEffect(() => {
-    if (!supabase || !isSupabaseConfigured) {
+    // Failsafe timer: guarantee loading state terminates within 3 seconds regardless of network
+    const safetyTimer = setTimeout(() => {
       setAuthLoading(false);
-      return;
-    }
+    }, 3000);
 
-    // 1. Get initial session
-    supabase.auth
-      .getSession()
-      .then(({ data: { session: initialSession } }) => {
-        setSession(initialSession);
-        const currentUser = initialSession?.user ?? null;
+    try {
+      if (!supabase || !isSupabaseConfigured || !supabase.auth) {
+        clearTimeout(safetyTimer);
+        setAuthLoading(false);
+        return;
+      }
+
+      // 1. Get initial session
+      supabase.auth
+        .getSession()
+        .then(({ data: { session: initialSession } = {} }) => {
+          clearTimeout(safetyTimer);
+          setSession(initialSession || null);
+          const currentUser = initialSession?.user ?? null;
+          setUser(currentUser);
+          if (currentUser) {
+            loadProfile(currentUser);
+          }
+          setAuthLoading(false);
+        })
+        .catch((err) => {
+          clearTimeout(safetyTimer);
+          console.error('Session retrieval error:', err);
+          setAuthLoading(false);
+        });
+
+      // 2. Listen for auth state changes
+      const {
+        data: { subscription } = {},
+      } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+        clearTimeout(safetyTimer);
+        setSession(currentSession || null);
+        const currentUser = currentSession?.user ?? null;
         setUser(currentUser);
         if (currentUser) {
           loadProfile(currentUser);
+        } else {
+          setCurrentUserProfile(null);
         }
-        setAuthLoading(false);
-      })
-      .catch((err) => {
-        console.error('Session retrieval error:', err);
         setAuthLoading(false);
       });
 
-    // 2. Listen for auth state changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, currentSession) => {
-      setSession(currentSession);
-      const currentUser = currentSession?.user ?? null;
-      setUser(currentUser);
-      if (currentUser) {
-        loadProfile(currentUser);
-      } else {
-        setCurrentUserProfile(null);
-      }
+      return () => {
+        clearTimeout(safetyTimer);
+        subscription?.unsubscribe?.();
+      };
+    } catch (err) {
+      clearTimeout(safetyTimer);
+      console.error('Auth initialization error:', err);
       setAuthLoading(false);
-    });
-
-    return () => {
-      subscription?.unsubscribe();
-    };
+    }
   }, [loadProfile]);
 
   // Refresh counts when user is authenticated or active page changes
