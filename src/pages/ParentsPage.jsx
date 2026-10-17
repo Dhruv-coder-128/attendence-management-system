@@ -260,10 +260,10 @@ export default function ParentsPage({ onRefreshCounts }) {
   useEffect(() => {
     fetchData();
 
-    // Auto-sync incoming Telegram confirmations every 15 seconds
+    // Auto-sync incoming Telegram confirmations every 25 seconds
     const syncTimer = setInterval(() => {
       handleSyncTelegram(true);
-    }, 15000);
+    }, 25000);
     return () => clearInterval(syncTimer);
   }, []);
 

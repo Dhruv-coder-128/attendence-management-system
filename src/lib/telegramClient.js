@@ -486,6 +486,7 @@ export async function sendBatchAttendanceNotifications({
     let sentCount = 0;
     let failedCount = 0;
     let pendingLinkingCount = 0;
+    let alreadyNotifiedCount = 0;
     const details = [];
 
     for (const record of records) {
@@ -493,6 +494,19 @@ export async function sendBatchAttendanceNotifications({
       const parentLink = student?.parent_students?.[0];
       const parent = parentLink?.parents;
       const isLinked = Boolean(parent?.is_verified && parent?.telegram_chat_id);
+
+      // Guard: Do not send duplicate notices if already notified, unless explicitly requested via forceAll
+      if (record.telegram_notified && !forceAll && !retryFailedOnly) {
+        alreadyNotifiedCount++;
+        details.push({
+          studentName: student?.full_name || 'Student',
+          rollNo: student?.roll_no || 'N/A',
+          parentName: parent?.full_name || 'Guardian',
+          status: 'already_notified',
+          chatId: parent?.telegram_chat_id,
+        });
+        continue;
+      }
 
       if (!isLinked) {
         pendingLinkingCount++;
@@ -570,7 +584,7 @@ export async function sendBatchAttendanceNotifications({
         total: records.length,
         sent: sentCount,
         failed: failedCount,
-        alreadyNotified: 0,
+        alreadyNotified: alreadyNotifiedCount,
         pendingLinking: pendingLinkingCount,
         botConfigured: Boolean(botToken),
       },
@@ -1199,21 +1213,78 @@ export async function deleteTelegramWebhook(overrideToken = null) {
  * 4. Bot handles plain /start or 10-digit phone number entry directly in chat so parents can connect even without deep link!
  * 5. Auto-clears conflicting webhooks if Telegram returns HTTP 409 Conflict.
  */
-export async function syncTelegramBotUpdates() {
-  const schoolSettings = getSchoolTelegramSettings();
-  const envToken = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_TELEGRAM_BOT_TOKEN : '';
-  const botToken = (schoolSettings.botToken || envToken || '').trim();
+// Concurrency Mutex & Persistent Telegram Update Offset State
+let isTelegramSyncInProgress = false;
+const TELEGRAM_LAST_UPDATE_KEY = 'sms_telegram_last_update_id';
+const TELEGRAM_PROCESSED_UPDATES_KEY = 'sms_processed_telegram_update_ids';
 
-  if (!botToken) {
-    return {
-      success: false,
-      configured: false,
-      error: 'Telegram Bot Token is not configured. Please save your Bot Token in Settings.',
-    };
+function getStoredLastUpdateId() {
+  try {
+    const val = typeof localStorage !== 'undefined' ? localStorage.getItem(TELEGRAM_LAST_UPDATE_KEY) : null;
+    return val ? parseInt(val, 10) : 0;
+  } catch {
+    return 0;
   }
+}
+
+function setStoredLastUpdateId(updateId) {
+  try {
+    if (typeof localStorage !== 'undefined' && updateId > 0) {
+      localStorage.setItem(TELEGRAM_LAST_UPDATE_KEY, String(updateId));
+    }
+  } catch {}
+}
+
+function getProcessedUpdateIds() {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(TELEGRAM_PROCESSED_UPDATES_KEY) : null;
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function saveProcessedUpdateIds(set) {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const arr = Array.from(set).slice(-500);
+      localStorage.setItem(TELEGRAM_PROCESSED_UPDATES_KEY, JSON.stringify(arr));
+    }
+  } catch {}
+}
+
+export async function syncTelegramBotUpdates() {
+  if (isTelegramSyncInProgress) {
+    return { success: true, count: 0, skipped: true, message: 'Sync already in progress.' };
+  }
+  isTelegramSyncInProgress = true;
 
   try {
-    let res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=-50`);
+    const schoolSettings = getSchoolTelegramSettings();
+    const envToken = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_TELEGRAM_BOT_TOKEN : '';
+    const botToken = (schoolSettings.botToken || envToken || '').trim();
+
+    if (!botToken) {
+      return {
+        success: false,
+        configured: false,
+        error: 'Telegram Bot Token is not configured. Please save your Bot Token in Settings.',
+      };
+    }
+
+    const lastProcessedId = getStoredLastUpdateId();
+    const processedIds = getProcessedUpdateIds();
+
+    // Query Telegram strictly for new updates higher than lastProcessedId
+    let pollUrl = `https://api.telegram.org/bot${botToken}/getUpdates?timeout=0`;
+    if (lastProcessedId > 0) {
+      pollUrl += `&offset=${lastProcessedId + 1}`;
+    } else {
+      // First cold poll: retrieve at most last 10 updates
+      pollUrl += `&offset=-10`;
+    }
+
+    let res = await fetch(pollUrl);
     let data = await res.json();
 
     // Auto-recover from HTTP 409 Conflict if a webhook was previously active
@@ -1222,7 +1293,7 @@ export async function syncTelegramBotUpdates() {
         console.warn('Active Telegram webhook detected, auto-clearing webhook to allow desktop polling...');
         try {
           await fetch(`https://api.telegram.org/bot${botToken}/deleteWebhook`);
-          res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=-50`);
+          res = await fetch(pollUrl);
           data = await res.json();
         } catch (delErr) {
           console.warn('Auto deleteWebhook error:', delErr);
@@ -1242,6 +1313,23 @@ export async function syncTelegramBotUpdates() {
       return { success: true, count: 0, linkedParents: [], message: 'No new updates from Telegram.' };
     }
 
+    // Filter updates that have already been processed in client session/storage
+    const newUpdates = updates.filter((u) => !processedIds.has(u.update_id));
+
+    // Compute highest update ID from all updates returned by Telegram
+    const highestUpdateId = Math.max(...updates.map((u) => u.update_id));
+
+    // If all updates in this batch were already processed, immediately advance Telegram server offset and exit
+    if (newUpdates.length === 0) {
+      if (highestUpdateId > 0) {
+        setStoredLastUpdateId(highestUpdateId);
+        try {
+          await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=${highestUpdateId + 1}&limit=1`);
+        } catch {}
+      }
+      return { success: true, count: 0, linkedParents: [], message: 'All updates previously confirmed.' };
+    }
+
     // 1. Fetch current parents, invitations, and student associations
     const [pRes, invRes, psRes, stRes, bRes] = await Promise.all([
       supabase.from('parents').select('*'),
@@ -1258,6 +1346,12 @@ export async function syncTelegramBotUpdates() {
     const batchesList = bRes.data || [];
 
     if (parents.length === 0) {
+      if (highestUpdateId > 0) {
+        setStoredLastUpdateId(highestUpdateId);
+        try {
+          await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=${highestUpdateId + 1}&limit=1`);
+        } catch {}
+      }
       return { success: true, count: 0, linkedParents: [] };
     }
 
@@ -1290,16 +1384,17 @@ export async function syncTelegramBotUpdates() {
 
     let linkedCount = 0;
     const linkedNames = [];
+    const nowMs = Date.now();
 
-    // Track recently responded actions in this session to prevent duplicate messages
-    const processedActionsKey = 'sms_processed_telegram_actions';
-    let processedActions = {};
-    try {
-      processedActions = JSON.parse(sessionStorage.getItem(processedActionsKey) || '{}');
-    } catch {}
-
-    for (const update of updates) {
+    for (const update of newUpdates) {
       const updateId = update.update_id;
+
+      // Mark update as processed in client cache immediately to guarantee single execution
+      processedIds.add(updateId);
+
+      // Check if message is stale (older than 180 seconds / 3 minutes on cold startup)
+      const rawDate = update.message?.date || update.callback_query?.message?.date;
+      const isStale = rawDate && (nowMs - (rawDate * 1000) > 180000);
 
       // =========================================================================
       // CASE 1: CALLBACK QUERY (Parent tapped an Inline Keyboard button)
@@ -1423,6 +1518,11 @@ export async function syncTelegramBotUpdates() {
           } catch {}
           continue;
         }
+      }
+
+      // If text message is stale from historical backlog, skip outbound replies!
+      if (isStale) {
+        continue;
       }
 
       // =========================================================================
@@ -1581,6 +1681,17 @@ export async function syncTelegramBotUpdates() {
       }
     }
 
+    // Acknowledge all updates up to highestUpdateId with Telegram server so Telegram permanently removes them from queue
+    if (highestUpdateId > 0) {
+      setStoredLastUpdateId(highestUpdateId);
+      saveProcessedUpdateIds(processedIds);
+      try {
+        await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=${highestUpdateId + 1}&limit=1`);
+      } catch (ackErr) {
+        console.warn('Could not acknowledge Telegram offset:', ackErr);
+      }
+    }
+
     return {
       success: true,
       count: linkedCount,
@@ -1589,6 +1700,8 @@ export async function syncTelegramBotUpdates() {
     };
   } catch (err) {
     return { success: false, error: err.message };
+  } finally {
+    isTelegramSyncInProgress = false;
   }
 }
 
