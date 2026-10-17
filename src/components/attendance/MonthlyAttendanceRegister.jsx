@@ -127,22 +127,32 @@ export default function MonthlyAttendanceRegister({
       // 2. Fetch all attendance records for batch in this date range
       const { data: attendanceData, error: aErr } = await supabase
         .from('attendance')
-        .select('id, student_id, date, status, time_in, remarks, session_name')
+        .select('id, student_id, date, status, time_in, remarks, session_name, created_at, updated_at')
         .eq('batch_id', selectedBatchId)
         .gte('date', startDate)
         .lte('date', endDate);
 
       if (aErr) throw aErr;
 
-      // 3. Map attendance by student_id and date
+      // 3. Map attendance by student_id and date with latest timestamp deduplication
       const map = {};
       const uniqueDates = new Set();
+      const latestTimestamps = {}; // `${student_id}_${date}` -> timestamp
 
       (attendanceData || []).forEach((record) => {
+        const key = `${record.student_id}_${record.date}`;
+        const recordTime = new Date(record.updated_at || record.created_at || 0).getTime();
+        const prevTime = latestTimestamps[key] ?? -1;
+
         if (!map[record.student_id]) {
           map[record.student_id] = {};
         }
-        map[record.student_id][record.date] = record.status;
+
+        // Only assign or overwrite if this record is newer or equally recent
+        if (recordTime >= prevTime) {
+          latestTimestamps[key] = recordTime;
+          map[record.student_id][record.date] = record.status;
+        }
         uniqueDates.add(record.date);
       });
 

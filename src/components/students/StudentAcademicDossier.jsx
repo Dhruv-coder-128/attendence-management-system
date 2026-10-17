@@ -120,12 +120,30 @@ export default function StudentAcademicDossier({
     try {
       const { data, error } = await supabase
         .from('attendance')
-        .select('id, date, status, time_in, remarks, session_name')
+        .select('id, date, status, time_in, remarks, session_name, created_at, updated_at')
         .eq('student_id', student.id)
         .order('date', { ascending: false });
 
       if (error) throw error;
-      setAttendanceRecords(data || []);
+
+      // Deduplicate by date: keep the record with the most recent updated_at / created_at
+      const raw = data || [];
+      const dedupedMap = new Map();
+      raw.forEach((r) => {
+        const existing = dedupedMap.get(r.date);
+        if (!existing) {
+          dedupedMap.set(r.date, r);
+        } else {
+          const t1 = new Date(existing.updated_at || existing.created_at || 0).getTime();
+          const t2 = new Date(r.updated_at || r.created_at || 0).getTime();
+          if (t2 >= t1) {
+            dedupedMap.set(r.date, r);
+          }
+        }
+      });
+
+      const sortedRecords = Array.from(dedupedMap.values()).sort((a, b) => b.date.localeCompare(a.date));
+      setAttendanceRecords(sortedRecords);
     } catch (err) {
       console.warn('Error loading attendance for dossier:', err);
     } finally {

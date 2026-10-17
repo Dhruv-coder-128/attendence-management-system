@@ -315,11 +315,7 @@ async function executeLocalQuery(state) {
           // Look up existing record by natural unique keys
           if (state.tableName === 'attendance') {
             existingRecord = rows.find(
-              (r) =>
-                r.student_id === item.student_id &&
-                r.date === item.date &&
-                (r.batch_id === item.batch_id || (!r.batch_id && !item.batch_id)) &&
-                (r.session_name === item.session_name || !item.session_name || item.session_name === 'Regular')
+              (r) => r.student_id === item.student_id && r.date === item.date
             );
           } else if (state.tableName === 'courses') {
             existingRecord = rows.find((r) => r.code === item.code);

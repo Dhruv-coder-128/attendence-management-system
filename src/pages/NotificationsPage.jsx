@@ -1766,9 +1766,81 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
               {/* Live Media Attachment Viewer */}
               <div>
                 <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)', display: 'block', marginBottom: '6px' }}>
-                  Live Media Attachment Preview:
+                  Live Media Attachment Preview {selectedNotice.attachments?.length > 1 ? `(${selectedNotice.attachments.length} Files)` : ''}:
                 </label>
-                {selectedNotice.mediaType === 'photo' && (
+
+                {/* Multiple Attachments List */}
+                {selectedNotice.attachments && selectedNotice.attachments.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {selectedNotice.attachments.map((att, aIdx) => (
+                      <div
+                        key={att.id || aIdx}
+                        style={{
+                          padding: '12px 14px',
+                          backgroundColor: '#f8fafc',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                          <div
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: '8px',
+                              backgroundColor: att.type === 'photo' ? '#e0f2fe' : att.type === 'video' ? '#f3e8ff' : '#fee2e2',
+                              color: att.type === 'photo' ? '#0284c7' : att.type === 'video' ? '#9333ea' : '#dc2626',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {att.type === 'photo' ? <ImageIcon size={18} /> : att.type === 'video' ? <Video size={18} /> : <FileText size={18} />}
+                          </div>
+                          <div style={{ overflow: 'hidden' }}>
+                            <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--navy-950)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {att.name || `Attachment ${aIdx + 1}`}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                              {att.type === 'photo' ? 'Image File' : att.type === 'video' ? 'Video File' : 'Document File'} {att.size ? `• ${(att.size / 1024).toFixed(0)} KB` : ''}
+                            </div>
+                          </div>
+                        </div>
+
+                        {att.dataUrl && (
+                          <a
+                            href={att.dataUrl}
+                            download={att.name || `attachment_${aIdx + 1}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              padding: '5px 10px',
+                              borderRadius: '6px',
+                              backgroundColor: '#ffffff',
+                              color: '#0284c7',
+                              border: '1px solid #bae6fd',
+                              textDecoration: 'none',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <ExternalLink size={12} />
+                            <span>View / Download</span>
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : selectedNotice.mediaType === 'photo' ? (
                   <div
                     style={{
                       padding: '10px',
@@ -1799,9 +1871,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
                       </div>
                     )}
                   </div>
-                )}
-
-                {selectedNotice.mediaType === 'video' && (
+                ) : selectedNotice.mediaType === 'video' && (
                   <div
                     style={{
                       padding: '10px',
@@ -1895,7 +1965,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
                   </div>
                 )}
 
-                {!selectedNotice.mediaType && (
+                {!selectedNotice.mediaType && (!selectedNotice.attachments || selectedNotice.attachments.length === 0) && (
                   <div
                     style={{
                       padding: '12px 14px',
@@ -2044,56 +2114,120 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
                         gap: '6px',
                       }}
                     >
-                      {/* Attached Media Thumbnail inside Chat Bubble */}
-                      {selectedNotice.mediaType === 'photo' && selectedNotice.mediaDataUrl && (
-                        <img
-                          src={selectedNotice.mediaDataUrl}
-                          alt="Telegram attachment preview"
-                          style={{
-                            width: '100%',
-                            maxHeight: '140px',
-                            objectFit: 'cover',
-                            borderRadius: '8px',
-                          }}
-                        />
-                      )}
+                      {/* Attached Media Thumbnails inside Chat Bubble */}
+                      {selectedNotice.attachments && selectedNotice.attachments.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {selectedNotice.attachments.filter((m) => m.type === 'photo').map((photo, pIdx) => (
+                            photo.dataUrl ? (
+                              <img
+                                key={photo.id || pIdx}
+                                src={photo.dataUrl}
+                                alt="Telegram photo"
+                                style={{
+                                  width: '100%',
+                                  maxHeight: '130px',
+                                  objectFit: 'cover',
+                                  borderRadius: '6px',
+                                }}
+                              />
+                            ) : null
+                          ))}
 
-                      {selectedNotice.mediaType === 'video' && (
-                        <div
-                          style={{
-                            width: '100%',
-                            height: '90px',
-                            backgroundColor: '#0f172a',
-                            borderRadius: '8px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#ffffff',
-                            fontSize: '11px',
-                            gap: '6px',
-                          }}
-                        >
-                          <Video size={18} color="#a855f7" />
-                          <span>Video ({selectedNotice.mediaName || 'play video'})</span>
-                        </div>
-                      )}
+                          {selectedNotice.attachments.filter((m) => m.type === 'video').map((vid, vIdx) => (
+                            <div
+                              key={vid.id || vIdx}
+                              style={{
+                                width: '100%',
+                                padding: '12px 8px',
+                                backgroundColor: '#0f172a',
+                                borderRadius: '6px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#ffffff',
+                                fontSize: '11px',
+                                gap: '6px',
+                              }}
+                            >
+                              <Video size={16} color="#a855f7" />
+                              <span style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {vid.name || 'Video Attachment'}
+                              </span>
+                            </div>
+                          ))}
 
-                      {selectedNotice.mediaType === 'document' && (
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            padding: '6px 8px',
-                            backgroundColor: '#f1f5f9',
-                            borderRadius: '6px',
-                          }}
-                        >
-                          <FileText size={18} color="#dc2626" />
-                          <div style={{ fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {selectedNotice.mediaName || 'Academic Notice.pdf'}
-                          </div>
+                          {selectedNotice.attachments.filter((m) => m.type === 'document').map((doc, dIdx) => (
+                            <div
+                              key={doc.id || dIdx}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                padding: '6px 8px',
+                                backgroundColor: '#f1f5f9',
+                                borderRadius: '6px',
+                              }}
+                            >
+                              <FileText size={16} color="#dc2626" />
+                              <div style={{ fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                {doc.name || 'Document.pdf'}
+                              </div>
+                            </div>
+                          ))}
                         </div>
+                      ) : (
+                        <>
+                          {selectedNotice.mediaType === 'photo' && selectedNotice.mediaDataUrl && (
+                            <img
+                              src={selectedNotice.mediaDataUrl}
+                              alt="Telegram attachment preview"
+                              style={{
+                                width: '100%',
+                                maxHeight: '140px',
+                                objectFit: 'cover',
+                                borderRadius: '8px',
+                              }}
+                            />
+                          )}
+
+                          {selectedNotice.mediaType === 'video' && (
+                            <div
+                              style={{
+                                width: '100%',
+                                height: '90px',
+                                backgroundColor: '#0f172a',
+                                borderRadius: '8px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#ffffff',
+                                fontSize: '11px',
+                                gap: '6px',
+                              }}
+                            >
+                              <Video size={18} color="#a855f7" />
+                              <span>Video ({selectedNotice.mediaName || 'play video'})</span>
+                            </div>
+                          )}
+
+                          {selectedNotice.mediaType === 'document' && (
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                padding: '6px 8px',
+                                backgroundColor: '#f1f5f9',
+                                borderRadius: '6px',
+                              }}
+                            >
+                              <FileText size={18} color="#dc2626" />
+                              <div style={{ fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {selectedNotice.mediaName || 'Academic Notice.pdf'}
+                              </div>
+                            </div>
+                          )}
+                        </>
                       )}
 
                       {/* Notice Header in bold */}

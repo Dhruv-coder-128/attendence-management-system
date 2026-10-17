@@ -247,20 +247,50 @@ export default function FeesPage({ onRefreshCounts }) {
 
       if (res.success) {
         showNotice(res.message || 'Payment recorded successfully.');
-        const studentRef = selectedStudentForPayment;
+
+        const newPaid = res.paid_amount !== undefined
+          ? res.paid_amount
+          : (Number(selectedStudentForPayment.fee_paid || 0) + amt);
+
+        const newPending = res.pending_amount !== undefined
+          ? res.pending_amount
+          : Math.max(0, Number(selectedStudentForPayment.tuition_fee || 36000) - newPaid);
+
+        const newTotal = res.total_amount || Number(selectedStudentForPayment.tuition_fee || 36000);
+
+        const updatedStudent = {
+          ...selectedStudentForPayment,
+          fee_paid: newPaid,
+          tuition_fee: newTotal,
+          fee_status: res.status || (newPending === 0 ? 'paid' : 'partial'),
+          fee_due_date: res.next_due_date || selectedStudentForPayment.fee_due_date,
+          student_fees: [res.feeRecord || res],
+        };
+
         const paidDetails = {
           amount: amt,
           payment_method: paymentData.paymentMethod,
           reference_no: paymentData.referenceNo,
           notes: paymentData.notes,
+          total_paid: newPaid,
+          pending_amount: newPending,
+          total_amount: newTotal,
         };
+
+        // Optimistically update students list so table immediately shows new figures
+        setStudents((prev) =>
+          prev.map((s) => (s.id === selectedStudentForPayment.id ? { ...s, ...updatedStudent } : s))
+        );
+
         setSelectedStudentForPayment(null);
         setPaymentData({ amount: '', paymentMethod: 'Cash', referenceNo: '', notes: '' });
+
+        // Immediately present receipt modal for printing with the updated student record
+        setReceiptPaymentRecord(paidDetails);
+        setReceiptStudent(updatedStudent);
+
         await loadFeesData();
         if (onRefreshCounts) onRefreshCounts();
-        // Immediately present receipt modal for printing
-        setReceiptPaymentRecord(paidDetails);
-        setReceiptStudent(studentRef);
       } else {
         showNotice(res.error || 'Failed to record payment.', true);
       }

@@ -48,7 +48,7 @@ import {
 /**
  * System Settings, Cloud Integration Status & Staff Access Page
  */
-export default function SettingsPage({ currentUserProfile, onOpenLicenseModal }) {
+export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, onNavigate }) {
   const storedLicense = getStoredLicense();
   const [instituteName, setInstituteName] = useState(DEFAULT_ACADEMY_SETTINGS.academy_name);
   const [campusName, setCampusName] = useState(DEFAULT_ACADEMY_SETTINGS.branch_name);
@@ -1062,6 +1062,69 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
 
       {/* Staff & Role-Based Access Control Section */}
       <UsersManagement currentUserProfile={currentUserProfile} />
+
+      {/* SaaS Multi-School Admin & Cloud Master Portal Section */}
+      {onNavigate && (
+        <div
+          className="card"
+          style={{
+            marginTop: '24px',
+            border: '1px solid #bfdbfe',
+            background: 'linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%)',
+            padding: '24px',
+            borderRadius: '12px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div
+                style={{
+                  width: '46px',
+                  height: '46px',
+                  borderRadius: '10px',
+                  backgroundColor: '#e0f2fe',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#0284c7',
+                }}
+              >
+                <Shield size={24} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--navy-950)' }}>
+                    SaaS Multi-School Admin &amp; Cloud Master Portal
+                  </h3>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      backgroundColor: '#dbeafe',
+                      color: '#1d4ed8',
+                    }}
+                  >
+                    Cloud Master
+                  </span>
+                </div>
+                <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>
+                  Manage multiple school tenants, provision new institutional branches, audit database sync, and monitor global metrics.
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="primary"
+              icon={ExternalLink}
+              onClick={() => onNavigate('master-portal')}
+            >
+              Open SaaS Console
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

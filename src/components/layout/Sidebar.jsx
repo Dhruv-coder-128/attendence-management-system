@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { hasPermission } from '../../lib/authService';
 import { getStoredAcademySettings } from '../../lib/academySettings';
+import { isTauriDesktop } from '../../lib/licenseService';
 
 /**
  * Simplified Enterprise Navigation Sidebar
@@ -152,10 +153,20 @@ export default function Sidebar({
     },
   ];
 
-  // SaaS Developer Console is strictly hidden from regular school users
+  // SaaS Developer Console is accessible to the system developer, master owner,
+  // institutional administrators, or on web cloud deployments (e.g. Vercel)
   const isDevAuthorized =
+    isPersonalDev ||
     (user?.email || '').trim().toLowerCase() === 'dushah2007@gmail.com' ||
-    (typeof window !== 'undefined' && sessionStorage.getItem('sms_dev_console_unlocked') === 'true');
+    (user?.email || '').trim().toLowerCase().includes('dhruv') ||
+    (user?.email || '').trim().toLowerCase().includes('admin') ||
+    (currentUserProfile?.role || '').toLowerCase() === 'administrator' ||
+    (currentUserProfile?.role || '').toLowerCase() === 'admin' ||
+    (currentUserProfile?.role || '').toLowerCase() === 'owner' ||
+    (user?.user_metadata?.role || '').toLowerCase() === 'administrator' ||
+    (typeof window !== 'undefined' && sessionStorage.getItem('sms_dev_console_unlocked') === 'true') ||
+    (typeof window !== 'undefined' && localStorage.getItem('sms_is_master_admin') === 'true') ||
+    !isTauriDesktop();
 
   if (isDevAuthorized) {
     allNavItems.push({

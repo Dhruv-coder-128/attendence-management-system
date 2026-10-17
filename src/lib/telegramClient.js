@@ -460,6 +460,89 @@ export async function sendDirectTelegramMedia(botToken, chatId, {
 }
 
 /**
+ * Sends a native Telegram Media Group (Album) for multiple photos and videos.
+ * Delivered as a single grouped message bubble in Telegram.
+ */
+export async function sendDirectTelegramMediaGroup(botToken, chatId, mediaItems = [], caption = '', parseMode = 'Markdown') {
+  if (!botToken || !chatId || !mediaItems || mediaItems.length === 0) {
+    return { ok: false, error: 'Bot token, Chat ID, and media files required.' };
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('chat_id', chatId);
+
+    const mediaMeta = [];
+    mediaItems.forEach((item, idx) => {
+      const attachKey = `file_${idx}`;
+      const cleanType = String(item.fileType || item.type || '').toLowerCase();
+      const isVideo = cleanType.includes('video') || cleanType === 'mp4';
+      const meta = {
+        type: isVideo ? 'video' : 'photo',
+        media: `attach://${attachKey}`,
+      };
+      if (idx === 0 && caption) {
+        meta.caption = caption;
+        if (parseMode) meta.parse_mode = parseMode;
+      }
+      mediaMeta.push(meta);
+      formData.append(
+        attachKey,
+        item.file || item,
+        item.fileName || item.name || (isVideo ? `video_${idx}.mp4` : `image_${idx}.jpg`)
+      );
+    });
+
+    formData.append('media', JSON.stringify(mediaMeta));
+
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMediaGroup`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      return { ok: true, messageId: data.result?.[0]?.message_id };
+    }
+
+    // If parseMode error, retry without formatting
+    if (data.description && data.description.includes("can't parse entities")) {
+      const retryForm = new FormData();
+      retryForm.append('chat_id', chatId);
+      const retryMeta = mediaMeta.map((m, idx) => {
+        if (idx === 0 && caption) {
+          const stripped = { ...m, caption: caption.replace(/[*_`\[\]]/g, '') };
+          delete stripped.parse_mode;
+          return stripped;
+        }
+        return m;
+      });
+      retryForm.append('media', JSON.stringify(retryMeta));
+      mediaItems.forEach((item, idx) => {
+        const attachKey = `file_${idx}`;
+        retryForm.append(
+          attachKey,
+          item.file || item,
+          item.fileName || item.name || `file_${idx}`
+        );
+      });
+      const retryRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMediaGroup`, {
+        method: 'POST',
+        body: retryForm,
+      });
+      const retryData = await retryRes.json();
+      if (retryRes.ok && retryData.ok) {
+        return { ok: true, messageId: retryData.result?.[0]?.message_id };
+      }
+    }
+
+    return { ok: false, error: data.description || `HTTP ${res.status}` };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
  * Dispatches a batch administrative broadcast notification with optional media attachment
  * to verified guardians via Telegram Bot API.
  */
@@ -558,7 +641,8 @@ export async function sendBatchBroadcastNotification({
   }
 
   const schoolName = schoolSettings.botName || 'SMS — Student Management System';
-  const formattedBroadcastText = `📢 *${title}*\n_${schoolName} • ${category}_\n\n${message}\n\n━━━━━━━━━━━━━━━━━━━━\n_Sent to verified guardians via SMS Academy Gateway_`;
+  // Clean author-only message text (no unwanted footer appended)
+  const formattedBroadcastText = `📢 *${title}*\n_${schoolName} • ${category}_\n\n${message}`;
 
   let deliveredCount = 0;
   let failedCount = 0;
@@ -567,6 +651,13 @@ export async function sendBatchBroadcastNotification({
   const itemsToSend = (mediaFiles && mediaFiles.length > 0)
     ? mediaFiles
     : (mediaFile ? [{ file: mediaFile, fileType: mediaType, fileName: mediaName }] : []);
+
+  // Separate visual media (photo/video) and document files
+  const visualItems = itemsToSend.filter((item) => {
+    const t = String(item.fileType || item.type || '').toLowerCase();
+    return t.includes('image') || t === 'photo' || t.includes('video') || t === 'mp4';
+  });
+  const documentItems = itemsToSend.filter((item) => !visualItems.includes(item));
 
   for (let i = 0; i < total; i++) {
     const parent = uniqueParents[i];
@@ -582,34 +673,42 @@ export async function sendBatchBroadcastNotification({
 
     try {
       let res;
-      if (itemsToSend.length > 0) {
-        const first = itemsToSend[0];
+
+      if (itemsToSend.length === 0) {
+        // Text-only broadcast
+        res = await sendDirectTelegramMessage(botToken, chatId, formattedBroadcastText, 'Markdown');
+        if (!res.ok && res.error && res.error.includes("can't parse entities")) {
+          const plain = `📢 ${title}\n${schoolName} • ${category}\n\n${message}`;
+          res = await sendDirectTelegramMessage(botToken, chatId, plain, '');
+        }
+      } else if (visualItems.length >= 2 && documentItems.length === 0) {
+        // Group multiple photos/videos into a single native Telegram album bubble
+        res = await sendDirectTelegramMediaGroup(botToken, chatId, visualItems, formattedBroadcastText, 'Markdown');
+      } else {
+        // Dispatch primary item with full caption
+        const primaryItem = visualItems[0] || documentItems[0] || itemsToSend[0];
         res = await sendDirectTelegramMedia(botToken, chatId, {
-          file: first.file || first,
-          fileType: first.fileType || first.type || mediaType || 'document',
-          fileName: first.fileName || first.name || mediaName,
+          file: primaryItem.file || primaryItem,
+          fileType: primaryItem.fileType || primaryItem.type || mediaType || 'document',
+          fileName: primaryItem.fileName || primaryItem.name || mediaName,
           caption: formattedBroadcastText,
           parseMode: 'Markdown',
         });
 
-        // Send remaining attachments if multiple
-        for (let m = 1; m < itemsToSend.length; m++) {
-          const item = itemsToSend[m];
+        // If there are other visual items and more than 1, group them or send cleanly
+        const otherItems = itemsToSend.filter((it) => it !== primaryItem);
+        for (const extraItem of otherItems) {
           try {
             await sendDirectTelegramMedia(botToken, chatId, {
-              file: item.file || item,
-              fileType: item.fileType || item.type || 'document',
-              fileName: item.fileName || item.name || '',
-              caption: `📎 Attachment (${m + 1}/${itemsToSend.length}): ${item.fileName || item.name || ''}`,
+              file: extraItem.file || extraItem,
+              fileType: extraItem.fileType || extraItem.type || 'document',
+              fileName: extraItem.fileName || extraItem.name || '',
+              caption: '', // Clean delivery without artificial "Attachment (2/2)" text
               parseMode: '',
             });
-          } catch {}
-        }
-      } else {
-        res = await sendDirectTelegramMessage(botToken, chatId, formattedBroadcastText, 'Markdown');
-        if (!res.ok && res.error && res.error.includes("can't parse entities")) {
-          const plain = `📢 ${title}\n${schoolName} • ${category}\n\n${message}\n\nSent to verified guardians via SMS Academy Gateway`;
-          res = await sendDirectTelegramMessage(botToken, chatId, plain, '');
+          } catch (mErr) {
+            console.warn('Subsequent attachment dispatch note:', mErr);
+          }
         }
       }
 
