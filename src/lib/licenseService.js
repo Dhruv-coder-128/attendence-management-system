@@ -6,6 +6,8 @@
  * multi-school database mapping, and configurable developer contact actions.
  */
 
+import { supabase, isSupabaseConfigured } from './supabase.js';
+
 const STORAGE_KEY = 'sms_school_license';
 const DEFAULT_DEV_CONTACT = {
   name: 'Dhruv Shah',
@@ -234,7 +236,48 @@ export async function validateLicense(options = {}) {
     };
   }
 
-  // Attempt server-side authoritative check
+  // 1. Direct authoritative check via Supabase database (Real-Time Cloud & Desktop Enforcement)
+  if (supabase && isSupabaseConfigured) {
+    try {
+      const licCode = 'LIC:' + cached.licenseKey;
+      const { data: licRow } = await supabase
+        .from('courses')
+        .select('*')
+        .eq('code', licCode)
+        .maybeSingle();
+
+      if (licRow) {
+        let licInfo = null;
+        try {
+          licInfo = JSON.parse(licRow.description);
+        } catch {
+          licInfo = { status: licRow.is_active ? 'licensed' : 'suspended' };
+        }
+
+        const effectiveStatus = licInfo?.status || (licRow.is_active ? 'licensed' : 'suspended');
+        if (effectiveStatus === 'suspended' || effectiveStatus === 'revoked' || effectiveStatus === 'locked' || licRow.is_active === false) {
+          saveStoredLicense({
+            ...cached,
+            status: 'suspended',
+            daysRemaining: 0,
+            isLocked: true,
+          });
+          return {
+            ok: false,
+            status: 'suspended',
+            isTrialExpired: true,
+            isLocked: true,
+            error: 'This school installation has been locked / suspended by the administrator or developer. Please contact Dhruv Shah (+91 8866039007).',
+            developerContact: DEFAULT_DEV_CONTACT,
+          };
+        }
+      }
+    } catch (dbErr) {
+      console.warn('Direct Supabase license check warning:', dbErr);
+    }
+  }
+
+  // 2. Attempt server-side authoritative check via serverless API
   try {
     const res = await fetch(`${baseUrl}/api/license-validate`, {
       method: 'POST',

@@ -631,13 +631,27 @@ ${mark.remarks ? `\n📝 <i>Faculty Remarks: ${escapeHtml(mark.remarks)}</i>` : 
         return res.status(500).json({ ok: false, error: `Failed to query attendance: ${attErr.message}` });
       }
 
-      const records = attendanceRecords || [];
-      if (records.length === 0) {
+      const rawRecords = attendanceRecords || [];
+      if (rawRecords.length === 0) {
         return res.status(400).json({
           ok: false,
           error: `No attendance records found for ${batchData.name} on ${date}. Please record roll call first before sending alerts.`,
         });
       }
+
+      // Deduplicate by student_id to ensure the most recent record is used
+      const dedupeMap = new Map();
+      rawRecords.forEach((r) => {
+        const existing = dedupeMap.get(r.student_id);
+        if (!existing) {
+          dedupeMap.set(r.student_id, r);
+        } else {
+          const t1 = new Date(existing.updated_at || existing.created_at || 0).getTime();
+          const t2 = new Date(r.updated_at || r.created_at || 0).getTime();
+          if (t2 >= t1) dedupeMap.set(r.student_id, r);
+        }
+      });
+      const records = Array.from(dedupeMap.values());
 
       // 3. Collect student IDs to query verified parents server-side
       const studentIds = records.map((r) => r.student_id).filter(Boolean);

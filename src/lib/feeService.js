@@ -85,8 +85,9 @@ export function buildDefaultSchedule(totalAmount, enrollmentDateStr, policy) {
       installment_no: inst.number,
       label: inst.label,
       amount,
+      paid_amount: 0,
       due_date: dueDate.toISOString().split('T')[0],
-      status: 'pending', // 'paid' | 'pending' | 'overdue'
+      status: 'pending', // 'paid' | 'partial' | 'pending' | 'overdue'
       paid_at: null,
       payment_method: null,
       reference_no: null,
@@ -123,7 +124,7 @@ export function computeFeeStatus(totalAmount, paidAmount, schedule = [], nextDue
 
   if (schedule && schedule.length > 0) {
     schedule.forEach((inst) => {
-      if (inst.status === 'pending' && inst.due_date && inst.due_date < todayStr) {
+      if (inst.status !== 'paid' && inst.due_date && inst.due_date < todayStr) {
         isOverdue = true;
         const diffMs = new Date().getTime() - new Date(inst.due_date).getTime();
         const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -213,7 +214,7 @@ export async function getStudentFeeRecord(student, course) {
         ...data,
         total_amount: Number(data.total_amount),
         paid_amount: Number(data.paid_amount),
-        pending_amount: Number(data.total_amount) - Number(data.paid_amount),
+        pending_amount: Math.max(0, Number(data.total_amount) - Number(data.paid_amount)),
         installment_schedule: schedule,
         status: computed.status,
       };
@@ -228,7 +229,7 @@ export async function getStudentFeeRecord(student, course) {
         ...defaultRecord,
         total_amount: total,
         paid_amount: paid,
-        pending_amount: total - paid,
+        pending_amount: Math.max(0, total - paid),
         status: computed.status,
         next_due_date: student.fee_due_date || firstDueDate,
       };
@@ -242,17 +243,35 @@ export async function getStudentFeeRecord(student, course) {
 }
 
 /**
- * Records a tuition fee payment in Supabase public.student_fees
+ * Records a tuition fee payment in Supabase public.student_fees & public.students
+ * Supports both named object arguments and positional arguments.
+ * Progressively credits installments across the schedule.
  */
-export async function recordFeePayment({
-  studentId,
-  amount,
-  paymentMethod = 'Cash',
-  referenceNo = '',
-  notes = '',
-  existingFeeRecord,
-  installmentNumber = null,
-}) {
+export async function recordFeePayment(param1, ...rest) {
+  let studentId, amount, paymentMethod, referenceNo, notes, existingFeeRecord, installmentNumber;
+
+  if (param1 && typeof param1 === 'object' && ('studentId' in param1 || 'amount' in param1)) {
+    ({
+      studentId,
+      amount,
+      paymentMethod = 'Cash',
+      referenceNo = '',
+      notes = '',
+      existingFeeRecord,
+      installmentNumber = null,
+    } = param1);
+  } else {
+    studentId = param1;
+    [
+      amount,
+      paymentMethod = 'Cash',
+      referenceNo = '',
+      notes = '',
+      installmentNumber = null,
+      existingFeeRecord,
+    ] = rest;
+  }
+
   if (!studentId) throw new Error('Student ID is required');
 
   const paymentAmt = parseFloat(amount);
@@ -260,50 +279,84 @@ export async function recordFeePayment({
     throw new Error('Please enter a valid positive payment amount');
   }
 
-  const currentPaid = Number(existingFeeRecord?.paid_amount || 0);
-  const totalAmount = Number(existingFeeRecord?.total_amount || 45000);
+  // Fetch fresh student and fee records from DB for 100% accurate state
+  let studentData = null;
+  let dbFeeRecord = null;
+  if (supabase && isSupabaseConfigured) {
+    try {
+      const [stRes, feeRes] = await Promise.all([
+        supabase
+          .from('students')
+          .select('id, full_name, tuition_fee, fee_paid, fee_status, fee_due_date, course_id, enrollment_date, courses:course_id(id, name, code, level)')
+          .eq('id', studentId)
+          .maybeSingle(),
+        supabase
+          .from('student_fees')
+          .select('*')
+          .eq('student_id', studentId)
+          .maybeSingle(),
+      ]);
+      studentData = stRes.data;
+      dbFeeRecord = feeRes.data;
+    } catch (e) {
+      console.warn('Error fetching latest student fee context in recordFeePayment:', e);
+    }
+  }
+
+  const coursePolicy = getStandardCoursePolicy(studentData?.courses || existingFeeRecord?.courses);
+  const totalAmount = Number(
+    dbFeeRecord?.total_amount ??
+    studentData?.tuition_fee ??
+    existingFeeRecord?.total_amount ??
+    coursePolicy.total ??
+    36000
+  );
+
+  const currentPaid = Number(
+    dbFeeRecord?.paid_amount ??
+    studentData?.fee_paid ??
+    existingFeeRecord?.paid_amount ??
+    0
+  );
+
   const newPaidAmount = Math.min(totalAmount, currentPaid + paymentAmt);
   const newPendingAmount = Math.max(0, totalAmount - newPaidAmount);
 
-  // Update schedule
-  let schedule = Array.isArray(existingFeeRecord?.installment_schedule)
-    ? [...existingFeeRecord.installment_schedule]
-    : [];
+  // Resolve installment schedule
+  let existingSchedule = dbFeeRecord?.installment_schedule || existingFeeRecord?.installment_schedule;
+  let schedule = Array.isArray(existingSchedule) && existingSchedule.length > 0
+    ? [...existingSchedule]
+    : buildDefaultSchedule(totalAmount, studentData?.enrollment_date, coursePolicy);
 
+  const todayStr = new Date().toISOString().split('T')[0];
   const nowIso = new Date().toISOString();
 
-  if (installmentNumber !== null) {
-    schedule = schedule.map((inst) => {
-      if (inst.installment_no === installmentNumber) {
-        return {
-          ...inst,
-          status: 'paid',
-          paid_at: nowIso,
-          payment_method: paymentMethod,
-          reference_no: referenceNo || `RCP-${Date.now().toString().slice(-6)}`,
-        };
-      }
-      return inst;
-    });
-  } else {
-    // Automatically credit installments in order
-    let remainingToCredit = paymentAmt;
-    schedule = schedule.map((inst) => {
-      if (inst.status !== 'paid' && remainingToCredit > 0) {
-        if (remainingToCredit >= inst.amount) {
-          remainingToCredit -= inst.amount;
-          return {
-            ...inst,
-            status: 'paid',
-            paid_at: nowIso,
-            payment_method: paymentMethod,
-            reference_no: referenceNo || `RCP-${Date.now().toString().slice(-6)}`,
-          };
-        }
-      }
-      return inst;
-    });
-  }
+  // Progressively credit installments in order using cumulative paid amount
+  let remainingCredit = newPaidAmount;
+  schedule = schedule.map((inst) => {
+    const instTotal = Number(inst.amount || 0);
+    const instPaid = Math.min(instTotal, remainingCredit);
+    remainingCredit = Math.max(0, remainingCredit - instPaid);
+
+    let instStatus = 'pending';
+    if (instPaid >= instTotal && instTotal > 0) {
+      instStatus = 'paid';
+    } else if (instPaid > 0) {
+      instStatus = 'partial';
+    } else if (inst.due_date && inst.due_date < todayStr) {
+      instStatus = 'overdue';
+    }
+
+    return {
+      ...inst,
+      amount: instTotal,
+      paid_amount: instPaid,
+      status: instStatus,
+      paid_at: instPaid > 0 ? (inst.paid_at || nowIso) : null,
+      payment_method: instPaid > 0 ? (inst.payment_method || paymentMethod) : null,
+      reference_no: instPaid > 0 ? (inst.reference_no || referenceNo || `RCP-${Date.now().toString().slice(-6)}`) : null,
+    };
+  });
 
   // Find next pending due date
   const nextPending = schedule.find((i) => i.status !== 'paid');
@@ -311,16 +364,21 @@ export async function recordFeePayment({
 
   const computed = computeFeeStatus(totalAmount, newPaidAmount, schedule, nextDueDate);
 
+  const feeRecordId = dbFeeRecord?.id || (existingFeeRecord?.id && !String(existingFeeRecord.id).startsWith('local-') ? existingFeeRecord.id : undefined);
+
   const payload = {
+    ...(feeRecordId ? { id: feeRecordId } : {}),
     student_id: studentId,
-    academic_year: existingFeeRecord?.academic_year || '2026-27',
+    academic_year: existingFeeRecord?.academic_year || dbFeeRecord?.academic_year || '2026-27',
     total_amount: totalAmount,
     paid_amount: newPaidAmount,
     pending_amount: newPendingAmount,
     status: computed.status,
     installment_schedule: schedule,
     next_due_date: nextDueDate,
-    notes: notes ? `${existingFeeRecord?.notes || ''}\n[${new Date().toLocaleDateString('en-IN')}] Paid ₹${paymentAmt} via ${paymentMethod} (${referenceNo || 'N/A'})` : existingFeeRecord?.notes || null,
+    notes: notes
+      ? `${dbFeeRecord?.notes || existingFeeRecord?.notes || ''}\n[${new Date().toLocaleDateString('en-IN')}] Paid ₹${paymentAmt} via ${paymentMethod} (${referenceNo || 'N/A'})`.trim()
+      : (dbFeeRecord?.notes || existingFeeRecord?.notes || null),
   };
 
   if (supabase && isSupabaseConfigured) {
@@ -349,9 +407,10 @@ export async function recordFeePayment({
 
       if (!error && data) {
         return {
+          ...data,
           success: true,
           feeRecord: { ...data, installment_schedule: schedule },
-          message: `Payment of ₹${paymentAmt.toLocaleString('en-IN')} recorded successfully!`,
+          message: `Payment of ₹${paymentAmt.toLocaleString('en-IN')} recorded successfully! Pending balance: ₹${newPendingAmount.toLocaleString('en-IN')}`,
         };
       }
     } catch (dbErr) {
@@ -360,8 +419,10 @@ export async function recordFeePayment({
   }
 
   return {
+    ...payload,
+    id: feeRecordId || `fee-${studentId}`,
     success: true,
-    feeRecord: { ...payload, id: `fee-${studentId}` },
-    message: `Payment of ₹${paymentAmt.toLocaleString('en-IN')} recorded successfully!`,
+    feeRecord: { ...payload, id: feeRecordId || `fee-${studentId}` },
+    message: `Payment of ₹${paymentAmt.toLocaleString('en-IN')} recorded successfully! Pending balance: ₹${newPendingAmount.toLocaleString('en-IN')}`,
   };
 }

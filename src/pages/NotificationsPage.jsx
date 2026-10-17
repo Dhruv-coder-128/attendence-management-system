@@ -36,11 +36,19 @@ import { getAcademySettings } from '../lib/academySettings';
  * Notifications and Telegram Alert Broadcast Manager
  * Features real database-backed Telegram dispatch audit logs + outbox announcements
  */
-export default function NotificationsPage({ notifications = [], onBroadcast }) {
+export default function NotificationsPage({ notifications = [], onBroadcast, onRefreshCounts }) {
   const [activeTab, setActiveTab] = useState('dispatchLogs'); // 'dispatchLogs' | 'broadcast'
   const [dispatchLogs, setDispatchLogs] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
   const [logFilter, setLogFilter] = useState('all'); // 'all' | 'delivered' | 'failed'
+
+  // Clear unread notifications badge immediately on page view
+  useEffect(() => {
+    try {
+      localStorage.setItem('sms_last_viewed_notifications', new Date().toISOString());
+    } catch {}
+    if (onRefreshCounts) onRefreshCounts();
+  }, [onRefreshCounts]);
 
   // Composer Modal State
   const [isComposerOpen, setIsComposerOpen] = useState(false);
@@ -52,7 +60,8 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
   const [channel, setChannel] = useState('Telegram Bot');
   const [audience, setAudience] = useState('Absentee Guardians (Today)');
 
-  // Media Attachment State (Photo, PDF/Document, Video)
+  // Multi-attachment Media State (Photos, PDF Documents, Videos)
+  const [mediaFiles, setMediaFiles] = useState([]); // [{ id, file, type, name, size, dataUrl }, ...]
   const [mediaFile, setMediaFile] = useState(null);
   const [mediaType, setMediaType] = useState(null); // 'photo' | 'document' | 'video'
   const [mediaPreview, setMediaPreview] = useState(null);
@@ -228,38 +237,78 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
   };
 
   const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    const fileTypeStr = file.type || '';
-    let detectedType = 'document';
-    if (fileTypeStr.startsWith('image/')) {
-      detectedType = 'photo';
-    } else if (fileTypeStr.startsWith('video/')) {
-      detectedType = 'video';
-    } else {
-      detectedType = 'document';
-    }
+    Array.from(files).forEach((file) => {
+      const fileTypeStr = file.type || '';
+      let detectedType = 'document';
+      if (fileTypeStr.startsWith('image/')) {
+        detectedType = 'photo';
+      } else if (fileTypeStr.startsWith('video/')) {
+        detectedType = 'video';
+      } else {
+        detectedType = 'document';
+      }
 
-    setMediaFile(file);
-    setMediaType(detectedType);
+      const id = `media-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const reader = new FileReader();
+      reader.onload = () => {
+        setMediaFiles((prev) => {
+          const updated = [
+            ...prev,
+            {
+              id,
+              file,
+              type: detectedType,
+              name: file.name,
+              size: file.size,
+              dataUrl: reader.result,
+            },
+          ];
+          if (updated.length > 0) {
+            setMediaFile(updated[0].file);
+            setMediaType(updated[0].type);
+            setMediaPreview(updated[0].dataUrl);
+          }
+          return updated;
+        });
+      };
+      reader.readAsDataURL(file);
+    });
+
     setDispatchFeedback(null);
-
-    // Read as persistent Base64 Data URL so it survives reloads, backups, and detail view
-    const reader = new FileReader();
-    reader.onload = () => {
-      setMediaPreview(reader.result);
-    };
-    reader.readAsDataURL(file);
   };
 
-  const handleRemoveFile = () => {
+  const handleRemoveMediaFile = (id) => {
+    setMediaFiles((prev) => {
+      const updated = prev.filter((m) => m.id !== id);
+      if (updated.length > 0) {
+        setMediaFile(updated[0].file);
+        setMediaType(updated[0].type);
+        setMediaPreview(updated[0].dataUrl);
+      } else {
+        setMediaFile(null);
+        setMediaType(null);
+        setMediaPreview(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+      return updated;
+    });
+  };
+
+  const handleClearAllMedia = () => {
+    setMediaFiles([]);
     setMediaFile(null);
     setMediaType(null);
     setMediaPreview(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const handleRemoveFile = () => {
+    handleClearAllMedia();
   };
 
   const handleOpenDetail = (item) => {
@@ -282,11 +331,24 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
     else if (item.category === 'Fee Alert') setTemplate('fee');
     else setTemplate('general');
     setChannel(item.channel || 'Telegram Bot');
-    if (item.mediaType) {
+    if (item.attachments && item.attachments.length > 0) {
+      setMediaFiles(item.attachments);
+      setMediaFile(item.attachments[0].file || null);
+      setMediaType(item.attachments[0].type);
+      setMediaPreview(item.attachments[0].dataUrl);
+    } else if (item.mediaType) {
+      const single = {
+        id: `media-clone-${Date.now()}`,
+        type: item.mediaType,
+        name: item.mediaName || 'Attachment',
+        size: 0,
+        dataUrl: item.mediaDataUrl,
+      };
+      setMediaFiles([single]);
       setMediaType(item.mediaType);
       setMediaPreview(item.mediaDataUrl || null);
     } else {
-      handleRemoveFile();
+      handleClearAllMedia();
     }
     setIsDetailModalOpen(false);
     setIsComposerOpen(true);
@@ -306,14 +368,16 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
       setDispatchProgress({ current: 0, total: 1, parentName: 'Initializing Gateway...' });
 
       try {
+        const primaryMedia = mediaFiles[0] || (mediaFile ? { file: mediaFile, type: mediaType, name: mediaFile.name, dataUrl: mediaPreview } : null);
         const result = await sendBatchBroadcastNotification({
           title,
           message,
           category: template === 'attendance' ? 'Attendance' : template === 'fee' ? 'Fee Alert' : 'Academic',
           audience,
-          mediaFile,
-          mediaType,
-          mediaName: mediaFile?.name || '',
+          mediaFiles,
+          mediaFile: primaryMedia?.file || null,
+          mediaType: primaryMedia?.type || null,
+          mediaName: primaryMedia?.name || '',
           onProgress: (p) => setDispatchProgress(p),
         });
 
@@ -328,9 +392,16 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
           sentAt: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
           status: result.success ? `Delivered (${result.deliveredCount} guardians)` : 'Failed',
           sender: 'Director Desk',
-          mediaType,
-          mediaName: mediaFile?.name || null,
-          mediaDataUrl: mediaPreview || null,
+          mediaType: primaryMedia?.type || null,
+          mediaName: primaryMedia?.name || null,
+          mediaDataUrl: primaryMedia?.dataUrl || null,
+          attachments: mediaFiles.map((m) => ({
+            id: m.id,
+            name: m.name,
+            type: m.type,
+            size: m.size,
+            dataUrl: m.dataUrl,
+          })),
         };
 
         onBroadcast(newLog);
@@ -338,7 +409,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
         if (result.success) {
           alert(`✅ Broadcast delivered successfully to ${result.deliveredCount} verified guardian(s) via Telegram Bot API!`);
           setIsComposerOpen(false);
-          handleRemoveFile();
+          handleClearAllMedia();
         } else {
           setDispatchFeedback({
             success: false,
@@ -1042,8 +1113,9 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
             setIsComposerOpen(false);
           }
         }}
-        title="Compose Telegram &amp; Parent Alert"
-        subtitle="Format announcement and dispatch directly via Telegram Bot API with media attachments"
+        title="Compose Telegram & Parent Alert"
+        subtitle="Format announcement and dispatch directly via Telegram Bot API with real-time smartphone preview"
+        size="dossier"
         footer={
           <>
             <Button variant="outline" size="sm" disabled={isDispatching} onClick={() => setIsComposerOpen(false)}>
@@ -1107,195 +1179,454 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
             </div>
           )}
 
-          <div style={{ marginBottom: '14px' }}>
-            <label className="form-label">Template Preset</label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-              <button
-                type="button"
-                className={`btn btn-sm ${template === 'attendance' ? 'btn-primary' : 'btn-outline'}`}
-                onClick={() => handleTemplateChange('attendance')}
-              >
-                Absentee Roll Call
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${template === 'reschedule' ? 'btn-primary' : 'btn-outline'}`}
-                onClick={() => handleTemplateChange('reschedule')}
-              >
-                Batch Reschedule
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${template === 'fee' ? 'btn-primary' : 'btn-outline'}`}
-                onClick={() => handleTemplateChange('fee')}
-              >
-                Fee Reminder
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${template === 'general' ? 'btn-primary' : 'btn-outline'}`}
-                onClick={() => handleTemplateChange('general')}
-              >
-                General Notice
-              </button>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
-            <Select
-              label="Gateway Channel"
-              value={channel}
-              onChange={(e) => setChannel(e.target.value)}
-              options={['Telegram Bot', 'SMS Broadcast', 'WhatsApp Gateway']}
-            />
-            <Select
-              label="Target Recipient Audience"
-              value={audience}
-              onChange={(e) => setAudience(e.target.value)}
-              options={[
-                'All Registered Academy Students',
-                'Absentee Guardians (Today)',
-                'Active Batches & Guardians',
-                'Pending Fee Accounts',
-              ]}
-            />
-          </div>
-
-          <Input
-            label="Notice Subject / Headline"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-          />
-
-          <div className="form-group" style={{ marginTop: '12px' }}>
-            <label className="form-label">Message Content</label>
-            <textarea
-              className="form-textarea"
-              rows={4}
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              required
-            />
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              Supports formatting: *bold*, _italic_, and line breaks
-            </span>
-          </div>
-
-          {/* Media Attachment Selector (Photo, PDF, Video) */}
-          <div style={{ marginBottom: '16px' }}>
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Paperclip size={14} /> Attach Media (Photo / PDF Document / Video)
-            </label>
-
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept="image/*,video/*,.pdf,.doc,.docx"
-              style={{ display: 'none' }}
-              id="broadcast-media-input"
-            />
-
-            {!mediaFile ? (
-              <label
-                htmlFor="broadcast-media-input"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  padding: '12px',
-                  border: '1px dashed #cbd5e1',
-                  borderRadius: '6px',
-                  backgroundColor: '#f8fafc',
-                  cursor: 'pointer',
-                  color: 'var(--text-secondary)',
-                  fontSize: '12px',
-                }}
-              >
-                <UploadCloud size={16} /> Choose Photo (JPG/PNG), PDF Document, or Video (MP4)
-              </label>
-            ) : (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '10px 14px',
-                  backgroundColor: '#f0fdf4',
-                  border: '1px solid #bbf7d0',
-                  borderRadius: '6px',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  {mediaType === 'photo' && <ImageIcon size={20} color="#16a34a" />}
-                  {mediaType === 'document' && <FileText size={20} color="#2563eb" />}
-                  {mediaType === 'video' && <Video size={20} color="#9333ea" />}
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--navy-950)' }}>
-                      {mediaFile.name}
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      {(mediaFile.size / 1024).toFixed(1)} KB &bull; Type: {mediaType.toUpperCase()}
-                    </div>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleRemoveFile}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#dc2626',
-                    cursor: 'pointer',
-                    padding: '4px',
-                  }}
-                  title="Remove attachment"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            )}
-
-            {mediaPreview && (
-              <div style={{ marginTop: '8px', textAlign: 'center' }}>
-                <img
-                  src={mediaPreview}
-                  alt="Attachment preview"
-                  style={{
-                    maxHeight: '140px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-subtle)',
-                    objectFit: 'contain',
-                  }}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Telegram Preview Bubble */}
+          {/* 2-Column Responsive Layout: Left Form Controls | Right Live Smartphone Screen */}
           <div
             style={{
-              padding: '12px 16px',
-              backgroundColor: '#f0fdf4',
-              borderRadius: '6px',
-              border: '1px solid #bbf7d0',
-              fontSize: '12px',
+              display: 'grid',
+              gridTemplateColumns: 'minmax(360px, 1.25fr) minmax(320px, 1fr)',
+              gap: '24px',
+              alignItems: 'start',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: '#166534', marginBottom: '4px' }}>
-              <Sparkles size={14} /> Telegram Message Preview
-            </div>
-            <div style={{ color: '#14532d', fontStyle: 'italic' }}>
-              &quot;{message}&quot;
-            </div>
-            {mediaFile && (
-              <div style={{ marginTop: '6px', fontSize: '11px', color: '#15803d', fontWeight: 500 }}>
-                📎 Attached: {mediaFile.name} ({mediaType.toUpperCase()})
+            {/* Left Column: Form Inputs & Multi-Attachment Dropzone */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label className="form-label">Template Preset</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${template === 'attendance' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => handleTemplateChange('attendance')}
+                  >
+                    Absentee Roll Call
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${template === 'reschedule' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => handleTemplateChange('reschedule')}
+                  >
+                    Batch Reschedule
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${template === 'fee' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => handleTemplateChange('fee')}
+                  >
+                    Fee Reminder
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${template === 'general' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => handleTemplateChange('general')}
+                  >
+                    General Notice
+                  </button>
+                </div>
               </div>
-            )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <Select
+                  label="Gateway Channel"
+                  value={channel}
+                  onChange={(e) => setChannel(e.target.value)}
+                  options={['Telegram Bot', 'SMS Broadcast', 'WhatsApp Gateway']}
+                />
+                <Select
+                  label="Target Recipient Audience"
+                  value={audience}
+                  onChange={(e) => setAudience(e.target.value)}
+                  options={[
+                    'All Registered Academy Students',
+                    'Absentee Guardians (Today)',
+                    'Active Batches & Guardians',
+                    'Pending Fee Accounts',
+                  ]}
+                />
+              </div>
+
+              <Input
+                label="Notice Subject / Headline"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+              />
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Message Content</label>
+                <textarea
+                  className="form-textarea"
+                  rows={4}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  required
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  Supports formatting: *bold*, _italic_, and line breaks
+                </span>
+              </div>
+
+              {/* Multi-Media Attachment Selector (Photos, PDF Documents, Videos) */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                    <Paperclip size={14} /> Attach Media (Photos, PDFs, Videos)
+                  </label>
+                  {mediaFiles.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllMedia}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#dc2626',
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    >
+                      Clear All ({mediaFiles.length})
+                    </button>
+                  )}
+                </div>
+
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  accept="image/*,video/*,.pdf,.doc,.docx"
+                  multiple
+                  style={{ display: 'none' }}
+                  id="broadcast-media-input"
+                />
+
+                <label
+                  htmlFor="broadcast-media-input"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '14px 16px',
+                    border: '1.5px dashed #cbd5e1',
+                    borderRadius: '8px',
+                    backgroundColor: '#f8fafc',
+                    cursor: 'pointer',
+                    color: 'var(--text-secondary)',
+                    fontSize: '12px',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--navy-900)', fontWeight: 600 }}>
+                    <UploadCloud size={18} color="var(--primary)" />
+                    <span>Choose Multiple Files or Drop Here</span>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    Attach Photos (JPG/PNG), PDF Documents, or Videos (MP4)
+                  </span>
+                </label>
+
+                {/* Attached Media List / Chips */}
+                {mediaFiles.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
+                    {mediaFiles.map((item, idx) => (
+                      <div
+                        key={item.id || idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 12px',
+                          backgroundColor: '#f0fdf4',
+                          border: '1px solid #bbf7d0',
+                          borderRadius: '6px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                          {item.type === 'photo' && (
+                            item.dataUrl ? (
+                              <img src={item.dataUrl} alt="thumb" style={{ width: '28px', height: '28px', borderRadius: '4px', objectFit: 'cover' }} />
+                            ) : (
+                              <ImageIcon size={18} color="#16a34a" />
+                            )
+                          )}
+                          {item.type === 'video' && <Video size={18} color="#9333ea" />}
+                          {item.type === 'document' && <FileText size={18} color="#2563eb" />}
+
+                          <div style={{ overflow: 'hidden' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '240px' }}>
+                              {item.name}
+                            </div>
+                            <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                              {(item.size / 1024).toFixed(1)} KB &bull; Type: {item.type.toUpperCase()}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMediaFile(item.id)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#dc2626',
+                            cursor: 'pointer',
+                            padding: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                          }}
+                          title="Remove this attachment"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Live Telegram Smartphone Screen Mockup */}
+            <div style={{ position: 'sticky', top: '0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: 'var(--navy-950)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Smartphone size={15} color="var(--primary)" /> Telegram Parent Live View
+                </label>
+                <span style={{ fontSize: '10.5px', color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#16a34a' }}></span>
+                  Live Updating
+                </span>
+              </div>
+
+              {/* Realistic Smartphone Shell */}
+              <div
+                style={{
+                  width: '100%',
+                  maxWidth: '340px',
+                  margin: '0 auto',
+                  border: '3px solid #1e293b',
+                  borderRadius: '28px',
+                  backgroundColor: '#0f172a',
+                  padding: '8px 6px 12px 6px',
+                  boxShadow: '0 16px 30px -6px rgba(0,0,0,0.3)',
+                }}
+              >
+                {/* Speaker notch */}
+                <div style={{ width: '50px', height: '4px', backgroundColor: '#334155', borderRadius: '2px', margin: '0 auto 8px auto' }} />
+
+                {/* Telegram App Container */}
+                <div
+                  style={{
+                    borderRadius: '20px',
+                    overflow: 'hidden',
+                    backgroundColor: '#8da8b8',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minHeight: '430px',
+                    maxHeight: '490px',
+                  }}
+                >
+                  {/* Top Telegram Header Bar */}
+                  <div
+                    style={{
+                      backgroundColor: '#517da2',
+                      color: '#ffffff',
+                      padding: '8px 10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '30px',
+                        height: '30px',
+                        borderRadius: '50%',
+                        backgroundColor: '#ffffff',
+                        color: '#517da2',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '14px',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      🎓
+                    </div>
+                    <div style={{ overflow: 'hidden', flex: 1 }}>
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        {telegramSettings.botName || academySettings.academy_name || 'SMS Academy'}
+                        <CheckCircle2 size={11} fill="#38bdf8" color="#ffffff" />
+                      </div>
+                      <div style={{ fontSize: '9.5px', color: '#e0f2fe' }}>
+                        bot &bull; @{telegramSettings.botUsername || 'sms_attendance_bot'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Chat Feed */}
+                  <div
+                    style={{
+                      flex: 1,
+                      padding: '10px 8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                      backgroundImage: 'radial-gradient(#9cb5c5 10%, transparent 11%)',
+                      backgroundSize: '14px 14px',
+                      overflowY: 'auto',
+                    }}
+                  >
+                    {/* Today pill */}
+                    <div style={{ textAlign: 'center', margin: '2px 0' }}>
+                      <span style={{ fontSize: '9.5px', fontWeight: 600, backgroundColor: 'rgba(0,0,0,0.22)', color: '#ffffff', padding: '1px 8px', borderRadius: '10px' }}>
+                        Today
+                      </span>
+                    </div>
+
+                    {/* Telegram Inbound Message Bubble */}
+                    <div
+                      style={{
+                        backgroundColor: '#ffffff',
+                        borderRadius: '12px 12px 12px 2px',
+                        padding: '8px 10px',
+                        maxWidth: '96%',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.12)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                      }}
+                    >
+                      {/* Attached Media Previews */}
+                      {mediaFiles.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {/* Photos */}
+                          {mediaFiles.filter((m) => m.type === 'photo').map((photo, pIdx) => (
+                            photo.dataUrl ? (
+                              <img
+                                key={photo.id || pIdx}
+                                src={photo.dataUrl}
+                                alt="Photo preview"
+                                style={{
+                                  width: '100%',
+                                  maxHeight: '130px',
+                                  objectFit: 'cover',
+                                  borderRadius: '6px',
+                                }}
+                              />
+                            ) : null
+                          ))}
+
+                          {/* Videos */}
+                          {mediaFiles.filter((m) => m.type === 'video').map((vid, vIdx) => (
+                            <div
+                              key={vid.id || vIdx}
+                              style={{
+                                width: '100%',
+                                padding: '14px 10px',
+                                backgroundColor: '#0f172a',
+                                borderRadius: '6px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: '#ffffff',
+                                fontSize: '11px',
+                                gap: '6px',
+                              }}
+                            >
+                              <Video size={16} color="#a855f7" />
+                              <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {vid.name || 'Video Attachment'}
+                              </span>
+                            </div>
+                          ))}
+
+                          {/* Documents */}
+                          {mediaFiles.filter((m) => m.type === 'document').map((doc, dIdx) => (
+                            <div
+                              key={doc.id || dIdx}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                padding: '6px 8px',
+                                backgroundColor: '#f1f5f9',
+                                borderRadius: '6px',
+                                border: '1px solid #e2e8f0',
+                              }}
+                            >
+                              <FileText size={16} color="#dc2626" />
+                              <div style={{ overflow: 'hidden', flex: 1 }}>
+                                <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--navy-950)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {doc.name || 'Academic Document.pdf'}
+                                </div>
+                                <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>
+                                  {(doc.size / 1024).toFixed(0)} KB &bull; PDF Document
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Subject Title */}
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', lineHeight: 1.3 }}>
+                        📢 {title || 'Notice Subject Headline'}
+                      </div>
+
+                      {/* Sub-header */}
+                      <div style={{ fontSize: '9.5px', color: '#64748b', fontStyle: 'italic', borderBottom: '1px solid #f1f5f9', paddingBottom: '4px' }}>
+                        {telegramSettings.botName || 'SMS Academy'} &bull; {template === 'attendance' ? 'Attendance' : template === 'fee' ? 'Fee Alert' : 'Academic Notice'}
+                      </div>
+
+                      {/* Message Content */}
+                      <div style={{ fontSize: '11px', color: '#1e293b', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>
+                        {message || 'Type your message on the left to see the live Telegram preview...'}
+                      </div>
+
+                      {/* Bubble Footer */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px', marginTop: '2px' }}>
+                        <span style={{ fontSize: '9px', color: '#94a3b8' }}>
+                          {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <span style={{ color: '#0284c7', fontSize: '10px', fontWeight: 700 }}>✓✓</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Telegram bottom chat input mockup */}
+                  <div
+                    style={{
+                      backgroundColor: '#ffffff',
+                      padding: '6px 10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      borderTop: '1px solid #e2e8f0',
+                    }}
+                  >
+                    <Paperclip size={14} color="#64748b" />
+                    <div style={{ flex: 1, fontSize: '10.5px', color: '#94a3b8', fontStyle: 'italic' }}>
+                      Broadcast message...
+                    </div>
+                    <Send size={13} color="#517da2" />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </form>
       </Modal>

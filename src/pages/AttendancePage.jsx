@@ -199,10 +199,19 @@ export default function AttendancePage({ onRefreshCounts }) {
 
       if (attendanceErr) throw attendanceErr;
 
-      // Map attendance by student_id
+      // Map attendance by student_id (keep newest if duplicates exist)
       const map = {};
       (attendanceData || []).forEach((att) => {
-        map[att.student_id] = att;
+        const existing = map[att.student_id];
+        if (!existing) {
+          map[att.student_id] = att;
+        } else {
+          const existingTime = new Date(existing.updated_at || existing.created_at || 0).getTime();
+          const attTime = new Date(att.updated_at || att.created_at || 0).getTime();
+          if (attTime >= existingTime) {
+            map[att.student_id] = att;
+          }
+        }
       });
 
       setStudents(studentsData || []);
@@ -244,6 +253,7 @@ export default function AttendancePage({ onRefreshCounts }) {
 
     try {
       const payload = {
+        ...(previous?.id ? { id: previous.id } : {}),
         student_id: studentId,
         batch_id: selectedBatchId,
         date: selectedDate,

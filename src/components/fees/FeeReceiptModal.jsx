@@ -46,7 +46,7 @@ export default function FeeReceiptModal({
   const receiptNo = paymentRecord?.reference_no ||
     `REC-${new Date().getFullYear()}-${(student?.admission_no || 'STU').replace(/[^A-Z0-9]/gi, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-  const totalFee = Number(student?.tuition_fee) || 45000;
+  const totalFee = Number(student?.tuition_fee) || 36000;
   const paidAmount = paymentRecord ? Number(paymentRecord.amount) : Number(student?.fee_paid) || 0;
   const totalPaid = Number(student?.fee_paid) || paidAmount;
   const pendingAmount = Math.max(0, totalFee - totalPaid);

@@ -468,6 +468,7 @@ export async function sendBatchBroadcastNotification({
   message,
   category = 'Academic',
   audience = 'All Registered Academy Students',
+  mediaFiles = [],
   mediaFile = null,
   mediaType = null,
   mediaName = '',
@@ -563,6 +564,10 @@ export async function sendBatchBroadcastNotification({
   let failedCount = 0;
   const errors = [];
 
+  const itemsToSend = (mediaFiles && mediaFiles.length > 0)
+    ? mediaFiles
+    : (mediaFile ? [{ file: mediaFile, fileType: mediaType, fileName: mediaName }] : []);
+
   for (let i = 0; i < total; i++) {
     const parent = uniqueParents[i];
     const chatId = parent.telegram_chat_id;
@@ -577,14 +582,29 @@ export async function sendBatchBroadcastNotification({
 
     try {
       let res;
-      if (mediaFile && mediaType) {
+      if (itemsToSend.length > 0) {
+        const first = itemsToSend[0];
         res = await sendDirectTelegramMedia(botToken, chatId, {
-          file: mediaFile,
-          fileType: mediaType,
-          fileName: mediaName,
+          file: first.file || first,
+          fileType: first.fileType || first.type || mediaType || 'document',
+          fileName: first.fileName || first.name || mediaName,
           caption: formattedBroadcastText,
           parseMode: 'Markdown',
         });
+
+        // Send remaining attachments if multiple
+        for (let m = 1; m < itemsToSend.length; m++) {
+          const item = itemsToSend[m];
+          try {
+            await sendDirectTelegramMedia(botToken, chatId, {
+              file: item.file || item,
+              fileType: item.fileType || item.type || 'document',
+              fileName: item.fileName || item.name || '',
+              caption: `📎 Attachment (${m + 1}/${itemsToSend.length}): ${item.fileName || item.name || ''}`,
+              parseMode: '',
+            });
+          } catch {}
+        }
       } else {
         res = await sendDirectTelegramMessage(botToken, chatId, formattedBroadcastText, 'Markdown');
         if (!res.ok && res.error && res.error.includes("can't parse entities")) {
@@ -692,13 +712,27 @@ export async function sendBatchAttendanceNotifications({
       .eq('batch_id', batchId)
       .eq('date', date);
 
-    const records = attendanceRecords || [];
-    if (records.length === 0) {
+    const rawRecords = attendanceRecords || [];
+    if (rawRecords.length === 0) {
       return {
         success: false,
         error: 'No attendance records recorded for this batch on the selected date.',
       };
     }
+
+    // Deduplicate by student_id to ensure the most recent record is used
+    const dedupeMap = new Map();
+    rawRecords.forEach((r) => {
+      const existing = dedupeMap.get(r.student_id);
+      if (!existing) {
+        dedupeMap.set(r.student_id, r);
+      } else {
+        const t1 = new Date(existing.updated_at || existing.created_at || 0).getTime();
+        const t2 = new Date(r.updated_at || r.created_at || 0).getTime();
+        if (t2 >= t1) dedupeMap.set(r.student_id, r);
+      }
+    });
+    const records = Array.from(dedupeMap.values());
 
     // Fetch students in this batch with joined parents
     const { data: studentsData } = await supabase
@@ -1170,8 +1204,8 @@ export async function sendVerifiedFeeReminder(studentOrParams, feeRecordArg, tar
       };
     }
 
-    const pendingAmt = Number(feeRecord?.pending_amount ?? ((studentData.tuition_fee || 45000) - (studentData.fee_paid || 0)));
-    const totalAmt = Number(feeRecord?.total_amount ?? studentData.tuition_fee ?? 45000);
+    const pendingAmt = Number(feeRecord?.pending_amount ?? ((studentData.tuition_fee || 36000) - (studentData.fee_paid || 0)));
+    const totalAmt = Number(feeRecord?.total_amount ?? studentData.tuition_fee ?? 36000);
     const dueDate = feeRecord?.next_due_date || studentData.fee_due_date || 'Promptly';
 
     const msg = renderNotificationMessage('fee_reminder', {

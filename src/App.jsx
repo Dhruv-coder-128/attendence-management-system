@@ -75,10 +75,10 @@ export default function App() {
 
   useEffect(() => {
     checkLicense();
-    // Periodic license heartbeat check every 60s to immediately enforce remote SaaS lock or timer expiry
+    // Periodic license heartbeat check every 15s to immediately enforce remote SaaS lock or timer expiry
     const timer = setInterval(() => {
       checkLicense();
-    }, 60000);
+    }, 15000);
     return () => clearInterval(timer);
   }, [checkLicense]);
 
@@ -107,16 +107,33 @@ export default function App() {
 
       // 3. Live Notifications / Telegram Dispatches Count from public.attendance
       let notifyCount = 0;
-      try {
-        const { count, data, error: nErr } = await supabase
-          .from('attendance')
-          .select('id', { count: 'exact' })
-          .eq('telegram_notified', true);
-        if (!nErr) {
-          notifyCount = count !== null && count !== undefined ? count : (data ? data.length : 0);
-        }
-      } catch {
+      if (activePage === 'notifications') {
         notifyCount = 0;
+        try {
+          localStorage.setItem('sms_last_viewed_notifications', new Date().toISOString());
+        } catch {}
+      } else {
+        try {
+          const lastViewed = localStorage.getItem('sms_last_viewed_notifications');
+          const { data, error: nErr } = await supabase
+            .from('attendance')
+            .select('id, telegram_notified_at, created_at')
+            .eq('telegram_notified', true);
+
+          if (!nErr && data) {
+            if (!lastViewed) {
+              notifyCount = data.length;
+            } else {
+              const lastViewedTime = new Date(lastViewed).getTime();
+              notifyCount = data.filter((item) => {
+                const itemTime = new Date(item.telegram_notified_at || item.created_at || 0).getTime();
+                return itemTime > lastViewedTime;
+              }).length;
+            }
+          }
+        } catch {
+          notifyCount = 0;
+        }
       }
 
       setCounts({
@@ -127,7 +144,7 @@ export default function App() {
     } catch (err) {
       console.warn('Count refresh encountered issue:', err);
     }
-  }, [notifications.length]);
+  }, [activePage, notifications.length]);
 
   // Load User Profile & Permissions
   const loadProfile = useCallback(async (authUser) => {
@@ -250,6 +267,17 @@ export default function App() {
       setCurrentUserProfile(null);
       setActivePage('dashboard');
     }
+  };
+
+  // Navigation Handler with Notification Read Tracking
+  const handleNavigate = (page) => {
+    if (page === 'notifications') {
+      try {
+        localStorage.setItem('sms_last_viewed_notifications', new Date().toISOString());
+      } catch {}
+      setCounts((prev) => ({ ...prev, notifications: 0 }));
+    }
+    setActivePage(page);
   };
 
   // Broadcast Notification Log Handler
@@ -384,7 +412,7 @@ export default function App() {
 
       <AppLayout
         activePage={activePage}
-        onNavigate={setActivePage}
+        onNavigate={handleNavigate}
         onLogout={handleLogout}
         user={user}
         currentUserProfile={currentUserProfile}
@@ -392,8 +420,8 @@ export default function App() {
       >
         {activePage === 'dashboard' && (
           <DashboardPage
-            onNavigate={setActivePage}
-            onAlertParent={() => setActivePage('notifications')}
+            onNavigate={handleNavigate}
+            onAlertParent={() => handleNavigate('notifications')}
           />
         )}
 
@@ -411,7 +439,7 @@ export default function App() {
 
         {activePage === 'parents' && (
           <ParentsPage
-            onSendNotice={() => setActivePage('notifications')}
+            onSendNotice={() => handleNavigate('notifications')}
             onRefreshCounts={refreshCounts}
           />
         )}
@@ -428,24 +456,25 @@ export default function App() {
           <NotificationsPage
             notifications={notifications}
             onBroadcast={handleBroadcast}
+            onRefreshCounts={refreshCounts}
           />
         )}
 
         {activePage === 'import' && (
-          <BulkImportPage onNavigate={setActivePage} onRefreshCounts={refreshCounts} />
+          <BulkImportPage onNavigate={handleNavigate} onRefreshCounts={refreshCounts} />
         )}
 
         {activePage === 'settings' && (
           <SettingsPage
             currentUserProfile={currentUserProfile}
             onOpenLicenseModal={() => setIsActivationModalOpen(true)}
-            onNavigate={setActivePage}
+            onNavigate={handleNavigate}
           />
         )}
 
         {activePage === 'master-portal' && (
           <MasterAdminPortalPage
-            onNavigate={setActivePage}
+            onNavigate={handleNavigate}
             user={user}
           />
         )}

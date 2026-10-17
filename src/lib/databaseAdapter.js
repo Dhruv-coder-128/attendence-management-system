@@ -306,12 +306,60 @@ async function executeLocalQuery(state) {
     // 1. Handle INSERT / UPSERT
     if (state.operation === 'insert' || state.operation === 'upsert') {
       const items = Array.isArray(state.payload) ? state.payload : [state.payload];
-      const inserted = items.map((item) => ({
-        ...item,
-        id: item.id || generateLocalId(),
-        created_at: item.created_at || new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }));
+      
+      const inserted = items.map((item) => {
+        let existingId = item.id;
+        let existingRecord = null;
+
+        if (!existingId && state.operation === 'upsert') {
+          // Look up existing record by natural unique keys
+          if (state.tableName === 'attendance') {
+            existingRecord = rows.find(
+              (r) =>
+                r.student_id === item.student_id &&
+                r.date === item.date &&
+                (r.batch_id === item.batch_id || (!r.batch_id && !item.batch_id)) &&
+                (r.session_name === item.session_name || !item.session_name || item.session_name === 'Regular')
+            );
+          } else if (state.tableName === 'courses') {
+            existingRecord = rows.find((r) => r.code === item.code);
+          } else if (state.tableName === 'batches') {
+            existingRecord = rows.find((r) => r.code === item.code);
+          } else if (state.tableName === 'students') {
+            existingRecord = rows.find(
+              (r) => r.admission_no && String(r.admission_no).trim().toLowerCase() === String(item.admission_no).trim().toLowerCase()
+            );
+          } else if (state.tableName === 'student_fees') {
+            existingRecord = rows.find(
+              (r) => r.student_id === item.student_id && (r.academic_year === item.academic_year || !item.academic_year)
+            );
+          } else if (state.tableName === 'parent_students') {
+            existingRecord = rows.find(
+              (r) => r.parent_id === item.parent_id && r.student_id === item.student_id
+            );
+          } else if (state.tableName === 'parents') {
+            existingRecord = rows.find(
+              (r) =>
+                (r.phone && item.phone && r.phone.replace(/\D/g, '').slice(-10) === item.phone.replace(/\D/g, '').slice(-10)) ||
+                (r.telegram_chat_id && item.telegram_chat_id && String(r.telegram_chat_id) === String(item.telegram_chat_id))
+            );
+          }
+
+          if (existingRecord) {
+            existingId = existingRecord.id;
+          }
+        } else if (existingId) {
+          existingRecord = rows.find((r) => r.id === existingId);
+        }
+
+        return {
+          ...(existingRecord || {}),
+          ...item,
+          id: existingId || generateLocalId(),
+          created_at: existingRecord?.created_at || item.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+      });
 
       await putRecordsInStore(state.tableName, inserted);
 

@@ -41,6 +41,12 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
     students: 0,
     parents: 0,
   });
+  const [samples, setSamples] = useState({
+    courses: [],
+    batches: [],
+    students: [],
+    parents: [],
+  });
   const [loadingCounts, setLoadingCounts] = useState(true);
   const [isDistributingBatches, setIsDistributingBatches] = useState(false);
 
@@ -49,25 +55,32 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
     setLoadingCounts(true);
     try {
       const [
-        { count: coursesCount },
-        { count: batchesCount },
-        { count: studentsCount },
-        { count: parentsCount },
+        { count: coursesCount, data: coursesData },
+        { count: batchesCount, data: batchesData },
+        { count: studentsCount, data: studentsData },
+        { count: parentsCount, data: parentsData },
       ] = await Promise.all([
-        supabase.from('courses').select('id', { count: 'exact', head: true }),
-        supabase.from('batches').select('id', { count: 'exact', head: true }),
-        supabase.from('students').select('id', { count: 'exact', head: true }),
-        supabase.from('parents').select('id', { count: 'exact', head: true }),
+        supabase.from('courses').select('id, name, code', { count: 'exact' }).limit(3),
+        supabase.from('batches').select('id, name, code, timing', { count: 'exact' }).limit(3),
+        supabase.from('students').select('id, full_name, admission_no', { count: 'exact' }).limit(3),
+        supabase.from('parents').select('id, full_name, phone', { count: 'exact' }).limit(3),
       ]);
 
       setCounts({
-        courses: coursesCount || 0,
-        batches: batchesCount || 0,
-        students: studentsCount || 0,
-        parents: parentsCount || 0,
+        courses: coursesCount || (coursesData ? coursesData.length : 0),
+        batches: batchesCount || (batchesData ? batchesData.length : 0),
+        students: studentsCount || (studentsData ? studentsData.length : 0),
+        parents: parentsCount || (parentsData ? parentsData.length : 0),
+      });
+
+      setSamples({
+        courses: coursesData || [],
+        batches: batchesData || [],
+        students: studentsData || [],
+        parents: parentsData || [],
       });
     } catch (err) {
-      console.error('Failed to query counts:', err);
+      console.error('Failed to query counts and samples:', err);
     } finally {
       setLoadingCounts(false);
     }
@@ -343,6 +356,37 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
             </p>
           </div>
 
+          {/* Schema & Imported Data Info */}
+          <div
+            style={{
+              marginBottom: '14px',
+              padding: '10px 12px',
+              backgroundColor: 'var(--bg-subtle)',
+              borderRadius: '6px',
+              border: '1px solid var(--border-subtle)',
+              fontSize: '11px',
+            }}
+          >
+            <div style={{ fontWeight: 600, color: 'var(--navy-950)', marginBottom: '5px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Expected Headers:</span>
+              <span style={{ color: counts.courses > 0 ? 'var(--status-present)' : 'var(--text-muted)', fontWeight: 700 }}>
+                {counts.courses > 0 ? `✓ ${counts.courses} loaded` : '0 loaded'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
+              {['name', 'code', 'duration_months', 'base_fee'].map((h) => (
+                <span key={h} style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: '#e2e8f0', color: '#334155', fontSize: '10px', fontFamily: 'monospace' }}>
+                  {h}
+                </span>
+              ))}
+            </div>
+            {samples.courses.length > 0 && (
+              <div style={{ color: 'var(--text-muted)', fontSize: '10.5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Active: {samples.courses.map((c) => c.name || c.code).join(', ')}
+              </div>
+            )}
+          </div>
+
           <div style={{ display: 'flex', gap: '8px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
             <Button
               variant="primary"
@@ -412,6 +456,37 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 18px 0' }}>
               Configure classroom divisions, shifts, room allocations, and daily class schedules.
             </p>
+          </div>
+
+          {/* Schema & Imported Data Info */}
+          <div
+            style={{
+              marginBottom: '14px',
+              padding: '10px 12px',
+              backgroundColor: 'var(--bg-subtle)',
+              borderRadius: '6px',
+              border: '1px solid var(--border-subtle)',
+              fontSize: '11px',
+            }}
+          >
+            <div style={{ fontWeight: 600, color: 'var(--navy-950)', marginBottom: '5px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Expected Headers:</span>
+              <span style={{ color: counts.batches > 0 ? 'var(--status-present)' : 'var(--text-muted)', fontWeight: 700 }}>
+                {counts.batches > 0 ? `✓ ${counts.batches} loaded` : '0 loaded'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
+              {['name', 'code', 'timing', 'classroom', 'course_code'].map((h) => (
+                <span key={h} style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: '#e2e8f0', color: '#334155', fontSize: '10px', fontFamily: 'monospace' }}>
+                  {h}
+                </span>
+              ))}
+            </div>
+            {samples.batches.length > 0 && (
+              <div style={{ color: 'var(--text-muted)', fontSize: '10.5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Active: {samples.batches.map((b) => b.name || b.code).join(', ')}
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: '8px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
@@ -485,6 +560,37 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
             </p>
           </div>
 
+          {/* Schema & Imported Data Info */}
+          <div
+            style={{
+              marginBottom: '14px',
+              padding: '10px 12px',
+              backgroundColor: 'var(--bg-subtle)',
+              borderRadius: '6px',
+              border: '1px solid var(--border-subtle)',
+              fontSize: '11px',
+            }}
+          >
+            <div style={{ fontWeight: 600, color: 'var(--navy-950)', marginBottom: '5px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Expected Headers:</span>
+              <span style={{ color: counts.students > 0 ? 'var(--status-present)' : 'var(--text-muted)', fontWeight: 700 }}>
+                {counts.students > 0 ? `✓ ${counts.students} enrolled` : '0 loaded'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
+              {['admission_no', 'full_name', 'roll_no', 'batch_code', 'gender'].map((h) => (
+                <span key={h} style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: '#e2e8f0', color: '#334155', fontSize: '10px', fontFamily: 'monospace' }}>
+                  {h}
+                </span>
+              ))}
+            </div>
+            {samples.students.length > 0 && (
+              <div style={{ color: 'var(--text-muted)', fontSize: '10.5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Active: {samples.students.map((s) => `${s.full_name} (${s.admission_no})`).join(', ')}
+              </div>
+            )}
+          </div>
+
           <div style={{ display: 'flex', gap: '8px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
             <Button
               variant="primary"
@@ -554,6 +660,37 @@ export default function BulkImportPage({ onNavigate, onRefreshCounts }) {
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 18px 0' }}>
               Import guardian phone numbers and generate links for daily Telegram attendance alerts.
             </p>
+          </div>
+
+          {/* Schema & Imported Data Info */}
+          <div
+            style={{
+              marginBottom: '14px',
+              padding: '10px 12px',
+              backgroundColor: 'var(--bg-subtle)',
+              borderRadius: '6px',
+              border: '1px solid var(--border-subtle)',
+              fontSize: '11px',
+            }}
+          >
+            <div style={{ fontWeight: 600, color: 'var(--navy-950)', marginBottom: '5px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>Expected Headers:</span>
+              <span style={{ color: counts.parents > 0 ? 'var(--status-present)' : 'var(--text-muted)', fontWeight: 700 }}>
+                {counts.parents > 0 ? `✓ ${counts.parents} linked` : '0 loaded'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
+              {['full_name', 'phone', 'relationship', 'admission_no', 'telegram_chat_id'].map((h) => (
+                <span key={h} style={{ padding: '2px 6px', borderRadius: '4px', backgroundColor: '#e2e8f0', color: '#334155', fontSize: '10px', fontFamily: 'monospace' }}>
+                  {h}
+                </span>
+              ))}
+            </div>
+            {samples.parents.length > 0 && (
+              <div style={{ color: 'var(--text-muted)', fontSize: '10.5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Active: {samples.parents.map((p) => p.full_name).join(', ')}
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: '8px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>

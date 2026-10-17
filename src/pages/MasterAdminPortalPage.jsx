@@ -22,6 +22,7 @@ import {
   Sparkles,
   Phone,
   Mail,
+  Edit,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
@@ -125,6 +126,10 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
   // Edit Days Modal State
   const [editingClient, setEditingClient] = useState(null);
   const [manualDaysInput, setManualDaysInput] = useState('30');
+
+  // Full Client Edit Modal State
+  const [isEditClientModalOpen, setIsEditClientModalOpen] = useState(false);
+  const [editingClientData, setEditingClientData] = useState(null);
 
   // Save clients to localStorage whenever updated
   const saveClients = (updatedList) => {
@@ -350,7 +355,32 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
     const updated = clients.map((c) => (c.id === clientId ? { ...c, status: newStatus } : c));
     saveClients(updated);
 
-    // Sync to Cloud Server so the school's exe immediately locks!
+    // 1. Direct authoritative update in Supabase courses table
+    try {
+      if (supabase) {
+        const code = 'LIC:' + target.licenseKey;
+        const isActive = newStatus !== 'suspended';
+        const licData = {
+          license_key: target.licenseKey,
+          school_name: target.schoolName,
+          status: newStatus,
+          updated_at: new Date().toISOString(),
+        };
+        await supabase
+          .from('courses')
+          .upsert({
+            code,
+            name: `${target.schoolName} [${newStatus.toUpperCase()}]`,
+            description: JSON.stringify(licData),
+            duration_months: 12,
+            is_active: isActive,
+          }, { onConflict: 'code' });
+      }
+    } catch (dbErr) {
+      console.warn('Direct Supabase update warning on lock:', dbErr);
+    }
+
+    // 2. Sync to Cloud Server so the school's exe immediately locks!
     await syncWithServer(newStatus === 'suspended' ? 'suspend' : 'unlock', {
       licenseKey: target.licenseKey,
       newStatus,
@@ -361,6 +391,71 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
         ? `🔒 School "${target.schoolName}" LOCKED remotely! Client EXE will now be blocked.`
         : `🔓 School "${target.schoolName}" unlocked successfully!`
     );
+  };
+
+  const handleOpenEditModal = (client) => {
+    setEditingClientData({
+      ...client,
+      supabaseUrl: client.databaseConfig?.supabaseUrl || '',
+      supabaseAnonKey: client.databaseConfig?.supabaseAnonKey || '',
+    });
+    setIsEditClientModalOpen(true);
+  };
+
+  const handleSaveEditClient = async () => {
+    if (!editingClientData || !editingClientData.schoolName?.trim()) {
+      alert('School / Institution Name is required.');
+      return;
+    }
+
+    const updatedClient = {
+      ...editingClientData,
+      schoolName: editingClientData.schoolName.trim(),
+      contactPerson: editingClientData.contactPerson?.trim() || '',
+      email: editingClientData.email?.trim() || '',
+      phone: editingClientData.phone?.trim() || '',
+      botUsername: editingClientData.botUsername?.trim().replace(/^@/, '') || '',
+      daysRemaining: parseInt(editingClientData.daysRemaining, 10) || 0,
+      databaseConfig: editingClientData.storageMode === 'cloud' && editingClientData.supabaseUrl ? {
+        supabaseUrl: editingClientData.supabaseUrl.trim(),
+        supabaseAnonKey: editingClientData.supabaseAnonKey.trim(),
+      } : null,
+    };
+
+    const updated = clients.map((c) => (c.id === updatedClient.id ? updatedClient : c));
+    saveClients(updated);
+
+    // Direct Supabase database update
+    try {
+      if (supabase) {
+        const code = 'LIC:' + updatedClient.licenseKey;
+        const isActive = updatedClient.status !== 'suspended';
+        const licData = {
+          license_key: updatedClient.licenseKey,
+          school_name: updatedClient.schoolName,
+          status: updatedClient.status,
+          updated_at: new Date().toISOString(),
+        };
+        await supabase
+          .from('courses')
+          .upsert({
+            code,
+            name: `${updatedClient.schoolName} [${updatedClient.status.toUpperCase()}]`,
+            description: JSON.stringify(licData),
+            duration_months: 12,
+            is_active: isActive,
+          }, { onConflict: 'code' });
+      }
+    } catch (e) {
+      console.warn('Direct Supabase update error on client edit:', e);
+    }
+
+    // Sync to Server
+    syncWithServer('upsert', { license: updatedClient });
+
+    setIsEditClientModalOpen(false);
+    setEditingClientData(null);
+    showToast(`Updated client profile for "${updatedClient.schoolName}"!`);
   };
 
   const handleDeleteClient = (clientId) => {
@@ -797,6 +892,20 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
                           </button>
                         )}
                         <button
+                          onClick={() => handleOpenEditModal(client)}
+                          title="Edit School Client Profile"
+                          style={{
+                            padding: '5px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid #bfdbfe',
+                            backgroundColor: '#eff6ff',
+                            color: '#1d4ed8',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Edit size={14} />
+                        </button>
+                        <button
                           onClick={() => handleToggleSuspend(client.id)}
                           title={client.status === 'suspended' ? 'Unlock / Reactivate' : 'Lockout / Suspend'}
                           style={{
@@ -1064,6 +1173,195 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
               </Button>
               <Button variant="primary" size="sm" onClick={handleSetManualDays}>
                 Update Days
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Edit School Client Profile */}
+      {isEditClientModalOpen && editingClientData && (
+        <div
+          className="modal-overlay"
+          style={{
+            zIndex: 9999,
+            backgroundColor: 'rgba(7, 14, 25, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            className="modal-dialog"
+            style={{
+              width: '100%',
+              maxWidth: '560px',
+              backgroundColor: '#ffffff',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              boxShadow: '0 24px 48px rgba(0,0,0,0.4)',
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: 'var(--navy-900)',
+                padding: '16px 20px',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Edit size={20} color="var(--gold-primary)" />
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#ffffff' }}>
+                  Edit School Client Profile
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setIsEditClientModalOpen(false);
+                  setEditingClientData(null);
+                }}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '75vh', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', backgroundColor: '#f8fafc', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>License Key (Immutable):</span>
+                <code style={{ fontSize: '12px', fontWeight: 700, color: 'var(--navy-950)' }}>{editingClientData.licenseKey}</code>
+              </div>
+
+              <Input
+                label="School / Institution Name *"
+                value={editingClientData.schoolName || ''}
+                onChange={(e) => setEditingClientData({ ...editingClientData, schoolName: e.target.value })}
+                required
+              />
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <Input
+                  label="Contact Person"
+                  value={editingClientData.contactPerson || ''}
+                  onChange={(e) => setEditingClientData({ ...editingClientData, contactPerson: e.target.value })}
+                />
+                <Input
+                  label="Phone / WhatsApp Number"
+                  value={editingClientData.phone || ''}
+                  onChange={(e) => setEditingClientData({ ...editingClientData, phone: e.target.value })}
+                />
+              </div>
+
+              <Input
+                label="Administrator Email"
+                type="email"
+                value={editingClientData.email || ''}
+                onChange={(e) => setEditingClientData({ ...editingClientData, email: e.target.value })}
+              />
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label className="form-label" style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: 600 }}>
+                    Account Status
+                  </label>
+                  <select
+                    className="form-input"
+                    value={editingClientData.status}
+                    onChange={(e) => setEditingClientData({ ...editingClientData, status: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                  >
+                    <option value="trial_active">Free Trial Active</option>
+                    <option value="licensed">Full License / Lifetime</option>
+                    <option value="suspended">Suspended / Locked Out</option>
+                    <option value="trial_expired">Trial Expired</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ display: 'block', marginBottom: '6px', fontSize: '12px', fontWeight: 600 }}>
+                    Storage Architecture
+                  </label>
+                  <select
+                    className="form-input"
+                    value={editingClientData.storageMode}
+                    onChange={(e) => setEditingClientData({ ...editingClientData, storageMode: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                  >
+                    <option value="offline">Offline Local Database</option>
+                    <option value="cloud">Cloud Supabase Dedicated</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <Input
+                  label="Days Remaining"
+                  type="number"
+                  value={String(editingClientData.daysRemaining ?? 30)}
+                  onChange={(e) => setEditingClientData({ ...editingClientData, daysRemaining: e.target.value })}
+                />
+                <Input
+                  label="Custom Telegram Bot Username"
+                  value={editingClientData.botUsername || ''}
+                  onChange={(e) => setEditingClientData({ ...editingClientData, botUsername: e.target.value })}
+                  placeholder="e.g. MySchoolAlertsBot"
+                />
+              </div>
+
+              {editingClientData.storageMode === 'cloud' && (
+                <div style={{ padding: '12px', backgroundColor: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#166534' }}>
+                    Dedicated Cloud Supabase Configuration
+                  </div>
+                  <Input
+                    label="School Supabase Project URL"
+                    value={editingClientData.supabaseUrl || ''}
+                    onChange={(e) => setEditingClientData({ ...editingClientData, supabaseUrl: e.target.value })}
+                    placeholder="https://xyz.supabase.co"
+                  />
+                  <Input
+                    label="School Supabase Anon Public Key"
+                    value={editingClientData.supabaseAnonKey || ''}
+                    onChange={(e) => setEditingClientData({ ...editingClientData, supabaseAnonKey: e.target.value })}
+                    placeholder="eyJhbGciOi..."
+                  />
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                padding: '14px 20px',
+                backgroundColor: 'var(--bg-subtle)',
+                borderTop: '1px solid var(--border-subtle)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '10px',
+              }}
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setIsEditClientModalOpen(false);
+                  setEditingClientData(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={CheckCircle2}
+                onClick={handleSaveEditClient}
+              >
+                Save Changes
               </Button>
             </div>
           </div>

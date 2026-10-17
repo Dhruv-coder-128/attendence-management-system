@@ -171,7 +171,7 @@ export default function FeesPage({ onRefreshCounts }) {
     let overdueCount = 0;
 
     students.forEach((s) => {
-      const tuition = Number(s.tuition_fee || 45000);
+      const tuition = Number(s.tuition_fee ?? 36000);
       const paid = Number(s.fee_paid || 0);
       const status = s.fee_status || 'pending';
 
@@ -239,7 +239,7 @@ export default function FeesPage({ onRefreshCounts }) {
         referenceNo: paymentData.referenceNo,
         notes: paymentData.notes,
         existingFeeRecord: feeRec || {
-          total_amount: Number(selectedStudentForPayment.tuition_fee || 45000),
+          total_amount: Number(selectedStudentForPayment.tuition_fee || 36000),
           paid_amount: Number(selectedStudentForPayment.fee_paid || 0),
           academic_year: '2026-27',
         },
@@ -277,9 +277,9 @@ export default function FeesPage({ onRefreshCounts }) {
     try {
       const feeRec = student.student_fees?.[0];
       const res = await sendVerifiedFeeReminder(student.id, feeRec || {
-        total_amount: student.tuition_fee || 45000,
-        paid_amount: student.fee_paid || 0,
-        pending_amount: (student.tuition_fee || 45000) - (student.fee_paid || 0),
+        total_amount: Number(student.tuition_fee || 36000),
+        paid_amount: Number(student.fee_paid || 0),
+        pending_amount: Number(student.tuition_fee || 36000) - Number(student.fee_paid || 0),
         status: student.fee_status || 'pending',
         next_due_date: student.fee_due_date,
       });
@@ -489,7 +489,7 @@ export default function FeesPage({ onRefreshCounts }) {
                 </tr>
               ) : (
                 paginatedStudents.map((s) => {
-                  const total = Number(s.tuition_fee || 45000);
+                  const total = Number(s.tuition_fee ?? 36000);
                   const paid = Number(s.fee_paid || 0);
                   const pending = Math.max(0, total - paid);
                   const status = (s.fee_status || 'pending').toLowerCase();
@@ -555,7 +555,7 @@ export default function FeesPage({ onRefreshCounts }) {
                             onClick={() => {
                               setSelectedStudentForPayment(s);
                               setPaymentData({
-                                amount: pending > 0 ? String(pending) : '',
+                                amount: '',
                                 paymentMethod: 'Cash',
                                 referenceNo: '',
                                 notes: '',
@@ -625,76 +625,208 @@ export default function FeesPage({ onRefreshCounts }) {
         title={`Record Tuition Payment: ${selectedStudentForPayment?.full_name}`}
         subtitle="Submit fee receipt and update student balance in PostgreSQL"
       >
-        <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <Input
-            label="Payment Amount (₹)"
-            type="number"
-            placeholder="e.g. 15000"
-            value={paymentData.amount}
-            onChange={(e) => setPaymentData({ ...paymentData, amount: e.target.value })}
-            required
-            autoFocus
-          />
+        {selectedStudentForPayment && (() => {
+          const totalFee = Number(
+            selectedStudentForPayment?.student_fees?.[0]?.total_amount ??
+            selectedStudentForPayment?.tuition_fee ??
+            36000
+          );
+          const alreadyPaid = Number(
+            selectedStudentForPayment?.student_fees?.[0]?.paid_amount ??
+            selectedStudentForPayment?.fee_paid ??
+            0
+          );
+          const pendingBefore = Math.max(0, totalFee - alreadyPaid);
+          const enteredAmt = Math.max(0, parseFloat(paymentData.amount) || 0);
+          const remainingAfter = Math.max(0, pendingBefore - enteredAmt);
 
-          <div>
-            <label
-              style={{
-                display: 'block',
-                fontSize: '12px',
-                fontWeight: 600,
-                color: 'var(--navy-900)',
-                marginBottom: '4px',
-              }}
-            >
-              Payment Mode
-            </label>
-            <select
-              value={paymentData.paymentMethod}
-              onChange={(e) => setPaymentData({ ...paymentData, paymentMethod: e.target.value })}
-              className="form-input"
-            >
-              <option value="Cash">Cash</option>
-              <option value="UPI / GPay / PhonePe">UPI / GPay / PhonePe</option>
-              <option value="Bank Transfer (NEFT/IMPS)">Bank Transfer (NEFT/IMPS)</option>
-              <option value="Cheque">Cheque</option>
-              <option value="Debit / Credit Card">Debit / Credit Card</option>
-            </select>
-          </div>
+          return (
+            <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Real-time Dynamic Financial Breakdown Card */}
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--slate-50, #f8fafc)',
+                  border: '1px solid var(--slate-200, #e2e8f0)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '13px', color: 'var(--text-secondary, #64748b)' }}>Total Course Fee</span>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--navy-950, #0f172a)' }}>
+                    ₹{totalFee.toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '13px', color: 'var(--text-secondary, #64748b)' }}>Already Paid</span>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--status-present, #10b981)' }}>
+                    ₹{alreadyPaid.toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '13px', color: 'var(--text-secondary, #64748b)' }}>Current Pending Balance</span>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: pendingBefore > 0 ? 'var(--status-absent, #ef4444)' : 'var(--text-muted, #94a3b8)' }}>
+                    ₹{pendingBefore.toLocaleString('en-IN')}
+                  </span>
+                </div>
 
-          <Input
-            label="Transaction / Reference Number (Optional)"
-            placeholder="e.g. UPI-98745123 or Cheque #123456"
-            value={paymentData.referenceNo}
-            onChange={(e) => setPaymentData({ ...paymentData, referenceNo: e.target.value })}
-          />
+                <div style={{ borderTop: '1px dashed var(--slate-200, #cbd5e1)', margin: '4px 0' }} />
 
-          <Input
-            label="Notes / Receipt Remarks (Optional)"
-            placeholder="e.g. Term 1 installment cleared"
-            value={paymentData.notes}
-            onChange={(e) => setPaymentData({ ...paymentData, notes: e.target.value })}
-          />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--navy-900, #1e293b)' }}>
+                    Remaining Balance After This Payment
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '15px',
+                      fontWeight: 700,
+                      color: remainingAfter === 0 ? 'var(--status-present, #10b981)' : 'var(--brand-primary, #4338ca)',
+                    }}
+                  >
+                    ₹{remainingAfter.toLocaleString('en-IN')}
+                    {remainingAfter === 0 && enteredAmt > 0 && (
+                      <span style={{ marginLeft: '6px', fontSize: '11px', color: 'var(--status-present, #10b981)', fontWeight: 600 }}>
+                        (Fully Cleared)
+                      </span>
+                    )}
+                  </span>
+                </div>
+              </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
-            <Button
-              variant="outline"
-              size="sm"
-              type="button"
-              onClick={() => setSelectedStudentForPayment(null)}
-              disabled={isSubmittingPayment}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              type="submit"
-              disabled={isSubmittingPayment}
-            >
-              {isSubmittingPayment ? 'Saving Receipt...' : 'Confirm Payment'}
-            </Button>
-          </div>
-        </form>
+              <div>
+                <Input
+                  label="Payment Amount (₹)"
+                  type="number"
+                  placeholder="e.g. 10000"
+                  value={paymentData.amount}
+                  onChange={(e) => setPaymentData({ ...paymentData, amount: e.target.value })}
+                  required
+                  autoFocus
+                />
+
+                {/* Quick-select pills */}
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+                  {pendingBefore > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentData({ ...paymentData, amount: String(pendingBefore) })}
+                      style={{
+                        background: 'var(--slate-100, #f1f5f9)',
+                        border: '1px solid var(--slate-300, #cbd5e1)',
+                        color: 'var(--navy-900, #0f172a)',
+                        cursor: 'pointer',
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Clear Full Pending (₹{pendingBefore.toLocaleString('en-IN')})
+                    </button>
+                  )}
+                  {pendingBefore >= 10000 && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentData({ ...paymentData, amount: '10000' })}
+                      style={{
+                        background: 'var(--slate-100, #f1f5f9)',
+                        border: '1px solid var(--slate-300, #cbd5e1)',
+                        color: 'var(--navy-900, #0f172a)',
+                        cursor: 'pointer',
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 500,
+                      }}
+                    >
+                      ₹10,000
+                    </button>
+                  )}
+                  {pendingBefore >= 5000 && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentData({ ...paymentData, amount: '5000' })}
+                      style={{
+                        background: 'var(--slate-100, #f1f5f9)',
+                        border: '1px solid var(--slate-300, #cbd5e1)',
+                        color: 'var(--navy-900, #0f172a)',
+                        cursor: 'pointer',
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        fontWeight: 500,
+                      }}
+                    >
+                      ₹5,000
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: 'var(--navy-900)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  Payment Mode
+                </label>
+                <select
+                  value={paymentData.paymentMethod}
+                  onChange={(e) => setPaymentData({ ...paymentData, paymentMethod: e.target.value })}
+                  className="form-input"
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="UPI / GPay / PhonePe">UPI / GPay / PhonePe</option>
+                  <option value="Bank Transfer (NEFT/IMPS)">Bank Transfer (NEFT/IMPS)</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="Debit / Credit Card">Debit / Credit Card</option>
+                </select>
+              </div>
+
+              <Input
+                label="Transaction / Reference Number (Optional)"
+                placeholder="e.g. UPI-98745123 or Cheque #123456"
+                value={paymentData.referenceNo}
+                onChange={(e) => setPaymentData({ ...paymentData, referenceNo: e.target.value })}
+              />
+
+              <Input
+                label="Notes / Receipt Remarks (Optional)"
+                placeholder="e.g. Installment payment received"
+                value={paymentData.notes}
+                onChange={(e) => setPaymentData({ ...paymentData, notes: e.target.value })}
+              />
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => setSelectedStudentForPayment(null)}
+                  disabled={isSubmittingPayment}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  type="submit"
+                  disabled={isSubmittingPayment || enteredAmt <= 0}
+                >
+                  {isSubmittingPayment ? 'Saving Receipt...' : `Confirm Payment (₹${(enteredAmt || 0).toLocaleString('en-IN')})`}
+                </Button>
+              </div>
+            </form>
+          );
+        })()}
       </Modal>
 
       {/* STUDENT ACADEMIC DOSSIER MODAL */}
