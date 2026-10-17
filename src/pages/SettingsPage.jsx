@@ -273,7 +273,7 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
     setBackupExporting(true);
     try {
       const res = await exportDatabaseBackup();
-      setBackupNotice({ type: 'success', message: `Database backup exported successfully: ${res.filename}` });
+      setBackupNotice({ type: 'success', message: `Universal backup exported successfully: ${res.filename} (100% tables, broadcasts & settings)` });
     } catch (err) {
       setBackupNotice({ type: 'error', message: 'Failed to export database backup: ' + err.message });
     } finally {
@@ -289,7 +289,10 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
       const text = await backupFile.text();
       const res = await importDatabaseBackup(text);
       if (res.ok) {
-        setBackupNotice({ type: 'success', message: 'Database backup restored successfully! Reloading page...' });
+        setBackupNotice({
+          type: 'success',
+          message: `Universal database & settings restored successfully (${Object.keys(res.summary?.tables || {}).length} tables, ${res.summary?.settingsCount || 0} configurations)! Reloading...`,
+        });
         setTimeout(() => window.location.reload(), 1500);
       } else {
         setBackupNotice({ type: 'error', message: 'Restore failed: ' + res.error });

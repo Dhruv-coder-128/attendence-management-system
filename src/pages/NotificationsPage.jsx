@@ -15,6 +15,12 @@ import {
   Trash2,
   Loader2,
   UploadCloud,
+  Eye,
+  Smartphone,
+  Check,
+  Copy,
+  ExternalLink,
+  Download,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -23,7 +29,8 @@ import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { sendBatchBroadcastNotification } from '../lib/telegramClient';
+import { sendBatchBroadcastNotification, getSchoolTelegramSettings } from '../lib/telegramClient';
+import { getAcademySettings } from '../lib/academySettings';
 
 /**
  * Notifications and Telegram Alert Broadcast Manager
@@ -53,6 +60,14 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
   const [dispatchProgress, setDispatchProgress] = useState(null);
   const [dispatchFeedback, setDispatchFeedback] = useState(null);
   const fileInputRef = useRef(null);
+
+  // Broadcast Detail & Phone Preview State
+  const [selectedNotice, setSelectedNotice] = useState(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [copiedNotice, setCopiedNotice] = useState(false);
+
+  const telegramSettings = useMemo(() => getSchoolTelegramSettings(), []);
+  const academySettings = useMemo(() => getAcademySettings(), []);
 
   // Fetch Real Telegram Dispatch Audit Logs from Supabase public.attendance with full guardian hydration
   const fetchDispatchLogs = async () => {
@@ -220,18 +235,22 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
     let detectedType = 'document';
     if (fileTypeStr.startsWith('image/')) {
       detectedType = 'photo';
-      setMediaPreview(URL.createObjectURL(file));
     } else if (fileTypeStr.startsWith('video/')) {
       detectedType = 'video';
-      setMediaPreview(null);
     } else {
       detectedType = 'document';
-      setMediaPreview(null);
     }
 
     setMediaFile(file);
     setMediaType(detectedType);
     setDispatchFeedback(null);
+
+    // Read as persistent Base64 Data URL so it survives reloads, backups, and detail view
+    const reader = new FileReader();
+    reader.onload = () => {
+      setMediaPreview(reader.result);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleRemoveFile = () => {
@@ -241,6 +260,36 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const handleOpenDetail = (item) => {
+    setSelectedNotice(item);
+    setIsDetailModalOpen(true);
+  };
+
+  const handleCopyNoticeText = (text) => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedNotice(true);
+      setTimeout(() => setCopiedNotice(false), 2000);
+    }
+  };
+
+  const handleCloneNotice = (item) => {
+    setTitle(item.title || '');
+    setMessage(item.message || '');
+    if (item.category === 'Attendance') setTemplate('attendance');
+    else if (item.category === 'Fee Alert') setTemplate('fee');
+    else setTemplate('general');
+    setChannel(item.channel || 'Telegram Bot');
+    if (item.mediaType) {
+      setMediaType(item.mediaType);
+      setMediaPreview(item.mediaDataUrl || null);
+    } else {
+      handleRemoveFile();
+    }
+    setIsDetailModalOpen(false);
+    setIsComposerOpen(true);
   };
 
   const handleSend = async (e) => {
@@ -281,6 +330,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
           sender: 'Director Desk',
           mediaType,
           mediaName: mediaFile?.name || null,
+          mediaDataUrl: mediaPreview || null,
         };
 
         onBroadcast(newLog);
@@ -318,6 +368,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
         sender: 'Director Desk',
         mediaType,
         mediaName: mediaFile?.name || null,
+        mediaDataUrl: mediaPreview || null,
       };
 
       onBroadcast(newLog);
@@ -497,6 +548,36 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
           </div>
         );
       },
+    },
+    {
+      header: 'Actions',
+      key: 'actions',
+      render: (item) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            type="button"
+            onClick={() => handleOpenDetail(item)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '11px',
+              fontWeight: 600,
+              padding: '4px 9px',
+              borderRadius: '5px',
+              backgroundColor: '#eff6ff',
+              color: '#1d4ed8',
+              border: '1px solid #bfdbfe',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+            title="Inspect media and Telegram parent phone preview"
+          >
+            <Eye size={12} />
+            <span>View Detail</span>
+          </button>
+        </div>
+      ),
     },
   ];
 
@@ -1218,6 +1299,520 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
           </div>
         </form>
       </Modal>
+
+      {/* Broadcast Notice Detail & Live Media / Telegram Smartphone Preview Modal */}
+      {isDetailModalOpen && selectedNotice && (
+        <Modal
+          isOpen={isDetailModalOpen}
+          onClose={() => setIsDetailModalOpen(false)}
+          title="Broadcast Notice Detail & Live Preview"
+          subtitle="Inspect attached media files, audit delivery metrics, and review the exact Telegram screen parents see."
+          size="xl"
+          footer={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                Target Audience: <strong>{selectedNotice.channel}</strong> &bull; {selectedNotice.recipientsCount || 0} Guardians
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsDetailModalOpen(false)}
+                >
+                  Close
+                </Button>
+                {selectedNotice.channel === 'Telegram Bot' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={Send}
+                    onClick={() => {
+                      handleResendBroadcast(selectedNotice);
+                      setIsDetailModalOpen(false);
+                    }}
+                  >
+                    Re-dispatch Now
+                  </Button>
+                )}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={Sparkles}
+                  onClick={() => handleCloneNotice(selectedNotice)}
+                >
+                  Customize & Re-dispatch
+                </Button>
+              </div>
+            </div>
+          }
+        >
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+              gap: '24px',
+              alignItems: 'start',
+            }}
+          >
+            {/* Left Column: Notice Metadata, Full Text & Live Media Viewer */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Notice Metadata Card */}
+              <div
+                style={{
+                  padding: '14px 16px',
+                  backgroundColor: '#f8fafc',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <Badge status={selectedNotice.category}>{selectedNotice.category}</Badge>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      backgroundColor: selectedNotice.channel?.includes('Telegram') ? '#e0f2fe' : '#f1f5f9',
+                      color: selectedNotice.channel?.includes('Telegram') ? '#0369a1' : 'var(--text-secondary)',
+                    }}
+                  >
+                    {selectedNotice.channel}
+                  </span>
+                </div>
+                <h4 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--navy-950)', margin: '0 0 6px 0' }}>
+                  {selectedNotice.title}
+                </h4>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                  <span>Dispatched: <strong>{selectedNotice.sentAt}</strong></span>
+                  <span>Recipients: <strong>{selectedNotice.recipientsCount} guardians</strong></span>
+                  <span>Status: <strong style={{ color: selectedNotice.status?.includes('Delivered') ? 'var(--status-present)' : '#d97706' }}>{selectedNotice.status}</strong></span>
+                </div>
+              </div>
+
+              {/* Message Content Box */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)' }}>
+                    Dispatched Message Content:
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyNoticeText(selectedNotice.message)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#0284c7',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    {copiedNotice ? <Check size={12} color="#16a34a" /> : <Copy size={12} />}
+                    {copiedNotice ? 'Copied!' : 'Copy Text'}
+                  </button>
+                </div>
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    backgroundColor: '#ffffff',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-subtle)',
+                    fontSize: '12.5px',
+                    lineHeight: 1.6,
+                    color: 'var(--navy-950)',
+                    whiteSpace: 'pre-wrap',
+                    minHeight: '80px',
+                  }}
+                >
+                  {selectedNotice.message}
+                </div>
+              </div>
+
+              {/* Live Media Attachment Viewer */}
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)', display: 'block', marginBottom: '6px' }}>
+                  Live Media Attachment Preview:
+                </label>
+                {selectedNotice.mediaType === 'photo' && (
+                  <div
+                    style={{
+                      padding: '10px',
+                      backgroundColor: '#0f172a',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-subtle)',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                      <ImageIcon size={14} color="#38bdf8" />
+                      <span>Photo: <strong>{selectedNotice.mediaName || 'Broadcast Image'}</strong></span>
+                    </div>
+                    {selectedNotice.mediaDataUrl ? (
+                      <img
+                        src={selectedNotice.mediaDataUrl}
+                        alt={selectedNotice.mediaName || 'Broadcast Attachment'}
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: '260px',
+                          borderRadius: '6px',
+                          objectFit: 'contain',
+                        }}
+                      />
+                    ) : (
+                      <div style={{ color: '#94a3b8', fontSize: '12px', padding: '20px' }}>
+                        Image preview not stored in memory. Attached as: {selectedNotice.mediaName}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {selectedNotice.mediaType === 'video' && (
+                  <div
+                    style={{
+                      padding: '10px',
+                      backgroundColor: '#000000',
+                      borderRadius: '8px',
+                      border: '1px solid var(--border-subtle)',
+                      textAlign: 'center',
+                    }}
+                  >
+                    <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                      <Video size={14} color="#a855f7" />
+                      <span>Video: <strong>{selectedNotice.mediaName || 'Broadcast Video'}</strong></span>
+                    </div>
+                    {selectedNotice.mediaDataUrl ? (
+                      <video
+                        src={selectedNotice.mediaDataUrl}
+                        controls
+                        style={{
+                          width: '100%',
+                          maxHeight: '260px',
+                          borderRadius: '6px',
+                        }}
+                      />
+                    ) : (
+                      <div style={{ color: '#94a3b8', fontSize: '12px', padding: '20px' }}>
+                        Video file attached: {selectedNotice.mediaName}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {selectedNotice.mediaType === 'document' && (
+                  <div
+                    style={{
+                      padding: '14px 16px',
+                      backgroundColor: '#f8fafc',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div
+                          style={{
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '8px',
+                            backgroundColor: '#fee2e2',
+                            color: '#dc2626',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <FileText size={22} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--navy-950)' }}>
+                            {selectedNotice.mediaName || 'Academic Notice.pdf'}
+                          </div>
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            PDF Document Attachment
+                          </div>
+                        </div>
+                      </div>
+                      {selectedNotice.mediaDataUrl && (
+                        <a
+                          href={selectedNotice.mediaDataUrl}
+                          download={selectedNotice.mediaName || 'document.pdf'}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '11.5px',
+                            fontWeight: 600,
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            backgroundColor: '#ffffff',
+                            color: '#0284c7',
+                            border: '1px solid #bae6fd',
+                            textDecoration: 'none',
+                          }}
+                        >
+                          <ExternalLink size={13} />
+                          <span>Open / Download</span>
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {!selectedNotice.mediaType && (
+                  <div
+                    style={{
+                      padding: '12px 14px',
+                      backgroundColor: '#f1f5f9',
+                      borderRadius: '6px',
+                      color: 'var(--text-muted)',
+                      fontSize: '11.5px',
+                      fontStyle: 'italic',
+                    }}
+                  >
+                    Standard text notice broadcast (no photo, PDF, or video attached).
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Realistic Telegram Smartphone Parent Screen Mockup */}
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)', display: 'block', marginBottom: '6px' }}>
+                Telegram Smartphone Parent View:
+              </label>
+
+              {/* Smartphone Frame */}
+              <div
+                style={{
+                  width: '100%',
+                  maxWidth: '340px',
+                  margin: '0 auto',
+                  border: '3px solid #1e293b',
+                  borderRadius: '28px',
+                  backgroundColor: '#0f172a',
+                  padding: '10px 8px 14px 8px',
+                  boxShadow: '0 20px 25px -5px rgba(0,0,0,0.25), 0 8px 10px -6px rgba(0,0,0,0.2)',
+                }}
+              >
+                {/* Phone Speaker Notch */}
+                <div
+                  style={{
+                    width: '64px',
+                    height: '4px',
+                    backgroundColor: '#334155',
+                    borderRadius: '2px',
+                    margin: '0 auto 8px auto',
+                  }}
+                />
+
+                {/* Telegram App Screen */}
+                <div
+                  style={{
+                    borderRadius: '20px',
+                    overflow: 'hidden',
+                    backgroundColor: '#8da8b8',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minHeight: '380px',
+                  }}
+                >
+                  {/* Telegram Top Header Bar */}
+                  <div
+                    style={{
+                      backgroundColor: '#517da2',
+                      color: '#ffffff',
+                      padding: '10px 12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        backgroundColor: '#ffffff',
+                        color: '#517da2',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: '14px',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      🎓
+                    </div>
+                    <div style={{ overflow: 'hidden', flex: 1 }}>
+                      <div
+                        style={{
+                          fontSize: '12.5px',
+                          fontWeight: 700,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        {telegramSettings.botName || academySettings.academy_name || 'SMS Academy'}
+                        <CheckCircle2 size={12} fill="#38bdf8" color="#ffffff" />
+                      </div>
+                      <div style={{ fontSize: '10px', color: '#e0f2fe' }}>
+                        bot &bull; @{telegramSettings.botUsername || 'sms_attendance_bot'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Telegram Chat History Feed */}
+                  <div
+                    style={{
+                      flex: 1,
+                      padding: '12px 10px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      backgroundImage: 'radial-gradient(#9cb5c5 10%, transparent 11%)',
+                      backgroundSize: '16px 16px',
+                    }}
+                  >
+                    {/* Centered Date Badge */}
+                    <div style={{ textAlign: 'center' }}>
+                      <span
+                        style={{
+                          fontSize: '10px',
+                          fontWeight: 600,
+                          backgroundColor: 'rgba(0,0,0,0.2)',
+                          color: '#ffffff',
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                        }}
+                      >
+                        Today
+                      </span>
+                    </div>
+
+                    {/* Telegram Inbound Speech Bubble */}
+                    <div
+                      style={{
+                        backgroundColor: '#ffffff',
+                        borderRadius: '12px 12px 12px 2px',
+                        padding: '10px 12px',
+                        maxWidth: '96%',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.12)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                      }}
+                    >
+                      {/* Attached Media Thumbnail inside Chat Bubble */}
+                      {selectedNotice.mediaType === 'photo' && selectedNotice.mediaDataUrl && (
+                        <img
+                          src={selectedNotice.mediaDataUrl}
+                          alt="Telegram attachment preview"
+                          style={{
+                            width: '100%',
+                            maxHeight: '140px',
+                            objectFit: 'cover',
+                            borderRadius: '8px',
+                          }}
+                        />
+                      )}
+
+                      {selectedNotice.mediaType === 'video' && (
+                        <div
+                          style={{
+                            width: '100%',
+                            height: '90px',
+                            backgroundColor: '#0f172a',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: '#ffffff',
+                            fontSize: '11px',
+                            gap: '6px',
+                          }}
+                        >
+                          <Video size={18} color="#a855f7" />
+                          <span>Video ({selectedNotice.mediaName || 'play video'})</span>
+                        </div>
+                      )}
+
+                      {selectedNotice.mediaType === 'document' && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '6px 8px',
+                            backgroundColor: '#f1f5f9',
+                            borderRadius: '6px',
+                          }}
+                        >
+                          <FileText size={18} color="#dc2626" />
+                          <div style={{ fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {selectedNotice.mediaName || 'Academic Notice.pdf'}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Notice Header in bold */}
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>
+                        📢 {selectedNotice.title}
+                      </div>
+
+                      {/* Notice Body Text */}
+                      <div style={{ fontSize: '11.5px', color: '#1e293b', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+                        {selectedNotice.message}
+                      </div>
+
+                      {/* Timestamp & Telegram Double Blue Checks */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                          gap: '3px',
+                          marginTop: '2px',
+                        }}
+                      >
+                        <span style={{ fontSize: '9.5px', color: '#64748b' }}>
+                          {selectedNotice.sentAt || '11:45 AM'}
+                        </span>
+                        <span style={{ color: '#0284c7', fontSize: '11px', fontWeight: 700 }}>
+                          ✓✓
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Informative Help Text */}
+              <p
+                style={{
+                  fontSize: '11px',
+                  color: 'var(--text-muted)',
+                  textAlign: 'center',
+                  marginTop: '10px',
+                  lineHeight: 1.4,
+                }}
+              >
+                📱 <strong>Live Parent Experience:</strong> Parents see your logo, message, and media in Telegram exactly as rendered above.
+              </p>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

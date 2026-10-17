@@ -46,6 +46,8 @@ export function getStoredAcademySettings() {
   };
 }
 
+export const getAcademySettings = getStoredAcademySettings;
+
 /**
  * Saves settings to localStorage
  */

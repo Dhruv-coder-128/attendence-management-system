@@ -16,6 +16,156 @@ const DEFAULT_CONTACT = {
   whatsapp: '+91 8866039007',
 };
 
+/**
+ * Resiliently fetches all registered licenses from school_licenses or fallback store
+ */
+async function fetchLicensesResilient(serverDb) {
+  // 1. Try school_licenses
+  const { data, error } = await serverDb
+    .from('school_licenses')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (!error) return data || [];
+
+  // 2. If school_licenses not in schema cache (PGRST205 / 42P01), fallback to courses table
+  if (error.code === 'PGRST205' || error.code === '42P01' || String(error.message || '').includes('school_licenses')) {
+    const { data: cData, error: cErr } = await serverDb
+      .from('courses')
+      .select('*')
+      .like('code', 'LIC:%')
+      .order('created_at', { ascending: false });
+
+    if (cErr) throw cErr;
+    return (cData || []).map((row) => {
+      try {
+        return JSON.parse(row.description);
+      } catch {
+        return {
+          id: row.id,
+          license_key: row.code.replace(/^LIC:/, ''),
+          school_name: row.name,
+          status: row.is_active ? 'licensed' : 'suspended',
+          is_activated: true,
+        };
+      }
+    });
+  }
+
+  throw error;
+}
+
+/**
+ * Resiliently upserts a license to school_licenses or fallback store
+ */
+async function upsertLicenseResilient(serverDb, payload) {
+  // 1. Try school_licenses
+  const { data, error } = await serverDb
+    .from('school_licenses')
+    .upsert(payload, { onConflict: 'license_key' })
+    .select()
+    .maybeSingle();
+
+  if (!error) return data;
+
+  // 2. If school_licenses not in schema cache, fallback to courses table
+  if (error.code === 'PGRST205' || error.code === '42P01' || String(error.message || '').includes('school_licenses')) {
+    const code = 'LIC:' + payload.license_key;
+    const name = `${payload.school_name || 'SMS Academy'} [${String(payload.status || '').toUpperCase()}]`;
+    const isActive = payload.status === 'licensed' || payload.status === 'trial_active';
+
+    const { error: cErr } = await serverDb
+      .from('courses')
+      .upsert({
+        code,
+        name,
+        level: 'License',
+        description: JSON.stringify(payload),
+        is_active: isActive,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'code' });
+
+    if (cErr) throw cErr;
+    return payload;
+  }
+
+  throw error;
+}
+
+/**
+ * Resiliently updates a license status or duration
+ */
+async function updateLicenseStatusResilient(serverDb, cleanKey, updateObj) {
+  // 1. Try school_licenses
+  const { data, error } = await serverDb
+    .from('school_licenses')
+    .update(updateObj)
+    .eq('license_key', cleanKey)
+    .select()
+    .maybeSingle();
+
+  if (!error && data) return data;
+
+  // 2. Fallback to courses
+  if (!error || error.code === 'PGRST205' || error.code === '42P01' || String(error?.message || '').includes('school_licenses')) {
+    const code = 'LIC:' + cleanKey;
+    const { data: existing, error: getErr } = await serverDb
+      .from('courses')
+      .select('*')
+      .eq('code', code)
+      .maybeSingle();
+
+    if (getErr) throw getErr;
+
+    let payload = {};
+    if (existing && existing.description) {
+      try {
+        payload = JSON.parse(existing.description);
+      } catch {}
+    } else {
+      payload = {
+        id: `LIC-${cleanKey}`,
+        license_key: cleanKey,
+        school_name: 'SMS Academy',
+        is_activated: true,
+      };
+    }
+
+    Object.assign(payload, updateObj);
+    const isActive = payload.status === 'licensed' || payload.status === 'trial_active';
+    const name = `${payload.school_name || 'SMS Academy'} [${String(payload.status || '').toUpperCase()}]`;
+
+    const { error: saveErr } = await serverDb
+      .from('courses')
+      .upsert({
+        code,
+        name,
+        level: 'License',
+        description: JSON.stringify(payload),
+        is_active: isActive,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'code' });
+
+    if (saveErr) throw saveErr;
+    return payload;
+  }
+
+  throw error;
+}
+
+/**
+ * Resiliently deletes a license
+ */
+async function deleteLicenseResilient(serverDb, cleanKey) {
+  try {
+    await serverDb.from('school_licenses').delete().eq('license_key', cleanKey);
+  } catch {}
+  try {
+    await serverDb.from('courses').delete().eq('code', 'LIC:' + cleanKey);
+  } catch {}
+  return true;
+}
+
 export default async function handler(req, res) {
   // CORS & Security headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -70,14 +220,10 @@ export default async function handler(req, res) {
   // GET: List all registered school licenses
   if (req.method === 'GET') {
     try {
-      const { data, error } = await serverDb
-        .from('school_licenses')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      return res.status(200).json({ ok: true, licenses: data || [] });
+      const licenses = await fetchLicensesResilient(serverDb);
+      return res.status(200).json({ ok: true, licenses: licenses || [] });
     } catch (err) {
+      console.error('Fetch licenses error:', err);
       return res.status(500).json({ ok: false, error: err.message });
     }
   }
@@ -109,48 +255,30 @@ export default async function handler(req, res) {
           updated_at: new Date().toISOString(),
         };
 
-        const { data, error } = await serverDb
-          .from('school_licenses')
-          .upsert(payload, { onConflict: 'license_key' })
-          .select()
-          .maybeSingle();
-
-        if (error) throw error;
-        return res.status(200).json({ ok: true, license: data });
+        const result = await upsertLicenseResilient(serverDb, payload);
+        return res.status(200).json({ ok: true, license: result });
       }
 
       // 2. Suspend / Lock school license
       if (action === 'suspend') {
         const cleanKey = String(licenseKey).trim().toUpperCase();
-        const { data, error } = await serverDb
-          .from('school_licenses')
-          .update({
-            status: 'suspended',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('license_key', cleanKey)
-          .select()
-          .maybeSingle();
+        const updated = await updateLicenseStatusResilient(serverDb, cleanKey, {
+          status: 'suspended',
+          updated_at: new Date().toISOString(),
+        });
 
-        if (error) throw error;
-        return res.status(200).json({ ok: true, message: `License ${cleanKey} suspended successfully.`, license: data });
+        return res.status(200).json({ ok: true, message: `License ${cleanKey} suspended successfully.`, license: updated });
       }
 
       // 3. Unlock / Restore school license
       if (action === 'unlock' || action === 'activate') {
         const cleanKey = String(licenseKey).trim().toUpperCase();
-        const { data, error } = await serverDb
-          .from('school_licenses')
-          .update({
-            status: newStatus || 'trial_active',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('license_key', cleanKey)
-          .select()
-          .maybeSingle();
+        const updated = await updateLicenseStatusResilient(serverDb, cleanKey, {
+          status: newStatus || 'trial_active',
+          updated_at: new Date().toISOString(),
+        });
 
-        if (error) throw error;
-        return res.status(200).json({ ok: true, message: `License ${cleanKey} unlocked successfully.`, license: data });
+        return res.status(200).json({ ok: true, message: `License ${cleanKey} unlocked successfully.`, license: updated });
       }
 
       // 4. Update / Extend Days
@@ -161,30 +289,19 @@ export default async function handler(req, res) {
         const newEndsAt = new Date(now.getTime() + days * 86400000).toISOString();
         const computedStatus = days > 0 ? (days >= 365 ? 'licensed' : 'trial_active') : 'trial_expired';
 
-        const { data, error } = await serverDb
-          .from('school_licenses')
-          .update({
-            status: computedStatus,
-            trial_ends_at: newEndsAt,
-            updated_at: now.toISOString(),
-          })
-          .eq('license_key', cleanKey)
-          .select()
-          .maybeSingle();
+        const updated = await updateLicenseStatusResilient(serverDb, cleanKey, {
+          status: computedStatus,
+          trial_ends_at: newEndsAt,
+          updated_at: now.toISOString(),
+        });
 
-        if (error) throw error;
-        return res.status(200).json({ ok: true, message: `License ${cleanKey} set to ${days} days.`, license: data });
+        return res.status(200).json({ ok: true, message: `License ${cleanKey} set to ${days} days.`, license: updated });
       }
 
       // 5. Delete school license
       if (action === 'delete') {
         const cleanKey = String(licenseKey).trim().toUpperCase();
-        const { error } = await serverDb
-          .from('school_licenses')
-          .delete()
-          .eq('license_key', cleanKey);
-
-        if (error) throw error;
+        await deleteLicenseResilient(serverDb, cleanKey);
         return res.status(200).json({ ok: true, message: `License ${cleanKey} deleted.` });
       }
 

@@ -42,18 +42,51 @@ export default async function handler(req, res) {
   });
 
   try {
-    let query = serverDb.from('school_licenses').select('*');
-    if (licenseKey) {
-      query = query.eq('license_key', String(licenseKey).trim().toUpperCase());
-    } else {
-      query = query.eq('id', String(licenseId).trim());
+    let license = null;
+    const cleanKey = licenseKey ? String(licenseKey).trim().toUpperCase() : null;
+    const cleanId = licenseId ? String(licenseId).trim() : null;
+
+    // 1. Try querying school_licenses table
+    try {
+      let query = serverDb.from('school_licenses').select('*');
+      if (cleanKey) {
+        query = query.eq('license_key', cleanKey);
+      } else {
+        query = query.eq('id', cleanId);
+      }
+      const { data, error } = await query.maybeSingle();
+      if (!error && data) {
+        license = data;
+      }
+    } catch (e) {
+      console.warn('Licensing primary store query error:', e.message);
     }
 
-    const { data: license, error: fetchErr } = await query.maybeSingle();
+    // 2. Resilient fallback query from courses table
+    if (!license && cleanKey) {
+      try {
+        const { data: courseRow } = await serverDb
+          .from('courses')
+          .select('*')
+          .eq('code', 'LIC:' + cleanKey)
+          .maybeSingle();
 
-    if (fetchErr) {
-      console.error('License fetch error:', fetchErr);
-      return res.status(500).json({ ok: false, error: 'Failed to query licensing registry.' });
+        if (courseRow && courseRow.description) {
+          try {
+            license = JSON.parse(courseRow.description);
+          } catch {
+            license = {
+              id: courseRow.id,
+              license_key: cleanKey,
+              school_name: courseRow.name,
+              status: courseRow.is_active ? 'licensed' : 'suspended',
+              is_activated: true,
+            };
+          }
+        }
+      } catch (cErr) {
+        console.error('Fallback query error from courses:', cErr);
+      }
     }
 
     if (!license) {
@@ -86,7 +119,7 @@ export default async function handler(req, res) {
       return res.status(403).json({
         ok: false,
         status: 'suspended',
-        error: 'This school license has been suspended. Please contact the developer to resolve.',
+        error: 'This school license has been suspended by the developer. Contact developer to resolve.',
         developerContact,
       });
     }
@@ -97,10 +130,23 @@ export default async function handler(req, res) {
 
     if (isExpired) {
       if (license.status !== 'trial_expired') {
-        await serverDb
-          .from('school_licenses')
-          .update({ status: 'trial_expired', updated_at: now.toISOString() })
-          .eq('id', license.id);
+        try {
+          await serverDb
+            .from('school_licenses')
+            .update({ status: 'trial_expired', updated_at: now.toISOString() })
+            .eq('id', license.id);
+        } catch {}
+        if (cleanKey) {
+          try {
+            const updatedPayload = { ...license, status: 'trial_expired', updated_at: now.toISOString() };
+            await serverDb.from('courses').update({
+              is_active: false,
+              description: JSON.stringify(updatedPayload),
+              name: `${license.school_name || 'SMS Academy'} [TRIAL_EXPIRED]`,
+              updated_at: now.toISOString(),
+            }).eq('code', 'LIC:' + cleanKey);
+          } catch {}
+        }
       }
 
       return res.status(403).json({
@@ -119,10 +165,12 @@ export default async function handler(req, res) {
       : 9999;
 
     // Record heartbeat
-    await serverDb
-      .from('school_licenses')
-      .update({ last_validated_at: now.toISOString() })
-      .eq('id', license.id);
+    try {
+      await serverDb
+        .from('school_licenses')
+        .update({ last_validated_at: now.toISOString() })
+        .eq('id', license.id);
+    } catch {}
 
     return res.status(200).json({
       ok: true,

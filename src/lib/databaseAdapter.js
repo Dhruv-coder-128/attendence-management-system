@@ -726,14 +726,36 @@ async function resolveRelations(tableName, records, selectString) {
 }
 
 /**
- * Exports the entire local offline database into a downloadable backup file (.smsdb / JSON)
+ * Exports the entire local offline database and application state into a downloadable backup file (.smsdb / JSON)
+ * Captures 100% of all data: IndexedDB tables, broadcast history with attachments, telegram bot config,
+ * custom message templates, school licenses, and academy branding.
  */
 export async function exportDatabaseBackup() {
+  // 1. Gather all localStorage settings (Telegram bot config, broadcast logs, license, branding, templates)
+  const appSettings = {};
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i);
+        if (key) {
+          const val = window.localStorage.getItem(key);
+          if (val !== null) {
+            appSettings[key] = val;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read all localStorage keys for universal backup:', e);
+    }
+  }
+
+  // 2. Gather all IndexedDB tables
   const backup = {
-    version: '1.0',
+    version: '2.0',
     exportedAt: new Date().toISOString(),
-    system: 'SMS — Student Management System',
+    system: 'SMS — Student Management System (Universal Full Backup)',
     tables: {},
+    appSettings,
   };
 
   for (const table of ALL_TABLES) {
@@ -746,7 +768,7 @@ export async function exportDatabaseBackup() {
 
   const jsonStr = JSON.stringify(backup, null, 2);
   const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
-  const filename = `sms_database_backup_${new Date().toISOString().split('T')[0]}.smsdb`;
+  const filename = `sms_universal_database_backup_${new Date().toISOString().split('T')[0]}.smsdb`;
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -757,11 +779,19 @@ export async function exportDatabaseBackup() {
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 
-  return { ok: true, filename, backupSummary: Object.fromEntries(Object.entries(backup.tables).map(([k, v]) => [k, v.length])) };
+  return {
+    ok: true,
+    filename,
+    backupSummary: {
+      tables: Object.fromEntries(Object.entries(backup.tables).map(([k, v]) => [k, v.length])),
+      settingsCount: Object.keys(appSettings).length,
+    },
+  };
 }
 
 /**
- * Restores the local database from a backup file (.smsdb / JSON)
+ * Restores the local database and all application settings from a backup file (.smsdb / JSON)
+ * Reinstates: All IndexedDB tables, Telegram bot settings/tokens, broadcast history, branding, and licenses.
  */
 export async function importDatabaseBackup(jsonStringOrObject) {
   try {
@@ -770,8 +800,9 @@ export async function importDatabaseBackup(jsonStringOrObject) {
       throw new Error('Invalid backup file format: missing tables definition.');
     }
 
-    const summary = {};
+    const summary = { tables: {}, settingsCount: 0 };
 
+    // 1. Restore all database tables
     for (const [table, records] of Object.entries(data.tables)) {
       if (ALL_TABLES.includes(table) && Array.isArray(records)) {
         // Clear existing store
@@ -783,8 +814,33 @@ export async function importDatabaseBackup(jsonStringOrObject) {
         if (records.length > 0) {
           await putRecordsInStore(table, records);
         }
-        summary[table] = records.length;
+        summary.tables[table] = records.length;
       }
+    }
+
+    // 2. Universal Restore of App Settings, Broadcasts, Telegram Bot Config, Branding & License
+    const settingsObj = data.appSettings || data.localStorage || data.meta?.appSettings;
+    if (settingsObj && typeof settingsObj === 'object' && typeof window !== 'undefined' && window.localStorage) {
+      let count = 0;
+      for (const [key, val] of Object.entries(settingsObj)) {
+        if (typeof val === 'string') {
+          window.localStorage.setItem(key, val);
+          count++;
+        } else if (val !== null && typeof val === 'object') {
+          window.localStorage.setItem(key, JSON.stringify(val));
+          count++;
+        }
+      }
+      summary.settingsCount = count;
+
+      // Dispatch window events so active components can re-hydrate immediately
+      try {
+        window.dispatchEvent(new Event('storage'));
+        window.dispatchEvent(new CustomEvent('schoolLicenseUpdated'));
+        window.dispatchEvent(new CustomEvent('academySettingsUpdated'));
+        window.dispatchEvent(new CustomEvent('telegramSettingsUpdated'));
+        window.dispatchEvent(new CustomEvent('broadcastLogsUpdated'));
+      } catch {}
     }
 
     return { ok: true, summary };

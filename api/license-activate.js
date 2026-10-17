@@ -45,15 +45,44 @@ export default async function handler(req, res) {
 
   try {
     // 1. Look up license record
-    const { data: license, error: fetchErr } = await serverDb
-      .from('school_licenses')
-      .select('*')
-      .eq('license_key', cleanKey)
-      .maybeSingle();
+    let license = null;
+    try {
+      const { data, error: fetchErr } = await serverDb
+        .from('school_licenses')
+        .select('*')
+        .eq('license_key', cleanKey)
+        .maybeSingle();
 
-    if (fetchErr) {
-      console.error('Error fetching license:', fetchErr);
-      return res.status(500).json({ ok: false, error: 'Failed to query licensing registry.' });
+      if (!fetchErr && data) {
+        license = data;
+      }
+    } catch {}
+
+    // Resilient fallback query from courses table
+    if (!license) {
+      try {
+        const { data: courseRow } = await serverDb
+          .from('courses')
+          .select('*')
+          .eq('code', 'LIC:' + cleanKey)
+          .maybeSingle();
+
+        if (courseRow && courseRow.description) {
+          try {
+            license = JSON.parse(courseRow.description);
+          } catch {
+            license = {
+              id: courseRow.id,
+              license_key: cleanKey,
+              school_name: courseRow.name,
+              status: courseRow.is_active ? 'licensed' : 'suspended',
+              is_activated: true,
+            };
+          }
+        }
+      } catch (cErr) {
+        console.error('Fallback query error in activate:', cErr);
+      }
     }
 
     if (!license) {
