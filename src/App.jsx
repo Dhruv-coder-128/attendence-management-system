@@ -19,6 +19,7 @@ import SchoolActivationModal from './components/license/SchoolActivationModal';
 import DraggableTrialCapsule from './components/license/DraggableTrialCapsule';
 import TrialExpiredLockout from './components/license/TrialExpiredLockout';
 import ParentPortalPage from './pages/ParentPortalPage';
+import TeacherAttendancePage from './pages/TeacherAttendancePage';
 import { RefreshCw, GraduationCap } from 'lucide-react';
 
 /**
@@ -395,6 +396,14 @@ export default function App() {
 
   if (isParentPortal) {
     return <ParentPortalPage />;
+  }
+
+  // 3.6. Teacher Mobile Attendance Mode (Over Local Wi-Fi)
+  const isTeacherPortal = typeof window !== 'undefined' && 
+    (window.location.search.includes('portal=teacher') || activePage === 'teacher-portal');
+
+  if (isTeacherPortal) {
+    return <TeacherAttendancePage />;
   }
 
   // 4. Route Protection: If unauthenticated, render Login Page

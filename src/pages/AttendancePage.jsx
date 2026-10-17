@@ -23,6 +23,8 @@ import {
   Share2,
   ChevronDown,
   ChevronUp,
+  Smartphone,
+  Radio,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
@@ -30,6 +32,7 @@ import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import MonthlyAttendanceRegister from '../components/attendance/MonthlyAttendanceRegister';
 import Pagination from '../components/common/Pagination';
+import TeacherAppConnectModal from '../components/attendance/TeacherAppConnectModal';
 import { exportDailyRegisterToExcel } from '../lib/attendanceExporter';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
@@ -83,6 +86,7 @@ export default function AttendancePage({ onRefreshCounts }) {
   // View Switcher & Export State
   const [registerMode, setRegisterMode] = useState('daily'); // 'daily' | 'monthly'
   const [isExportingDaily, setIsExportingDaily] = useState(false);
+  const [isTeacherConnectModalOpen, setIsTeacherConnectModalOpen] = useState(false);
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -550,6 +554,17 @@ export default function AttendancePage({ onRefreshCounts }) {
                 disabled={loading || students.length === 0}
               >
                 Send Notifications
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Smartphone}
+                onClick={() => setIsTeacherConnectModalOpen(true)}
+                title="Connect Teacher Android App via Local Wi-Fi"
+                style={{ borderColor: 'var(--gold-border, #c5a880)', color: 'var(--gold-dark, #c5a880)', backgroundColor: 'rgba(197, 168, 128, 0.1)' }}
+              >
+                📱 Teacher App Connect
               </Button>
 
               <Button
@@ -1728,6 +1743,12 @@ export default function AttendancePage({ onRefreshCounts }) {
       )}
       </>
       )}
+
+      {/* Teacher App Wi-Fi Connect Modal */}
+      <TeacherAppConnectModal
+        isOpen={isTeacherConnectModalOpen}
+        onClose={() => setIsTeacherConnectModalOpen(false)}
+      />
     </div>
   );
 }

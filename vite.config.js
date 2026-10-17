@@ -142,4 +142,8 @@ function apiDevPlugin() {
 export default defineConfig({
   base: './',
   plugins: [react(), apiDevPlugin()],
+  server: {
+    host: '0.0.0.0',
+    port: 5173,
+  },
 })
