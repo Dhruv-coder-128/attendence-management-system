@@ -38,8 +38,14 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   getParentTelegramDeepLink,
   getParentTelegramAppUri,
+  getParentTelegramLinks,
   getWhatsAppShareUrl,
   TELEGRAM_BOT_USERNAME,
+  getSchoolTelegramSettings,
+  getActiveBotUsername,
+  createSecureParentInvitation,
+  createBulkParentInvitations,
+  linkParentTelegramAccount,
   syncTelegramBotUpdates,
 } from '../lib/telegramClient';
 import { runAutoRepairIfNecessary } from '../lib/parentRepairService';
@@ -79,6 +85,9 @@ export default function ParentsPage({ onRefreshCounts }) {
   const [isLinkingTelegram, setIsLinkingTelegram] = useState(false);
   const [telegramLinkMessage, setTelegramLinkMessage] = useState(null);
   const [showManualOverride, setShowManualOverride] = useState(false);
+  const [isSyncingTelegram, setIsSyncingTelegram] = useState(false);
+  const [seqWaIndex, setSeqWaIndex] = useState(0);
+  const activeBotUsername = useMemo(() => getActiveBotUsername(), []);
 
   // Form State
   const initialForm = {
@@ -214,8 +223,6 @@ export default function ParentsPage({ onRefreshCounts }) {
       setLoading(false);
     }
   };
-
-  const [isSyncingTelegram, setIsSyncingTelegram] = useState(false);
 
   const handleSyncTelegram = async (isSilent = false) => {
     if (!isSilent) setIsSyncingTelegram(true);
@@ -1813,13 +1820,13 @@ export default function ParentsPage({ onRefreshCounts }) {
                 </div>
                 <ul style={{ margin: '4px 0 0 16px', padding: 0, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                   <li>
-                    <strong>Telegram:</strong> Secure single-use deep links (<code>https://t.me/SMSAttendanceBot?start=tk_...</code>) are generated with a 7-day expiration.
+                    <strong>Telegram:</strong> Secure single-use deep links (<code>https://t.me/{activeBotUsername}?start=tk_...</code>) are generated with a 7-day expiration.
                   </li>
                   <li>
                     <strong>WhatsApp:</strong> Cloud API is currently unconfigured. The system provides <strong>1-click manual WhatsApp share links</strong> with prefilled invitation messages and deep links for each parent.
                   </li>
                   <li>
-                    A parent must explicitly press <strong>Start</strong> in Telegram to link their account. Accounts are never marked linked until verified.
+                    A parent taps the WhatsApp link, presses <strong>Start</strong> in Telegram, and confirms <strong>"Yes, This is my child"</strong> to link their account instantly.
                   </li>
                 </ul>
               </div>
@@ -1854,6 +1861,92 @@ export default function ParentsPage({ onRefreshCounts }) {
                 )}
               </div>
 
+              {/* Sequential 1-Click WhatsApp Sender Bar */}
+              {(() => {
+                const readyItems = bulkInviteResults.items.filter((i) => i.success);
+                if (readyItems.length === 0) return null;
+                const safeIdx = Math.min(seqWaIndex, readyItems.length - 1);
+                const currentItem = readyItems[safeIdx];
+                const currentParent = parents.find((p) => p.id === currentItem.parentId) || { full_name: currentItem.parentName, phone: currentItem.phone };
+                const currentWards = (currentParent.parent_students || [])
+                  .map((ps) => ps.students?.full_name)
+                  .filter(Boolean)
+                  .join(', ');
+                const currentWaUrl = getWhatsAppShareUrl(currentParent, currentWards, currentItem.deepLink);
+
+                return (
+                  <div
+                    style={{
+                      padding: '12px 14px',
+                      backgroundColor: '#f0fdf4',
+                      border: '1px solid #bbf7d0',
+                      borderRadius: '6px',
+                      marginBottom: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '10px',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '11px', color: '#166534', fontWeight: 600 }}>
+                        ⚡ Fast Sequential WhatsApp Sender — Parent {safeIdx + 1} of {readyItems.length}
+                      </div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#14532d', marginTop: '2px' }}>
+                        {currentItem.parentName} ({currentItem.phone})
+                        {currentWards && <span style={{ fontWeight: 400, color: '#166534', marginLeft: '6px' }}>— Ward: {currentWards}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <a
+                        href={currentWaUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => {
+                          if (safeIdx < readyItems.length - 1) {
+                            setSeqWaIndex(safeIdx + 1);
+                          }
+                        }}
+                        className="btn"
+                        style={{
+                          backgroundColor: '#25D366',
+                          color: '#ffffff',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          fontWeight: 600,
+                          fontSize: '12px',
+                          padding: '6px 12px',
+                          borderRadius: '4px',
+                          textDecoration: 'none',
+                        }}
+                      >
+                        <MessageCircle size={14} /> Send WhatsApp &amp; Next ▶
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => setSeqWaIndex((prev) => Math.max(0, prev - 1))}
+                        disabled={safeIdx === 0}
+                        className="btn btn-outline"
+                        style={{ padding: '6px 10px', fontSize: '11px' }}
+                      >
+                        ◀ Prev
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSeqWaIndex((prev) => Math.min(readyItems.length - 1, prev + 1))}
+                        disabled={safeIdx >= readyItems.length - 1}
+                        className="btn btn-outline"
+                        style={{ padding: '6px 10px', fontSize: '11px' }}
+                      >
+                        Next ▶
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Action buttons inside result */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
                 <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)' }}>
@@ -1879,7 +1972,10 @@ export default function ParentsPage({ onRefreshCounts }) {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setBulkInviteResults(null)}
+                    onClick={() => {
+                      setBulkInviteResults(null);
+                      setSeqWaIndex(0);
+                    }}
                   >
                     Generate New Batch
                   </Button>

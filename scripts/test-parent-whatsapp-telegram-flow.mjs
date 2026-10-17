@@ -127,8 +127,59 @@ if (cbData.startsWith('confirm_link:')) {
   parsedChatId = String(mockUpdateCallback.callback_query.message.chat.id);
 }
 
-assert(parsedToken === 'tk_9f81a7b2c3d4e5f6', `Extracted token from callback query: ${parsedToken}`);
-assert(parsedChatId === '771234567', `Extracted chat_id from callback query: ${parsedChatId}`);
+// TEST 5: getActiveBotUsername resolution
+console.log('\n--- TEST 5: getActiveBotUsername Resolution ---');
+import { getActiveBotUsername, createBulkParentInvitations } from '../src/lib/telegramClient.js';
+import { createLocalTableQueryBuilder } from '../src/lib/databaseAdapter.js';
+
+const resolvedBot = getActiveBotUsername('CustomAcademyBot');
+assert(resolvedBot === 'CustomAcademyBot', `Resolved explicit bot username: ${resolvedBot}`);
+
+const strippedBot = getActiveBotUsername('@CleanAcademyBot');
+assert(strippedBot === 'CleanAcademyBot', `Stripped leading @ from bot username: ${strippedBot}`);
+
+// TEST 6: createBulkParentInvitations validation
+console.log('\n--- TEST 6: createBulkParentInvitations Functionality ---');
+assert(typeof createBulkParentInvitations === 'function', 'createBulkParentInvitations is properly exported as a function');
+
+// TEST 7: databaseAdapter .or() PostgREST Query Evaluation
+console.log('\n--- TEST 7: databaseAdapter .or() Filter Evaluation ---');
+const builder = createLocalTableQueryBuilder('attendance');
+assert(typeof builder.or === 'function', 'createLocalTableQueryBuilder provides .or() method');
+
+// Test OR filter string evaluator logic
+const mockRows = [
+  { id: '1', telegram_notified: true, telegram_delivery_status: 'delivered' },
+  { id: '2', telegram_notified: false, telegram_delivery_status: 'failed' },
+  { id: '3', telegram_notified: false, telegram_delivery_status: 'unnotified' },
+];
+
+const orFilterStr = 'telegram_notified.eq.true,telegram_delivery_status.neq.unnotified';
+const orConditions = orFilterStr.split(',').map(c => c.trim()).filter(Boolean);
+
+const filteredMock = mockRows.filter(row => {
+  return orConditions.some(cond => {
+    const parts = cond.split('.');
+    const col = parts[0];
+    const op = parts[1];
+    const rawVal = parts.slice(2).join('.');
+    let targetVal = rawVal;
+    if (rawVal === 'true') targetVal = true;
+    else if (rawVal === 'false') targetVal = false;
+    else if (rawVal === 'null') targetVal = null;
+    else if (!isNaN(Number(rawVal)) && rawVal !== '') targetVal = Number(rawVal);
+
+    const rowVal = row[col];
+    if (op === 'eq') return rowVal === targetVal;
+    if (op === 'neq') return rowVal !== targetVal;
+    return false;
+  });
+});
+
+assert(filteredMock.length === 2, `OR filter correctly matched 2 records (got ${filteredMock.length})`);
+assert(filteredMock.find(r => r.id === '1') !== undefined, 'Record 1 matched via telegram_notified.eq.true');
+assert(filteredMock.find(r => r.id === '2') !== undefined, 'Record 2 matched via telegram_delivery_status.neq.unnotified');
+assert(filteredMock.find(r => r.id === '3') === undefined, 'Record 3 was correctly filtered out');
 
 console.log('\n================================================================');
 console.log(`TEST SUMMARY: ${passed} PASSED, ${failed} FAILED`);

@@ -485,7 +485,6 @@ export default function BatchesPage({ onRefreshCounts }) {
               ) : (
                 paginatedBatches.map((batch) => {
                   const enrolledCount = batch.students?.[0]?.count || 0;
-                  const ratio = Math.round((enrolledCount / batch.max_capacity) * 100);
 
                   return (
                     <tr key={batch.id}>
@@ -529,26 +528,11 @@ export default function BatchesPage({ onRefreshCounts }) {
                       </td>
                       <td>
                         <div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '3px' }}>
-                            <strong>{enrolledCount} / {batch.max_capacity}</strong>
-                            <span style={{ color: 'var(--text-muted)' }}>{ratio}%</span>
+                          <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)' }}>
+                            {enrolledCount} {enrolledCount === 1 ? 'Student' : 'Students'}
                           </div>
-                          <div
-                            style={{
-                              width: '100%',
-                              height: '5px',
-                              backgroundColor: 'var(--border-subtle)',
-                              borderRadius: '3px',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: `${Math.min(ratio, 100)}%`,
-                                height: '100%',
-                                backgroundColor: ratio >= 90 ? 'var(--gold-primary)' : 'var(--navy-700)',
-                              }}
-                            />
+                          <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                            Capacity: Unlimited
                           </div>
                         </div>
                       </td>
@@ -710,12 +694,11 @@ export default function BatchesPage({ onRefreshCounts }) {
           </div>
 
           <Input
-            label="Maximum Student Capacity"
+            label="Student Capacity (Optional)"
             type="number"
-            value={formData.max_capacity}
+            value={formData.max_capacity || ''}
             onChange={(e) => setFormData({ ...formData, max_capacity: e.target.value })}
-            placeholder="60"
-            required
+            placeholder="Unlimited (Leave blank)"
           />
         </form>
       </Modal>

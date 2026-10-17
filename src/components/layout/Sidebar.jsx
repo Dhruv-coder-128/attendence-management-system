@@ -134,7 +134,7 @@ export default function Sidebar({
       id: 'notifications',
       label: 'Notifications',
       icon: Bell,
-      badge: counts.notifications !== undefined ? String(counts.notifications) : '0',
+      badge: counts.notifications > 0 ? String(counts.notifications) : null,
       permission: 'send_notifications',
     },
     {

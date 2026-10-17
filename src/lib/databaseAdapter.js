@@ -217,6 +217,13 @@ export function createLocalTableQueryBuilder(tableName) {
       return builder;
     },
 
+    or(filterString) {
+      if (filterString && typeof filterString === 'string') {
+        state.filters.push({ type: 'or', raw: filterString.trim() });
+      }
+      return builder;
+    },
+
     neq(col, val) {
       state.filters.push({ type: 'neq', col, val });
       return builder;
@@ -341,6 +348,35 @@ async function executeLocalQuery(state) {
           } else {
             if (!str.includes(cleanPattern)) return false;
           }
+        }
+        if (f.type === 'or' && f.raw) {
+          const conditions = f.raw.split(',').map((c) => c.trim()).filter(Boolean);
+          const matchesAny = conditions.some((cond) => {
+            const parts = cond.split('.');
+            if (parts.length < 3) return false;
+            const col = parts[0];
+            const op = parts[1];
+            const rawVal = parts.slice(2).join('.');
+            let targetVal = rawVal;
+            if (rawVal === 'true') targetVal = true;
+            else if (rawVal === 'false') targetVal = false;
+            else if (rawVal === 'null') targetVal = null;
+            else if (!isNaN(Number(rawVal)) && rawVal !== '') targetVal = Number(rawVal);
+
+            const rowVal = row[col];
+            if (op === 'eq') return rowVal === targetVal;
+            if (op === 'neq') return rowVal !== targetVal;
+            if (op === 'gt') return Number(rowVal) > Number(targetVal);
+            if (op === 'gte') return Number(rowVal) >= Number(targetVal);
+            if (op === 'lt') return Number(rowVal) < Number(targetVal);
+            if (op === 'lte') return Number(rowVal) <= Number(targetVal);
+            if (op === 'is') {
+              if (targetVal === null) return rowVal === null || rowVal === undefined;
+              return rowVal === targetVal;
+            }
+            return false;
+          });
+          if (!matchesAny) return false;
         }
       }
       return true;

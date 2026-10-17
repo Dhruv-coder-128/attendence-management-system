@@ -101,17 +101,17 @@ export default function App() {
         : (bData ? bData.length : 0);
 
       // 3. Live Notifications / Telegram Dispatches Count from public.attendance
-      let notifyCount = notifications.length;
+      let notifyCount = 0;
       try {
-        const { count, error: nErr } = await supabase
+        const { count, data, error: nErr } = await supabase
           .from('attendance')
-          .select('id', { count: 'exact', head: true })
+          .select('id', { count: 'exact' })
           .eq('telegram_notified', true);
-        if (!nErr && count !== null && count !== undefined) {
-          notifyCount = count;
+        if (!nErr) {
+          notifyCount = count !== null && count !== undefined ? count : (data ? data.length : 0);
         }
       } catch {
-        // Fallback to local logs
+        notifyCount = 0;
       }
 
       setCounts({
