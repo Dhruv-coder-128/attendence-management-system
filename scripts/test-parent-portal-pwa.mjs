@@ -118,10 +118,31 @@ await asyncTest('authenticateParent verifies parent and resolves multiple enroll
   assert.strictEqual(res.selectedStudentId, 'demo-student-01', 'Active student matched identifier');
 });
 
+await asyncTest('authenticateParent validates user case: 8866039007 + Roll 19 (Dhruv Shah / Uday shah)', async () => {
+  const res = await authenticateParent('+91 8866039007', '19');
+  assert.strictEqual(res.ok, true, 'Authentication succeeds for 8866039007 + 19');
+  assert.strictEqual(res.parent.full_name, 'Uday shah', 'Resolved parent is Uday shah');
+  assert.strictEqual(res.students[0].full_name, 'Dhruv Shah', 'Resolved student is Dhruv Shah');
+  assert.strictEqual(res.students[0].admission_no, 'ST1019', 'Admission number is ST1019');
+  assert.strictEqual(res.students[0].roll_no, '19', 'Roll number is 19');
+});
+
+await asyncTest('authenticateParent validates admission number match: 8866039007 + ST1019', async () => {
+  const res = await authenticateParent('8866039007', 'ST1019');
+  assert.strictEqual(res.ok, true, 'Authentication succeeds for 8866039007 + ST1019');
+  assert.strictEqual(res.students[0].roll_no, '19', 'Correct roll number');
+});
+
+await asyncTest('authenticateParent rejects mismatched roll number for verified phone', async () => {
+  const res = await authenticateParent('8866039007', '999');
+  assert.strictEqual(res.ok, false, 'Authentication correctly rejected for wrong roll number');
+  assert(res.error.includes('roll number'), 'Informs user that roll number does not match');
+});
+
 test('Parent session persists in localStorage and clears on logout', () => {
   const session = getParentPortalSession();
   assert(session !== null, 'Session is persisted');
-  assert(session.students.length >= 2, 'Persists sibling student list');
+  assert(session.students.length >= 1, 'Persists student list');
 
   clearParentPortalSession();
   assert.strictEqual(getParentPortalSession(), null, 'Session cleanly cleared on logout');

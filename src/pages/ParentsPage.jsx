@@ -29,6 +29,7 @@ import {
   Pause,
   Square,
   Check,
+  Smartphone,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
