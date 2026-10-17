@@ -18,6 +18,7 @@ import { validateLicense, isTauriDesktop, getStoredLicense } from './lib/license
 import SchoolActivationModal from './components/license/SchoolActivationModal';
 import DraggableTrialCapsule from './components/license/DraggableTrialCapsule';
 import TrialExpiredLockout from './components/license/TrialExpiredLockout';
+import ParentPortalPage from './pages/ParentPortalPage';
 import { RefreshCw, GraduationCap } from 'lucide-react';
 
 /**
@@ -388,6 +389,14 @@ export default function App() {
     );
   }
 
+  // 3.5. Parent Portal PWA Standalone Mode
+  const isParentPortal = typeof window !== 'undefined' && 
+    (window.location.search.includes('portal=parent') || activePage === 'parent-portal');
+
+  if (isParentPortal) {
+    return <ParentPortalPage />;
+  }
+
   // 4. Route Protection: If unauthenticated, render Login Page
   if (!user) {
     return (
@@ -496,6 +505,10 @@ export default function App() {
             onNavigate={handleNavigate}
             user={user}
           />
+        )}
+
+        {activePage === 'parent-portal' && (
+          <ParentPortalPage />
         )}
       </AppLayout>
 

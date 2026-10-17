@@ -38,6 +38,7 @@ import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import BulkImportModal from '../components/importer/BulkImportModal';
 import Pagination from '../components/common/Pagination';
+import ParentPortalPreviewModal from '../components/parent/ParentPortalPreviewModal';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { openExternalLink, copyToClipboard } from '../lib/externalOpener';
 import {
@@ -83,6 +84,7 @@ export default function ParentsPage({ onRefreshCounts }) {
   const [bulkInviteChannel, setBulkInviteChannel] = useState('telegram'); // 'telegram', 'whatsapp'
   const [isDispatchingInvites, setIsDispatchingInvites] = useState(false);
   const [bulkInviteResults, setBulkInviteResults] = useState(null);
+  const [previewModalData, setPreviewModalData] = useState(null);
 
   // Telegram Deep Link Modal State (Individual)
   const [telegramModalParent, setTelegramModalParent] = useState(null);
@@ -1338,6 +1340,24 @@ export default function ParentsPage({ onRefreshCounts }) {
                           <Button
                             variant="outline"
                             size="sm"
+                            icon={Smartphone}
+                            onClick={() => {
+                              const linkedStudents = (parent.parent_students || []).map((ps) => ps.students).filter(Boolean);
+                              const primaryStudent = linkedStudents[0] || students[0] || null;
+                              setPreviewModalData({
+                                parent,
+                                student: primaryStudent,
+                                allStudents: linkedStudents,
+                              });
+                            }}
+                            title="Preview Parent Portal on Mobile"
+                            style={{ borderColor: '#0284c7', color: '#0369a1', backgroundColor: '#f0f9ff' }}
+                          >
+                            Portal
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
                             icon={Edit}
                             onClick={() => handleOpenEdit(parent)}
                             title="Edit Guardian"
@@ -2392,6 +2412,17 @@ export default function ParentsPage({ onRefreshCounts }) {
           showToast('Parent directory bulk import completed successfully!');
         }}
       />
+
+      {/* Parent Portal Mobile Preview Modal */}
+      {previewModalData && (
+        <ParentPortalPreviewModal
+          isOpen={Boolean(previewModalData)}
+          onClose={() => setPreviewModalData(null)}
+          parent={previewModalData.parent}
+          student={previewModalData.student}
+          allStudents={previewModalData.allStudents}
+        />
+      )}
     </div>
   );
 }
