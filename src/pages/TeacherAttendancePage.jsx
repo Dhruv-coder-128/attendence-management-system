@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   CheckCircle2,
   XCircle,
@@ -6,11 +6,16 @@ import {
   RefreshCw,
   Search,
   CheckCheck,
-  Calendar,
-  AlertCircle,
   School,
   Check,
+  Camera,
+  ArrowLeft,
+  ChevronRight,
+  Clock,
+  MapPin,
+  X,
 } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 import {
   getStoredHubUrl,
   setStoredHubUrl,
@@ -25,13 +30,20 @@ import { useAcademySettings } from '../lib/academySettings';
 export default function TeacherAttendancePage() {
   const academySettings = useAcademySettings();
   const [hubUrl, setHubUrl] = useState(getStoredHubUrl());
-  const [isConnected, setIsConnected] = useState(false);
-  const [isChecking, setIsChecking] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState({ ok: false, mode: 'checking' });
+
+  // 2-View Screen Mode: 'batches' (list of cohorts) | 'rollcall' (student roll call)
+  const [viewMode, setViewMode] = useState('batches');
+
+  // Modals
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [savedSummary, setSavedSummary] = useState(null);
   const [urlInput, setUrlInput] = useState(hubUrl);
+  const [cameraError, setCameraError] = useState('');
 
+  // Data
   const [batches, setBatches] = useState([]);
   const [selectedBatchId, setSelectedBatchId] = useState('');
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -42,68 +54,52 @@ export default function TeacherAttendancePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
+
+  const qrScannerRef = useRef(null);
 
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 4000);
   };
 
-  // 1. Verify connection with the School PC over Wi-Fi
-  const verifyConnection = async (targetUrl = hubUrl) => {
-    setIsChecking(true);
-    setErrorMessage('');
+  // 1. Load Cohort Batches
+  const loadBatches = React.useCallback(async (targetUrl = hubUrl) => {
+    setIsLoading(true);
+    const list = await fetchBatchesFromHub(targetUrl);
+    setBatches(list);
+    setIsLoading(false);
+  }, [hubUrl]);
+
+  // 2. Verify Connection
+  const verifyConnection = React.useCallback(async (targetUrl = hubUrl) => {
     const res = await checkHubConnection(targetUrl);
-    setIsChecking(false);
-    setIsConnected(res.ok);
-    if (!res.ok) {
-      setErrorMessage(`Cannot reach School PC at ${targetUrl}. Make sure your phone is connected to the same School Wi-Fi.`);
-    } else {
-      loadBatches(targetUrl);
-    }
-  };
+    setConnectionStatus(res);
+    loadBatches(targetUrl);
+  }, [hubUrl, loadBatches]);
 
   useEffect(() => {
     verifyConnection(hubUrl);
-  }, []);
+  }, [hubUrl, verifyConnection]);
 
-  // 2. Load Cohort Batches from School PC
-  const loadBatches = async (targetUrl = hubUrl) => {
-    const list = await fetchBatchesFromHub(targetUrl);
-    setBatches(list);
-    if (list.length > 0 && !selectedBatchId) {
-      setSelectedBatchId(list[0].id);
-    }
+  // 3. Load Students when batch is opened
+  const openBatchRollCall = async (batchId) => {
+    setSelectedBatchId(batchId);
+    setViewMode('rollcall');
+    setIsLoading(true);
+
+    const studentList = await fetchStudentsFromHub(batchId, hubUrl);
+    setStudents(studentList);
+
+    // Default: Everyone is marked Present
+    const initialMap = {};
+    studentList.forEach((s) => {
+      initialMap[s.id] = 'Present';
+    });
+    setAttendanceMap(initialMap);
+    setIsLoading(false);
   };
 
-  // 3. Load Students for active batch
-  useEffect(() => {
-    if (!selectedBatchId) return;
-
-    let isMounted = true;
-    const loadStudents = async () => {
-      setIsLoading(true);
-      const studentList = await fetchStudentsFromHub(selectedBatchId, hubUrl);
-      if (!isMounted) return;
-
-      setStudents(studentList);
-
-      // Default: Everyone is marked Present for fastest classroom workflow
-      const initialMap = {};
-      studentList.forEach((s) => {
-        initialMap[s.id] = 'Present';
-      });
-      setAttendanceMap(initialMap);
-      setIsLoading(false);
-    };
-
-    loadStudents();
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedBatchId, hubUrl]);
-
-  // Handle single student toggle (Present / Absent)
+  // Toggle single student status (Present / Absent)
   const setStudentStatus = (studentId, status) => {
     setAttendanceMap((prev) => ({
       ...prev,
@@ -131,7 +127,7 @@ export default function TeacherAttendancePage() {
     showToast('All students marked Absent');
   };
 
-  // Metric computations
+  // Metric Computations
   const totalCount = students.length;
   const presentCount = useMemo(() => {
     return Object.values(attendanceMap).filter((st) => st === 'Present').length;
@@ -141,9 +137,7 @@ export default function TeacherAttendancePage() {
     return Object.values(attendanceMap).filter((st) => st === 'Absent').length;
   }, [attendanceMap]);
 
-  const attendancePercentage = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 100;
-
-  // Filter students by search term
+  // Filter students
   const filteredStudents = useMemo(() => {
     if (!searchTerm.trim()) return students;
     const term = searchTerm.toLowerCase();
@@ -155,7 +149,7 @@ export default function TeacherAttendancePage() {
     );
   }, [students, searchTerm]);
 
-  // Submit attendance to School PC (The "DONE" action)
+  // Submit attendance ("DONE" Action)
   const handleSubmit = async () => {
     if (!selectedBatchId || students.length === 0) return;
 
@@ -179,20 +173,85 @@ export default function TeacherAttendancePage() {
       });
       setShowSuccessModal(true);
     } else if (res.queued) {
-      showToast('⚠️ Wi-Fi dropped. Saved to phone and will auto-sync when Wi-Fi connects.');
+      showToast('⚠️ Saved to phone storage (will sync when School Wi-Fi connects).');
     } else {
       alert('Error saving attendance: ' + (res.error || 'Connection failed'));
     }
   };
 
-  // Save new School PC URL in settings
-  const handleSaveSettings = () => {
-    const clean = urlInput.trim().replace(/\/+$/, '');
-    setStoredHubUrl(clean);
-    setHubUrl(clean);
-    setShowSettingsModal(false);
-    verifyConnection(clean);
-  };
+  const handleScannedResult = React.useCallback((rawText) => {
+    try {
+      let target = rawText.trim();
+      // If full URL scanned (e.g. http://192.168.0.104:5173/?portal=teacher)
+      if (target.startsWith('http://') || target.startsWith('https://')) {
+        const parsed = new URL(target);
+        target = `${parsed.protocol}//${parsed.host}`;
+      } else if (!target.startsWith('http')) {
+        target = `http://${target}`;
+      }
+      setStoredHubUrl(target);
+      setHubUrl(target);
+      setUrlInput(target);
+      showToast(`✓ Scanned & Connected: ${target.replace(/^https?:\/\//, '')}`);
+      verifyConnection(target);
+    } catch {
+      showToast('Scanned code: ' + rawText);
+    }
+  }, [verifyConnection]);
+
+  // Camera QR Scanner Handler
+  useEffect(() => {
+    let html5QrCode = null;
+
+    if (showCameraScanner) {
+      // Small delay to allow DOM element #qr-reader to mount
+      const timer = setTimeout(() => {
+        try {
+          html5QrCode = new Html5Qrcode('qr-reader');
+          qrScannerRef.current = html5QrCode;
+
+          html5QrCode
+            .start(
+              { facingMode: 'environment' },
+              { fps: 10, qrbox: { width: 220, height: 220 } },
+              (decodedText) => {
+                // QR Code detected!
+                if (decodedText) {
+                  html5QrCode
+                    .stop()
+                    .then(() => {
+                      setShowCameraScanner(false);
+                      handleScannedResult(decodedText);
+                    })
+                    .catch(() => {
+                      setShowCameraScanner(false);
+                      handleScannedResult(decodedText);
+                    });
+                }
+              },
+              () => {
+                // Ignore per-frame non-matches
+              }
+            )
+            .catch((err) => {
+              console.warn('Camera scan error:', err);
+              setCameraError(
+                'Camera could not be opened. Please grant Camera permission in your phone app settings, or type the IP below.'
+              );
+            });
+        } catch (e) {
+          setCameraError('Camera error: ' + e.message);
+        }
+      }, 300);
+
+      return () => {
+        clearTimeout(timer);
+        if (qrScannerRef.current && qrScannerRef.current.isScanning) {
+          qrScannerRef.current.stop().catch(() => {});
+        }
+      };
+    }
+  }, [showCameraScanner, handleScannedResult]);
 
   const activeBatch = batches.find((b) => b.id === selectedBatchId) || batches[0] || {};
 
@@ -200,10 +259,10 @@ export default function TeacherAttendancePage() {
     <div
       style={{
         minHeight: '100vh',
-        backgroundColor: '#060a12',
-        color: '#f8fafc',
-        fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
-        paddingBottom: '100px',
+        backgroundColor: '#f4f6fa',
+        color: '#0f172a',
+        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        paddingBottom: viewMode === 'rollcall' ? '100px' : '30px',
       }}
     >
       {/* Toast Notification */}
@@ -215,42 +274,43 @@ export default function TeacherAttendancePage() {
             left: '16px',
             right: '16px',
             zIndex: 9999,
-            backgroundColor: '#10b981',
+            backgroundColor: '#0a1122',
             color: '#ffffff',
+            border: '1px solid #c5a880',
             padding: '12px 18px',
             borderRadius: '12px',
-            fontSize: '14px',
+            fontSize: '13px',
             fontWeight: 600,
-            boxShadow: '0 10px 30px rgba(16, 185, 129, 0.4)',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.25)',
             display: 'flex',
             alignItems: 'center',
             gap: '10px',
           }}
         >
-          <CheckCircle2 size={20} />
+          <CheckCircle2 size={18} color="#10b981" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Header */}
+      {/* Professional Desktop .exe Color Scheme Header */}
       <header
         style={{
           position: 'sticky',
           top: 0,
           zIndex: 50,
-          backgroundColor: '#090f1d',
-          borderBottom: '1px solid #1a273f',
+          backgroundColor: '#0a1122',
+          borderBottom: '1px solid #1e293b',
           padding: '12px 16px',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
+          boxShadow: '0 2px 12px rgba(0, 0, 0, 0.15)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div
               style={{
-                width: '38px',
-                height: '38px',
-                borderRadius: '10px',
+                width: '36px',
+                height: '36px',
+                borderRadius: '8px',
                 backgroundColor: '#111d33',
                 border: '1px solid #c5a880',
                 display: 'flex',
@@ -267,12 +327,12 @@ export default function TeacherAttendancePage() {
                   style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
               ) : (
-                <School size={22} color="#c5a880" />
+                <School size={20} color="#c5a880" />
               )}
             </div>
             <div>
               <div style={{ fontSize: '15px', fontWeight: 700, color: '#ffffff', lineHeight: 1.2 }}>
-                {academySettings.academy_name || 'Noble Academy'}
+                {academySettings.academy_name || 'SMS — Student Management System'}
               </div>
               <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 500 }}>
                 Teacher Attendance App
@@ -280,24 +340,29 @@ export default function TeacherAttendancePage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {/* Quick Camera QR Scan Button */}
             <button
-              onClick={() => verifyConnection()}
+              onClick={() => setShowCameraScanner(true)}
               style={{
                 background: '#111d33',
-                border: '1px solid #1a273f',
-                color: '#94a3b8',
-                padding: '8px',
+                border: '1px solid #c5a880',
+                color: '#c5a880',
+                padding: '6px 10px',
                 borderRadius: '8px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
+                gap: '5px',
+                fontSize: '11px',
+                fontWeight: 700,
               }}
-              title="Refresh connection"
+              title="Scan QR Code from PC screen"
             >
-              <RefreshCw size={16} className={isChecking ? 'animate-spin' : ''} />
+              <Camera size={14} />
+              <span>Scan QR</span>
             </button>
+
             <button
               onClick={() => {
                 setUrlInput(hubUrl);
@@ -305,272 +370,307 @@ export default function TeacherAttendancePage() {
               }}
               style={{
                 background: '#111d33',
-                border: '1px solid #1a273f',
-                color: '#c5a880',
-                padding: '8px',
+                border: '1px solid #1e293b',
+                color: '#cbd5e1',
+                padding: '7px',
                 borderRadius: '8px',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
-              title="School PC Wi-Fi Settings"
+              title="Wi-Fi Connection Settings"
             >
-              <Settings size={16} />
+              <Settings size={15} />
             </button>
           </div>
         </div>
 
-        {/* Live Wi-Fi Connection Bar */}
+        {/* Connection Status Indicator Bar */}
         <div
-          onClick={() => {
-            setUrlInput(hubUrl);
-            setShowSettingsModal(true);
-          }}
+          onClick={() => setShowSettingsModal(true)}
           style={{
-            marginTop: '10px',
+            marginTop: '8px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '6px 12px',
-            borderRadius: '8px',
-            backgroundColor: isConnected ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-            border: `1px solid ${isConnected ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`,
+            padding: '5px 10px',
+            borderRadius: '6px',
+            backgroundColor: connectionStatus.ok ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+            border: `1px solid ${connectionStatus.ok ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
             cursor: 'pointer',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {isConnected ? (
-              <span
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  backgroundColor: '#10b981',
-                  boxShadow: '0 0 8px #10b981',
-                }}
-              />
-            ) : (
-              <span
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  backgroundColor: '#ef4444',
-                  boxShadow: '0 0 8px #ef4444',
-                }}
-              />
-            )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span
               style={{
-                fontSize: '12px',
+                width: '7px',
+                height: '7px',
+                borderRadius: '50%',
+                backgroundColor: connectionStatus.ok ? '#10b981' : '#ef4444',
+                boxShadow: connectionStatus.ok ? '0 0 6px #10b981' : '0 0 6px #ef4444',
+              }}
+            />
+            <span
+              style={{
+                fontSize: '11px',
                 fontWeight: 600,
-                color: isConnected ? '#10b981' : '#f87171',
+                color: connectionStatus.ok ? '#10b981' : '#f87171',
               }}
             >
-              {isConnected ? 'Connected to School PC' : 'Offline / Tap to configure Wi-Fi'}
+              {connectionStatus.ok
+                ? connectionStatus.mode === 'wifi'
+                  ? 'Connected to School PC (Wi-Fi)'
+                  : 'Connected to School Database'
+                : 'Offline / Tap to Scan PC QR'}
             </span>
           </div>
-          <span style={{ fontSize: '11px', color: '#94a3b8', fontFamily: 'monospace' }}>
+          <span style={{ fontSize: '10px', color: '#94a3b8', fontFamily: 'monospace' }}>
             {hubUrl.replace(/^https?:\/\//, '')}
           </span>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main style={{ padding: '16px' }}>
-        {/* Error Notice */}
-        {errorMessage && (
+      {/* ========================================================================= */}
+      {/* SCREEN 1: ALL BATCHES SELECTION SCREEN                                  */}
+      {/* ========================================================================= */}
+      {viewMode === 'batches' && (
+        <main style={{ padding: '16px', maxWidth: '600px', margin: '0 auto' }}>
+          {/* Section Heading */}
           <div
             style={{
-              backgroundColor: 'rgba(239, 68, 68, 0.12)',
-              border: '1px solid #ef4444',
-              borderRadius: '12px',
-              padding: '12px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
               marginBottom: '14px',
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '10px',
             }}
           >
-            <AlertCircle size={18} color="#ef4444" style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div style={{ fontSize: '12px', color: '#fecaca', lineHeight: 1.4 }}>
-              <strong>Not connected to School PC:</strong> {errorMessage}
-              <div style={{ marginTop: '6px' }}>
-                <button
-                  onClick={() => setShowSettingsModal(true)}
-                  style={{
-                    backgroundColor: '#ef4444',
-                    color: '#ffffff',
-                    border: 'none',
-                    padding: '5px 12px',
-                    borderRadius: '6px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Configure PC IP Address
-                </button>
-              </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#0f172a' }}>
+                Academic Batches
+              </h2>
+              <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#64748b' }}>
+                Select a class to take student roll call
+              </p>
             </div>
-          </div>
-        )}
-
-        {/* Class / Cohort Selector Pills */}
-        <div style={{ marginBottom: '14px' }}>
-          <div
-            style={{
-              fontSize: '11px',
-              fontWeight: 700,
-              color: '#94a3b8',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              marginBottom: '8px',
-            }}
-          >
-            Select Class:
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              gap: '8px',
-              overflowX: 'auto',
-              paddingBottom: '4px',
-              scrollbarWidth: 'none',
-            }}
-          >
-            {batches.map((b) => {
-              const active = b.id === selectedBatchId;
-              return (
-                <button
-                  key={b.id}
-                  onClick={() => setSelectedBatchId(b.id)}
-                  style={{
-                    flexShrink: 0,
-                    padding: '8px 14px',
-                    borderRadius: '10px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    backgroundColor: active ? '#c5a880' : '#0e1726',
-                    color: active ? '#060a12' : '#cbd5e1',
-                    border: `1px solid ${active ? '#c5a880' : '#1f2e47'}`,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    boxShadow: active ? '0 2px 10px rgba(197, 168, 128, 0.3)' : 'none',
-                  }}
-                >
-                  {b.name}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Date Selector */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            backgroundColor: '#0e1726',
-            border: '1px solid #1f2e47',
-            borderRadius: '12px',
-            padding: '10px 14px',
-            marginBottom: '14px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Calendar size={16} color="#c5a880" />
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#e2e8f0' }}>Roll Call Date:</span>
-          </div>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            style={{
-              backgroundColor: '#060a12',
-              border: '1px solid #1f2e47',
-              borderRadius: '8px',
-              color: '#ffffff',
-              padding: '6px 10px',
-              fontSize: '13px',
-              outline: 'none',
-              fontWeight: 500,
-            }}
-          />
-        </div>
-
-        {/* Live Counters & Quick Action Bar */}
-        <div
-          style={{
-            backgroundColor: '#0e1726',
-            border: '1px solid #1f2e47',
-            borderRadius: '14px',
-            padding: '14px',
-            marginBottom: '14px',
-            boxShadow: '0 4px 15px rgba(0, 0, 0, 0.25)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 700, color: '#f1f5f9' }}>
-              {activeBatch.name || 'Student Attendance'}
-            </span>
             <span
               style={{
-                fontSize: '12px',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                padding: '4px 10px',
+                borderRadius: '20px',
+                fontSize: '11px',
                 fontWeight: 700,
-                padding: '3px 10px',
-                borderRadius: '8px',
-                backgroundColor: attendancePercentage >= 75 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                color: attendancePercentage >= 75 ? '#34d399' : '#f87171',
+                color: '#0f172a',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
               }}
             >
-              {attendancePercentage}% Present
+              {batches.length} Classes
             </span>
           </div>
 
-          {/* 3 Metric Pills */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', textAlign: 'center' }}>
-            <div
+          {/* Batches Cards Grid */}
+          {isLoading && batches.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '50px 0', color: '#64748b' }}>
+              <RefreshCw size={26} className="animate-spin" style={{ margin: '0 auto 10px auto', color: '#c5a880' }} />
+              <div style={{ fontSize: '13px' }}>Loading batches from School PC...</div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {batches.map((b) => (
+                <div
+                  key={b.id}
+                  onClick={() => openBatchRollCall(b.id)}
+                  style={{
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span
+                        style={{
+                          backgroundColor: '#0a1122',
+                          color: '#ffffff',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                        }}
+                      >
+                        {b.code || 'BATCH'}
+                      </span>
+                      {b.classroom && (
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            color: '#64748b',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                          }}
+                        >
+                          <MapPin size={12} color="#94a3b8" />
+                          {b.classroom}
+                        </span>
+                      )}
+                    </div>
+
+                    <span
+                      style={{
+                        color: '#c5a880',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '2px',
+                      }}
+                    >
+                      Take Attendance <ChevronRight size={14} />
+                    </span>
+                  </div>
+
+                  <div>
+                    <h3 style={{ margin: '0 0 4px 0', fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
+                      {b.name}
+                    </h3>
+                    <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Clock size={12} color="#94a3b8" />
+                      <span>{b.timing || 'Standard Timings'}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </main>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SCREEN 2: STUDENT ROLL CALL SCREEN (EXACT DESKTOP .EXE COLOR SCHEME)     */}
+      {/* ========================================================================= */}
+      {viewMode === 'rollcall' && (
+        <main style={{ padding: '14px 16px', maxWidth: '600px', margin: '0 auto' }}>
+          {/* Top Bar with Back Navigation */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '14px',
+            }}
+          >
+            <button
+              onClick={() => setViewMode('batches')}
               style={{
-                backgroundColor: '#060a12',
-                padding: '10px 4px',
-                borderRadius: '10px',
-                border: '1px solid #1a273f',
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                color: '#0f172a',
+                padding: '6px 12px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
               }}
             >
-              <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>
-                Total
+              <ArrowLeft size={14} />
+              Back to Batches
+            </button>
+
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              style={{
+                backgroundColor: '#ffffff',
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                color: '#0f172a',
+                padding: '5px 10px',
+                fontSize: '12px',
+                fontWeight: 600,
+                outline: 'none',
+              }}
+            />
+          </div>
+
+          {/* Active Class Title */}
+          <div style={{ marginBottom: '14px' }}>
+            <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>
+              {activeBatch.name}
+            </h2>
+            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+              {activeBatch.timing || 'Daily Attendance Register'} • {activeBatch.classroom || 'Room 101'}
+            </div>
+          </div>
+
+          {/* 3 Metric Cards Styled Identical to Desktop .exe (Screenshot #3) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '14px' }}>
+            {/* Total / Enrolled */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderTop: '3px solid #3b82f6',
+                borderRadius: '10px',
+                padding: '10px 8px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: '10px', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>
+                Enrolled
               </div>
-              <div style={{ fontSize: '20px', fontWeight: 800, color: '#f8fafc', marginTop: '2px' }}>
+              <div style={{ fontSize: '20px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
                 {totalCount}
               </div>
             </div>
+
+            {/* Present (Green Top Border) */}
             <div
               style={{
-                backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                padding: '10px 4px',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderTop: '3px solid #10b981',
                 borderRadius: '10px',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
+                padding: '10px 8px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '11px', color: '#34d399', textTransform: 'uppercase', fontWeight: 600 }}>
+              <div style={{ fontSize: '10px', color: '#10b981', textTransform: 'uppercase', fontWeight: 700 }}>
                 Present
               </div>
               <div style={{ fontSize: '20px', fontWeight: 800, color: '#10b981', marginTop: '2px' }}>
                 {presentCount}
               </div>
             </div>
+
+            {/* Absent (Red Top Border) */}
             <div
               style={{
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                padding: '10px 4px',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderTop: '3px solid #ef4444',
                 borderRadius: '10px',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
+                padding: '10px 8px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '11px', color: '#f87171', textTransform: 'uppercase', fontWeight: 600 }}>
+              <div style={{ fontSize: '10px', color: '#ef4444', textTransform: 'uppercase', fontWeight: 700 }}>
                 Absent
               </div>
               <div style={{ fontSize: '20px', fontWeight: 800, color: '#ef4444', marginTop: '2px' }}>
@@ -580,14 +680,14 @@ export default function TeacherAttendancePage() {
           </div>
 
           {/* Quick Mark Shortcuts */}
-          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
             <button
               onClick={markAllPresent}
               style={{
                 flex: 1,
-                backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                color: '#34d399',
-                border: '1px solid rgba(16, 185, 129, 0.4)',
+                backgroundColor: '#ffffff',
+                border: '1px solid #10b981',
+                color: '#10b981',
                 borderRadius: '8px',
                 padding: '8px 10px',
                 fontSize: '12px',
@@ -596,19 +696,20 @@ export default function TeacherAttendancePage() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '6px',
+                gap: '5px',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
               }}
             >
-              <CheckCheck size={16} />
+              <CheckCheck size={15} />
               Mark All Present
             </button>
             <button
               onClick={markAllAbsent}
               style={{
                 flex: 1,
-                backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                color: '#f87171',
-                border: '1px solid rgba(239, 68, 68, 0.4)',
+                backgroundColor: '#ffffff',
+                border: '1px solid #ef4444',
+                color: '#ef4444',
                 borderRadius: '8px',
                 padding: '8px 10px',
                 fontSize: '12px',
@@ -617,236 +718,231 @@ export default function TeacherAttendancePage() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '6px',
+                gap: '5px',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
               }}
             >
-              <XCircle size={16} />
+              <XCircle size={15} />
               Mark All Absent
             </button>
           </div>
-        </div>
 
-        {/* Search Bar */}
-        <div style={{ position: 'relative', marginBottom: '14px' }}>
-          <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '12px' }} />
-          <input
-            type="text"
-            placeholder="Search by student name or roll number..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              width: '100%',
-              backgroundColor: '#0e1726',
-              border: '1px solid #1f2e47',
-              borderRadius: '10px',
-              padding: '10px 12px 10px 36px',
-              color: '#ffffff',
-              fontSize: '13px',
-              outline: 'none',
-              boxSizing: 'border-box',
-            }}
-          />
-        </div>
-
-        {/* Student Roster List */}
-        {isLoading ? (
-          <div style={{ textAlign: 'center', padding: '50px 0', color: '#94a3b8' }}>
-            <RefreshCw size={28} className="animate-spin" style={{ margin: '0 auto 12px auto', color: '#c5a880' }} />
-            <div style={{ fontSize: '14px' }}>Loading students from School PC...</div>
+          {/* Search Bar */}
+          <div style={{ position: 'relative', marginBottom: '14px' }}>
+            <Search size={15} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '11px' }} />
+            <input
+              type="text"
+              placeholder="Search student by name or roll number..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                width: '100%',
+                backgroundColor: '#ffffff',
+                border: '1px solid #cbd5e1',
+                borderRadius: '10px',
+                padding: '8px 12px 8px 34px',
+                color: '#0f172a',
+                fontSize: '13px',
+                outline: 'none',
+                boxSizing: 'border-box',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+              }}
+            />
           </div>
-        ) : filteredStudents.length === 0 ? (
-          <div
-            style={{
-              textAlign: 'center',
-              padding: '40px 16px',
-              backgroundColor: '#0e1726',
-              border: '1px solid #1f2e47',
-              borderRadius: '12px',
-              color: '#94a3b8',
-            }}
-          >
-            No students found matching your search.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {filteredStudents.map((s, index) => {
-              const currentStatus = attendanceMap[s.id] || 'Present';
-              const isPresent = currentStatus === 'Present';
-              const isAbsent = currentStatus === 'Absent';
 
-              return (
-                <div
-                  key={s.id}
-                  style={{
-                    backgroundColor: '#0e1726',
-                    border: `1.5px solid ${isPresent ? 'rgba(16, 185, 129, 0.4)' : isAbsent ? 'rgba(239, 68, 68, 0.4)' : '#1f2e47'
-                      }`,
-                    borderRadius: '14px',
-                    padding: '12px 14px',
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  {/* Student Info Row */}
+          {/* Student Roster Cards */}
+          {isLoading ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b' }}>
+              <RefreshCw size={26} className="animate-spin" style={{ margin: '0 auto 10px auto', color: '#c5a880' }} />
+              <div style={{ fontSize: '13px' }}>Loading students...</div>
+            </div>
+          ) : filteredStudents.length === 0 ? (
+            <div
+              style={{
+                textAlign: 'center',
+                padding: '40px 16px',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                color: '#64748b',
+                fontSize: '13px',
+              }}
+            >
+              No students found for this class.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {filteredStudents.map((s, index) => {
+                const currentStatus = attendanceMap[s.id] || 'Present';
+                const isPresent = currentStatus === 'Present';
+                const isAbsent = currentStatus === 'Absent';
+
+                return (
                   <div
+                    key={s.id}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      marginBottom: '10px',
+                      backgroundColor: '#ffffff',
+                      border: `1px solid ${isPresent ? '#10b981' : isAbsent ? '#ef4444' : '#e2e8f0'}`,
+                      borderRadius: '12px',
+                      padding: '12px 14px',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                      transition: 'all 0.15s ease',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        marginBottom: '10px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div
+                          style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '8px',
+                            backgroundColor: '#0a1122',
+                            color: '#ffffff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 800,
+                            fontSize: '12px',
+                          }}
+                        >
+                          #{s.roll_no || index + 1}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>
+                            {s.full_name}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                            Adm: {s.admission_no} • {s.gender || 'Student'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <span
                         style={{
-                          width: '34px',
-                          height: '34px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          backgroundColor: isPresent ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                          color: isPresent ? '#10b981' : '#ef4444',
+                        }}
+                      >
+                        {currentStatus}
+                      </span>
+                    </div>
+
+                    {/* 2 Tactile Buttons: PRESENT vs ABSENT */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <button
+                        onClick={() => setStudentStatus(s.id, 'Present')}
+                        style={{
+                          padding: '9px 0',
                           borderRadius: '8px',
-                          backgroundColor: '#060a12',
-                          border: '1px solid #1f2e47',
+                          fontSize: '13px',
+                          fontWeight: 700,
+                          backgroundColor: isPresent ? '#10b981' : '#f8fafc',
+                          color: isPresent ? '#ffffff' : '#64748b',
+                          border: `1.5px solid ${isPresent ? '#10b981' : '#cbd5e1'}`,
+                          cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          fontWeight: 800,
-                          fontSize: '13px',
-                          color: '#c5a880',
+                          gap: '6px',
+                          boxShadow: isPresent ? '0 2px 6px rgba(16, 185, 129, 0.3)' : 'none',
                         }}
                       >
-                        #{s.roll_no || index + 1}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '14px', fontWeight: 700, color: '#f8fafc', lineHeight: 1.2 }}>
-                          {s.full_name}
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
-                          Adm: {s.admission_no} • {s.gender || 'Student'}
-                        </div>
-                      </div>
+                        <CheckCircle2 size={16} />
+                        Present
+                      </button>
+                      <button
+                        onClick={() => setStudentStatus(s.id, 'Absent')}
+                        style={{
+                          padding: '9px 0',
+                          borderRadius: '8px',
+                          fontSize: '13px',
+                          fontWeight: 700,
+                          backgroundColor: isAbsent ? '#ef4444' : '#f8fafc',
+                          color: isAbsent ? '#ffffff' : '#64748b',
+                          border: `1.5px solid ${isAbsent ? '#ef4444' : '#cbd5e1'}`,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          boxShadow: isAbsent ? '0 2px 6px rgba(239, 68, 68, 0.3)' : 'none',
+                        }}
+                      >
+                        <XCircle size={16} />
+                        Absent
+                      </button>
                     </div>
-
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        fontWeight: 800,
-                        padding: '3px 10px',
-                        borderRadius: '6px',
-                        backgroundColor: isPresent ? '#10b981' : isAbsent ? '#ef4444' : '#1f2e47',
-                        color: '#ffffff',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.04em',
-                      }}
-                    >
-                      {currentStatus}
-                    </span>
                   </div>
-
-                  {/* 2 Clean Tactile Buttons: PRESENT vs ABSENT */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                    <button
-                      onClick={() => setStudentStatus(s.id, 'Present')}
-                      style={{
-                        padding: '10px 0',
-                        borderRadius: '10px',
-                        fontSize: '13px',
-                        fontWeight: 700,
-                        backgroundColor: isPresent ? '#10b981' : '#060a12',
-                        color: isPresent ? '#ffffff' : '#94a3b8',
-                        border: `1.5px solid ${isPresent ? '#10b981' : '#1f2e47'}`,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: isPresent ? '0 2px 10px rgba(16, 185, 129, 0.35)' : 'none',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      <CheckCircle2 size={16} />
-                      Present
-                    </button>
-                    <button
-                      onClick={() => setStudentStatus(s.id, 'Absent')}
-                      style={{
-                        padding: '10px 0',
-                        borderRadius: '10px',
-                        fontSize: '13px',
-                        fontWeight: 700,
-                        backgroundColor: isAbsent ? '#ef4444' : '#060a12',
-                        color: isAbsent ? '#ffffff' : '#94a3b8',
-                        border: `1.5px solid ${isAbsent ? '#ef4444' : '#1f2e47'}`,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: isAbsent ? '0 2px 10px rgba(239, 68, 68, 0.35)' : 'none',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      <XCircle size={16} />
-                      Absent
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </main>
-
-      {/* Sticky Bottom Action Bar ("DONE") */}
-      <div
-        style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          backgroundColor: '#090f1d',
-          borderTop: '1px solid #1a273f',
-          padding: '12px 16px',
-          boxShadow: '0 -4px 25px rgba(0, 0, 0, 0.5)',
-          zIndex: 40,
-        }}
-      >
-        <button
-          onClick={handleSubmit}
-          disabled={isSubmitting || students.length === 0}
-          style={{
-            width: '100%',
-            backgroundColor: isConnected ? '#10b981' : '#f59e0b',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: '12px',
-            padding: '15px 16px',
-            fontSize: '15px',
-            fontWeight: 800,
-            cursor: isSubmitting || students.length === 0 ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-            boxShadow: isConnected
-              ? '0 4px 18px rgba(16, 185, 129, 0.45)'
-              : '0 4px 18px rgba(245, 158, 11, 0.45)',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          {isSubmitting ? (
-            <>
-              <RefreshCw size={18} className="animate-spin" />
-              Saving to School PC...
-            </>
-          ) : (
-            <>
-              <Check size={20} strokeWidth={3} />
-              DONE — Save to School PC ({presentCount} Present, {absentCount} Absent)
-            </>
+                );
+              })}
+            </div>
           )}
-        </button>
-      </div>
 
-      {/* Success Modal */}
-      {showSuccessModal && savedSummary && (
+          {/* Sticky Bottom "DONE" Button in Executive Desktop Theme */}
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              backgroundColor: '#0a1122',
+              borderTop: '1px solid #1e293b',
+              padding: '12px 16px',
+              boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.2)',
+              zIndex: 40,
+            }}
+          >
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting || students.length === 0}
+              style={{
+                width: '100%',
+                backgroundColor: '#10b981',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '14px 16px',
+                fontSize: '15px',
+                fontWeight: 800,
+                cursor: isSubmitting || students.length === 0 ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                boxShadow: '0 4px 15px rgba(16, 185, 129, 0.4)',
+              }}
+            >
+              {isSubmitting ? (
+                <>
+                  <RefreshCw size={18} className="animate-spin" />
+                  Saving to School PC...
+                </>
+              ) : (
+                <>
+                  <Check size={18} strokeWidth={3} />
+                  DONE — Save Attendance ({presentCount} Present, {absentCount} Absent)
+                </>
+              )}
+            </button>
+          </div>
+        </main>
+      )}
+
+      {/* ========================================================================= */}
+      {/* CAMERA QR CODE SCANNER MODAL                                             */}
+      {/* ========================================================================= */}
+      {showCameraScanner && (
         <div
           style={{
             position: 'fixed',
@@ -854,10 +950,10 @@ export default function TeacherAttendancePage() {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.75)',
-            backdropFilter: 'blur(4px)',
+            backgroundColor: 'rgba(0,0,0,0.85)',
             zIndex: 1000,
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             padding: '20px',
@@ -865,93 +961,87 @@ export default function TeacherAttendancePage() {
         >
           <div
             style={{
-              backgroundColor: '#0e1726',
-              border: '1px solid #10b981',
-              borderRadius: '18px',
-              padding: '24px',
-              maxWidth: '380px',
+              backgroundColor: '#ffffff',
+              borderRadius: '16px',
+              padding: '20px',
+              maxWidth: '360px',
               width: '100%',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
               textAlign: 'center',
-              boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
             }}
           >
-            <div
-              style={{
-                width: '56px',
-                height: '56px',
-                borderRadius: '50%',
-                backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                border: '2px solid #10b981',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 16px auto',
-                color: '#10b981',
-              }}
-            >
-              <Check size={32} strokeWidth={3} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Camera size={18} color="#0a1122" />
+                <span style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>Scan School PC QR</span>
+              </div>
+              <button
+                onClick={() => setShowCameraScanner(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={18} color="#64748b" />
+              </button>
             </div>
 
-            <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: 800, color: '#f8fafc' }}>
-              Attendance Saved to School PC!
-            </h3>
-            <p style={{ margin: '0 0 18px 0', fontSize: '13px', color: '#94a3b8', lineHeight: 1.4 }}>
-              The attendance records have been successfully written into the school computer database over Wi-Fi.
+            <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
+              Point your phone camera at the QR code displayed on the School PC screen.
             </p>
 
+            {/* Video Preview Container */}
             <div
-              style={{
-                backgroundColor: '#060a12',
-                border: '1px solid #1f2e47',
-                borderRadius: '12px',
-                padding: '12px',
-                marginBottom: '18px',
-                fontSize: '13px',
-                textAlign: 'left',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '6px',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1' }}>
-                <span style={{ color: '#94a3b8' }}>Class:</span>
-                <strong>{savedSummary.batchName}</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1' }}>
-                <span style={{ color: '#94a3b8' }}>Date:</span>
-                <strong>{savedSummary.date}</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1' }}>
-                <span style={{ color: '#94a3b8' }}>Present:</span>
-                <strong style={{ color: '#10b981' }}>{savedSummary.present} Students</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#cbd5e1' }}>
-                <span style={{ color: '#94a3b8' }}>Absent:</span>
-                <strong style={{ color: '#ef4444' }}>{savedSummary.absent} Students</strong>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setShowSuccessModal(false)}
+              id="qr-reader"
               style={{
                 width: '100%',
-                backgroundColor: '#10b981',
-                color: '#ffffff',
-                border: 'none',
                 borderRadius: '10px',
-                padding: '12px',
-                fontSize: '14px',
+                overflow: 'hidden',
+                backgroundColor: '#000000',
+                marginBottom: '12px',
+              }}
+            />
+
+            {cameraError && (
+              <div
+                style={{
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid #ef4444',
+                  borderRadius: '8px',
+                  padding: '8px',
+                  color: '#ef4444',
+                  fontSize: '11px',
+                  marginBottom: '12px',
+                  textAlign: 'left',
+                }}
+              >
+                {cameraError}
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                setShowCameraScanner(false);
+                setShowSettingsModal(true);
+              }}
+              style={{
+                width: '100%',
+                backgroundColor: '#f1f5f9',
+                border: '1px solid #cbd5e1',
+                borderRadius: '8px',
+                padding: '10px',
+                fontSize: '12px',
                 fontWeight: 700,
+                color: '#334155',
                 cursor: 'pointer',
               }}
             >
-              Done / OK
+              Enter IP Manually
             </button>
           </div>
         </div>
       )}
 
-      {/* Settings Modal (Configure School PC IP) */}
+      {/* ========================================================================= */}
+      {/* WI-FI CONNECTION SETTINGS MODAL                                          */}
+      {/* ========================================================================= */}
       {showSettingsModal && (
         <div
           style={{
@@ -960,8 +1050,8 @@ export default function TeacherAttendancePage() {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: 'rgba(0,0,0,0.75)',
-            backdropFilter: 'blur(4px)',
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            backdropFilter: 'blur(3px)',
             zIndex: 999,
             display: 'flex',
             alignItems: 'center',
@@ -971,70 +1061,100 @@ export default function TeacherAttendancePage() {
         >
           <div
             style={{
-              backgroundColor: '#0e1726',
-              border: '1px solid #1f2e47',
+              backgroundColor: '#ffffff',
+              border: '1px solid #e2e8f0',
               borderRadius: '16px',
               padding: '22px',
-              maxWidth: '390px',
+              maxWidth: '380px',
               width: '100%',
-              boxShadow: '0 20px 45px rgba(0,0,0,0.5)',
+              boxShadow: '0 20px 45px rgba(0,0,0,0.2)',
             }}
           >
-            <h3 style={{ margin: '0 0 8px 0', fontSize: '17px', fontWeight: 700, color: '#f8fafc' }}>
-              Connect to School PC
-            </h3>
-            <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#94a3b8', lineHeight: 1.4 }}>
-              Enter the local Wi-Fi address of the School PC.
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
+                School PC Wi-Fi Connection
+              </h3>
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={18} color="#64748b" />
+              </button>
+            </div>
+
+            <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
+              Connect with camera QR scan, or enter the School PC local Wi-Fi address.
             </p>
 
-            <label
+            {/* Camera Scan Shortcut */}
+            <button
+              onClick={() => {
+                setShowSettingsModal(false);
+                setShowCameraScanner(true);
+              }}
               style={{
-                display: 'block',
-                fontSize: '11px',
+                width: '100%',
+                backgroundColor: '#0a1122',
+                color: '#ffffff',
+                border: '1px solid #c5a880',
+                borderRadius: '8px',
+                padding: '11px',
+                fontSize: '13px',
                 fontWeight: 700,
-                color: '#cbd5e1',
-                marginBottom: '6px',
-                textTransform: 'uppercase',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                cursor: 'pointer',
+                marginBottom: '14px',
               }}
             >
-              School PC Wi-Fi URL:
+              <Camera size={16} color="#c5a880" />
+              Scan QR Code with Camera
+            </button>
+
+            <div style={{ textAlign: 'center', margin: '0 0 12px 0', fontSize: '11px', color: '#94a3b8' }}>
+              — OR ENTER IP MANUALLY —
+            </div>
+
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+              SCHOOL PC WI-FI URL:
             </label>
             <input
               type="text"
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
-              placeholder="e.g. http://10.102.139.146:5173"
+              placeholder="e.g. http://192.168.0.104:5173"
               style={{
                 width: '100%',
-                backgroundColor: '#060a12',
-                border: '1px solid #1f2e47',
+                backgroundColor: '#f8fafc',
+                border: '1px solid #cbd5e1',
                 borderRadius: '8px',
-                padding: '10px 12px',
-                color: '#ffffff',
-                fontSize: '14px',
+                padding: '9px 12px',
+                color: '#0f172a',
+                fontSize: '13px',
                 outline: 'none',
-                marginBottom: '10px',
+                marginBottom: '8px',
                 boxSizing: 'border-box',
                 fontFamily: 'monospace',
               }}
             />
 
-            {/* Quick Preset button */}
             <button
               type="button"
               onClick={() => setUrlInput(DEFAULT_SCHOOL_PC_URL)}
               style={{
                 backgroundColor: 'transparent',
                 border: 'none',
-                color: '#c5a880',
-                fontSize: '12px',
+                color: '#0284c7',
+                fontSize: '11px',
                 fontWeight: 600,
                 cursor: 'pointer',
                 padding: '0 0 14px 0',
                 display: 'block',
               }}
             >
-              ↺ Reset to Default ({DEFAULT_SCHOOL_PC_URL.replace('http://', '')})
+              ↺ Reset to Active Default ({DEFAULT_SCHOOL_PC_URL.replace('http://', '')})
             </button>
 
             <div style={{ display: 'flex', gap: '8px' }}>
@@ -1042,11 +1162,11 @@ export default function TeacherAttendancePage() {
                 onClick={() => setShowSettingsModal(false)}
                 style={{
                   flex: 1,
-                  backgroundColor: 'transparent',
-                  border: '1px solid #1f2e47',
-                  color: '#94a3b8',
+                  backgroundColor: '#f1f5f9',
+                  border: '1px solid #cbd5e1',
+                  color: '#64748b',
                   borderRadius: '8px',
-                  padding: '10px',
+                  padding: '9px',
                   fontSize: '13px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -1055,14 +1175,21 @@ export default function TeacherAttendancePage() {
                 Cancel
               </button>
               <button
-                onClick={handleSaveSettings}
+                onClick={() => {
+                  const clean = urlInput.trim().replace(/\/+$/, '');
+                  setStoredHubUrl(clean);
+                  setHubUrl(clean);
+                  setShowSettingsModal(false);
+                  verifyConnection(clean);
+                  showToast(`Connecting to ${clean}...`);
+                }}
                 style={{
                   flex: 1,
-                  backgroundColor: '#c5a880',
+                  backgroundColor: '#0a1122',
                   border: 'none',
-                  color: '#060a12',
+                  color: '#ffffff',
                   borderRadius: '8px',
-                  padding: '10px',
+                  padding: '9px',
                   fontSize: '13px',
                   fontWeight: 700,
                   cursor: 'pointer',
@@ -1071,6 +1198,115 @@ export default function TeacherAttendancePage() {
                 Connect Now
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SUCCESS CONFIRMATION MODAL                                               */}
+      {/* ========================================================================= */}
+      {showSuccessModal && savedSummary && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '16px',
+              padding: '24px',
+              maxWidth: '360px',
+              width: '100%',
+              textAlign: 'center',
+              boxShadow: '0 20px 45px rgba(0,0,0,0.2)',
+            }}
+          >
+            <div
+              style={{
+                width: '52px',
+                height: '52px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 14px auto',
+                color: '#10b981',
+              }}
+            >
+              <Check size={28} strokeWidth={3} />
+            </div>
+
+            <h3 style={{ margin: '0 0 6px 0', fontSize: '17px', fontWeight: 800, color: '#0f172a' }}>
+              Attendance Saved!
+            </h3>
+            <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#64748b', lineHeight: 1.4 }}>
+              Roll call has been recorded and synced to the school computer database.
+            </p>
+
+            <div
+              style={{
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '12px',
+                marginBottom: '16px',
+                fontSize: '12px',
+                textAlign: 'left',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '5px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#334155' }}>
+                <span style={{ color: '#64748b' }}>Class:</span>
+                <strong>{savedSummary.batchName}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#334155' }}>
+                <span style={{ color: '#64748b' }}>Date:</span>
+                <strong>{savedSummary.date}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#334155' }}>
+                <span style={{ color: '#64748b' }}>Present:</span>
+                <strong style={{ color: '#10b981' }}>{savedSummary.present} Students</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: '#334155' }}>
+                <span style={{ color: '#64748b' }}>Absent:</span>
+                <strong style={{ color: '#ef4444' }}>{savedSummary.absent} Students</strong>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setShowSuccessModal(false);
+                setViewMode('batches');
+              }}
+              style={{
+                width: '100%',
+                backgroundColor: '#0a1122',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '11px',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Done / Return to Classes
+            </button>
           </div>
         </div>
       )}
