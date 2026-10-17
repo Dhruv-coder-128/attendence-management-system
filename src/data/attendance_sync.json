@@ -1,0 +1,25 @@
+{
+  "B11_2026-10-17": {
+    "batch_id": "B11",
+    "date": "2026-10-17",
+    "savedAt": "2026-10-17T18:04:07.773Z",
+    "records": [
+      {
+        "student_id": "ST1001",
+        "status": "Present"
+      },
+      {
+        "student_id": "ST1002",
+        "status": "Late"
+      },
+      {
+        "student_id": "ST1003",
+        "status": "Absent"
+      },
+      {
+        "student_id": "ST1004",
+        "status": "Present"
+      }
+    ]
+  }
+}

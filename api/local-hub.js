@@ -7,10 +7,51 @@
  */
 
 import os from 'os';
+import fs from 'fs';
+import path from 'path';
 import { createClient } from '@supabase/supabase-js';
+import {
+  CANONICAL_BATCHES,
+  CANONICAL_STUDENTS,
+  getBatchStudents,
+  getBatchById,
+} from '../src/data/canonicalSchoolData.js';
 
 // Cache for in-memory / local session attendance store when completely offline
 const memoryAttendanceStore = new Map();
+let lastSyncTimestamp = new Date().toISOString();
+
+// Persistent file-backed attendance store on the School PC
+const PERSISTENT_ATTENDANCE_FILE = path.resolve(process.cwd(), 'src/data/attendance_sync.json');
+
+function loadPersistentAttendance() {
+  try {
+    if (fs.existsSync(PERSISTENT_ATTENDANCE_FILE)) {
+      const raw = fs.readFileSync(PERSISTENT_ATTENDANCE_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (typeof parsed === 'object') {
+        for (const [k, v] of Object.entries(parsed)) {
+          memoryAttendanceStore.set(k, v);
+        }
+      }
+    }
+  } catch {}
+}
+
+function savePersistentAttendance() {
+  try {
+    const obj = {};
+    for (const [k, v] of memoryAttendanceStore.entries()) {
+      obj[k] = v;
+    }
+    const dir = path.dirname(PERSISTENT_ATTENDANCE_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(PERSISTENT_ATTENDANCE_FILE, JSON.stringify(obj, null, 2), 'utf-8');
+  } catch {}
+}
+
+// Initial load
+loadPersistentAttendance();
 
 /**
  * Resolves current machine's primary IPv4 Wi-Fi / LAN address
@@ -34,27 +75,6 @@ export function getLocalNetworkIp() {
   }
   return candidate;
 }
-
-const DEFAULT_BATCHES = [
-  { id: 'b_bsy_sy', name: 'BSY — SY (08:00 AM – 10:30 AM)', code: 'BSY-SY', timing: '08:00 AM – 10:30 AM', classroom: 'Room 202' },
-  { id: 'b_11th_sci', name: 'Grade 11 Science Morning', code: '11-SCI-A', timing: '07:30 AM – 10:30 AM', classroom: 'LH-1' },
-  { id: 'b_12th_sci', name: 'Grade 12 Science Board & JEE', code: '12-SCI-A', timing: '07:30 AM – 11:00 AM', classroom: 'LH-2' },
-  { id: 'b_12th_com', name: 'Grade 12 Commerce Accounts', code: '12-COM', timing: '08:00 AM – 11:30 AM', classroom: 'Room 105' },
-];
-
-const DEFAULT_STUDENTS = [
-  { id: 'st_1004', batch_id: 'b_bsy_sy', full_name: 'Yash Vora', roll_no: '4', admission_no: 'ST1004', gender: 'Male' },
-  { id: 'st_1009', batch_id: 'b_bsy_sy', full_name: 'Pari Joshi', roll_no: '9', admission_no: 'ST1009', gender: 'Female' },
-  { id: 'st_1014', batch_id: 'b_bsy_sy', full_name: 'Dev Thakkar', roll_no: '14', admission_no: 'ST1014', gender: 'Male' },
-  { id: 'st_dhruv_1019', batch_id: 'b_bsy_sy', full_name: 'Dhruv Shah', roll_no: '19', admission_no: 'ST1019', gender: 'Male' },
-  { id: 'st_1024', batch_id: 'b_bsy_sy', full_name: 'Neha Rathod', roll_no: '24', admission_no: 'ST1024', gender: 'Female' },
-  { id: 'st_1029', batch_id: 'b_bsy_sy', full_name: 'Meera Trivedi', roll_no: '29', admission_no: 'ST1029', gender: 'Female' },
-  { id: 'st_1034', batch_id: 'b_bsy_sy', full_name: 'Atharv Modi', roll_no: '34', admission_no: 'ST1034', gender: 'Male' },
-  { id: 'st_1039', batch_id: 'b_bsy_sy', full_name: 'Aadhya Zala', roll_no: '39', admission_no: 'ST1039', gender: 'Female' },
-  { id: 'st_1044', batch_id: 'b_bsy_sy', full_name: 'Sai Patel', roll_no: '44', admission_no: 'ST1044', gender: 'Male' },
-  { id: 'st_1049', batch_id: 'b_bsy_sy', full_name: 'Krishna Mehta', roll_no: '49', admission_no: 'ST1049', gender: 'Female' },
-  { id: 'st_1054', batch_id: 'b_bsy_sy', full_name: 'Reyansh Bhatt', roll_no: '54', admission_no: 'ST1054', gender: 'Male' },
-];
 
 export default async function handler(req, res) {
   // CORS & Security headers for Local Wi-Fi network requests
@@ -90,24 +110,30 @@ export default async function handler(req, res) {
       connectUrl: `http://${localIp}:5173`,
       academyName: 'SMS International Academy',
       timestamp: new Date().toISOString(),
+      lastSyncTimestamp,
       status: 'active',
+      batchCount: CANONICAL_BATCHES.length,
+      studentCount: CANONICAL_STUDENTS.length,
     });
   }
 
-  // 2. BATCHES: Returns available academic cohorts
+  // 2. BATCHES: Returns the exact 5 academic cohorts from desktop application
   if (action === 'batches') {
     if (db) {
       try {
-        const { data, error } = await db.from('batches').select('id, name, code, timing, classroom').order('name');
-        if (!error && Array.isArray(data) && data.length > 0) {
+        const { data, error } = await db
+          .from('batches')
+          .select('id, name, code, timing, classroom, is_active')
+          .order('name');
+        if (!error && Array.isArray(data) && data.length >= 5) {
           return res.status(200).json({ ok: true, batches: data });
         }
       } catch {}
     }
-    return res.status(200).json({ ok: true, batches: DEFAULT_BATCHES });
+    return res.status(200).json({ ok: true, batches: CANONICAL_BATCHES });
   }
 
-  // 3. STUDENTS: Returns student roster for a specific batch
+  // 3. STUDENTS: Returns student roster for a specific batch (exactly 20 students per batch)
   if (action === 'students') {
     const batchId = query.batch_id || req.body?.batch_id;
     if (!batchId) {
@@ -118,9 +144,9 @@ export default async function handler(req, res) {
       try {
         const { data, error } = await db
           .from('students')
-          .select('id, full_name, roll_no, admission_no, gender, status')
+          .select('id, full_name, roll_no, admission_no, gender, status, batch_id')
           .eq('batch_id', batchId)
-          .order('admission_no');
+          .order('roll_no');
 
         if (!error && Array.isArray(data) && data.length > 0) {
           return res.status(200).json({ ok: true, batch_id: batchId, students: data });
@@ -128,15 +154,35 @@ export default async function handler(req, res) {
       } catch {}
     }
 
-    const filtered = DEFAULT_STUDENTS.filter((s) => s.batch_id === batchId || !batchId);
+    const students = getBatchStudents(batchId);
     return res.status(200).json({
       ok: true,
       batch_id: batchId,
-      students: filtered.length > 0 ? filtered : DEFAULT_STUDENTS,
+      students: students.length > 0 ? students : CANONICAL_STUDENTS.slice(0, 20),
     });
   }
 
-  // 4. ATTENDANCE (POST): Saves teacher roll call from phone into school PC database
+  // 4. ATTENDANCE (GET): Retrieves existing attendance records for a batch and date
+  if (action === 'attendance' && req.method === 'GET') {
+    const batchId = query.batch_id;
+    const targetDate = query.date || new Date().toISOString().split('T')[0];
+    if (!batchId) {
+      return res.status(400).json({ ok: false, error: 'batch_id parameter is required.' });
+    }
+
+    const key = `${batchId}_${targetDate}`;
+    const cached = memoryAttendanceStore.get(key);
+
+    return res.status(200).json({
+      ok: true,
+      batch_id: batchId,
+      date: targetDate,
+      records: cached ? cached.records : [],
+      savedAt: cached ? cached.savedAt : null,
+    });
+  }
+
+  // 5. ATTENDANCE (POST): Saves teacher roll call from phone into school PC database
   if (action === 'attendance') {
     if (req.method !== 'POST') {
       return res.status(405).json({ ok: false, error: 'POST required for saving attendance.' });
@@ -148,15 +194,18 @@ export default async function handler(req, res) {
     }
 
     const targetDate = date || new Date().toISOString().split('T')[0];
+    lastSyncTimestamp = new Date().toISOString();
 
-    // Store in-memory cache
+    // Store in-memory cache and write to persistent file
     const key = `${batch_id}_${targetDate}`;
-    memoryAttendanceStore.set(key, {
+    const sessionData = {
       batch_id,
       date: targetDate,
-      savedAt: new Date().toISOString(),
+      savedAt: lastSyncTimestamp,
       records,
-    });
+    };
+    memoryAttendanceStore.set(key, sessionData);
+    savePersistentAttendance();
 
     // Try database persistence if available
     let dbSuccess = false;
@@ -168,7 +217,7 @@ export default async function handler(req, res) {
           date: targetDate,
           status: r.status || 'Present',
           remarks: r.remarks || '',
-          updated_at: new Date().toISOString(),
+          updated_at: lastSyncTimestamp,
         }));
 
         const { error } = await db
@@ -201,8 +250,40 @@ export default async function handler(req, res) {
       absentCount,
       lateCount,
       dbSynchronized: dbSuccess,
-      message: `Successfully saved attendance for ${records.length} students to School PC!`,
-      savedAt: new Date().toISOString(),
+      message: `Successfully saved attendance (${presentCount} Present, ${lateCount} Late, ${absentCount} Absent) to School PC!`,
+      savedAt: lastSyncTimestamp,
+    });
+  }
+
+  // 6. UPDATES (GET): Polling endpoint for Desktop PC to receive live sync
+  if (action === 'updates') {
+    const targetDate = query.date || new Date().toISOString().split('T')[0];
+    const batchId = query.batch_id;
+
+    if (batchId) {
+      const key = `${batchId}_${targetDate}`;
+      const cached = memoryAttendanceStore.get(key);
+      return res.status(200).json({
+        ok: true,
+        lastSyncTimestamp,
+        hasData: Boolean(cached),
+        records: cached ? cached.records : [],
+      });
+    }
+
+    // Return all records for targetDate
+    const dateEntries = [];
+    for (const [k, v] of memoryAttendanceStore.entries()) {
+      if (k.endsWith(`_${targetDate}`)) {
+        dateEntries.push(v);
+      }
+    }
+
+    return res.status(200).json({
+      ok: true,
+      lastSyncTimestamp,
+      date: targetDate,
+      entries: dateEntries,
     });
   }
 

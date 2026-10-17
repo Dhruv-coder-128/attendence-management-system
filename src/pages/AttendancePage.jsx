@@ -240,6 +240,53 @@ export default function AttendancePage({ onRefreshCounts }) {
     }
   }, [selectedBatchId, selectedDate]);
 
+  // 2.1. Live Wi-Fi Hub Synchronization from Teacher Mobile App
+  useEffect(() => {
+    if (!selectedBatchId) return;
+
+    let isMounted = true;
+
+    // Periodically poll local hub updates every 2.5 seconds
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `/api/local-hub?action=updates&batch_id=${encodeURIComponent(
+            selectedBatchId
+          )}&date=${encodeURIComponent(selectedDate)}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.hasData && Array.isArray(data.records) && data.records.length > 0) {
+            if (!isMounted) return;
+            setAttendanceMap((prev) => {
+              let changed = false;
+              const next = { ...prev };
+              data.records.forEach((r) => {
+                if (!next[r.student_id] || next[r.student_id].status !== r.status) {
+                  next[r.student_id] = {
+                    ...next[r.student_id],
+                    student_id: r.student_id,
+                    batch_id: selectedBatchId,
+                    date: selectedDate,
+                    status: r.status,
+                    time_in: r.time_in || '11:24',
+                  };
+                  changed = true;
+                }
+              });
+              return changed ? next : prev;
+            });
+          }
+        }
+      } catch {}
+    }, 2500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [selectedBatchId, selectedDate]);
+
   const activeBatch = batches.find((b) => b.id === selectedBatchId);
 
   // 3. Mark Single Student Attendance (Upsert in Supabase)
@@ -281,6 +328,19 @@ export default function AttendancePage({ onRefreshCounts }) {
 
       setAttendanceMap((prev) => ({ ...prev, [studentId]: data }));
       if (onRefreshCounts) onRefreshCounts();
+
+      // Broadcast to local Wi-Fi hub so mobile app syncs immediately
+      try {
+        fetch('/api/local-hub?action=attendance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            batch_id: selectedBatchId,
+            date: selectedDate,
+            records: [{ student_id: studentId, status }],
+          }),
+        }).catch(() => {});
+      } catch {}
     } catch (err) {
       console.error('Failed to mark attendance:', err);
       alert('Error updating attendance: ' + err.message);

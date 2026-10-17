@@ -103,7 +103,7 @@ await asyncTest('GET /api/local-hub?action=status returns hub metadata and activ
 
 // TEST 3: Batches Action
 console.log('\n--- TEST 3: Cohort Batches Query ---');
-await asyncTest('GET /api/local-hub?action=batches returns available cohorts', async () => {
+await asyncTest('GET /api/local-hub?action=batches returns exactly the 5 canonical batches', async () => {
   const req = { method: 'GET', query: { action: 'batches' } };
   const res = createMockRes();
 
@@ -112,16 +112,21 @@ await asyncTest('GET /api/local-hub?action=batches returns available cohorts', a
 
   const data = res.getData();
   assert.strictEqual(data.ok, true, 'Batches response is ok');
-  assert(Array.isArray(data.batches) && data.batches.length > 0, 'Batches array returned');
+  assert(Array.isArray(data.batches), 'Batches array returned');
+  assert.strictEqual(data.batches.length, 5, 'Exactly 5 batches returned');
 
-  const bsyBatch = data.batches.find((b) => b.code === 'BSY-SY' || b.id === 'b_bsy_sy');
-  assert(bsyBatch !== undefined, 'Contains BSY-SY cohort');
+  const batchCodes = data.batches.map((b) => b.code);
+  assert(batchCodes.includes('B11'), 'Contains B11 (11th Commerce)');
+  assert(batchCodes.includes('B12'), 'Contains B12 (12th Commerce)');
+  assert(batchCodes.includes('BFY'), 'Contains BFY (FY)');
+  assert(batchCodes.includes('BSY'), 'Contains BSY (SY)');
+  assert(batchCodes.includes('BTY'), 'Contains BTY (TY)');
 });
 
 // TEST 4: Students Action
 console.log('\n--- TEST 4: Student Roster Query ---');
-await asyncTest('GET /api/local-hub?action=students&batch_id=b_bsy_sy returns enrolled students', async () => {
-  const req = { method: 'GET', query: { action: 'students', batch_id: 'b_bsy_sy' } };
+await asyncTest('GET /api/local-hub?action=students&batch_id=B11 returns 20 enrolled students', async () => {
+  const req = { method: 'GET', query: { action: 'students', batch_id: 'B11' } };
   const res = createMockRes();
 
   await handler(req, res);
@@ -129,28 +134,29 @@ await asyncTest('GET /api/local-hub?action=students&batch_id=b_bsy_sy returns en
 
   const data = res.getData();
   assert.strictEqual(data.ok, true, 'Students response is ok');
-  assert(Array.isArray(data.students) && data.students.length > 0, 'Students array returned');
+  assert(Array.isArray(data.students), 'Students array returned');
+  assert.strictEqual(data.students.length, 20, 'Exactly 20 students in B11');
 
-  const dhruv = data.students.find((s) => s.roll_no === '19' || s.admission_no === 'ST1019');
-  assert(dhruv !== undefined, 'Contains Dhruv Shah (ST1019 / Roll 19)');
-  assert.strictEqual(dhruv.full_name, 'Dhruv Shah', 'Student name is Dhruv Shah');
+  const krishna = data.students.find((s) => s.admission_no === 'ST1001');
+  assert(krishna !== undefined, 'Contains Krishna Dave (ST1001 / Roll 1)');
+  assert.strictEqual(krishna.full_name, 'Krishna Dave', 'Student name is Krishna Dave');
 });
 
-// TEST 5: Attendance Submission Action (POST)
-console.log('\n--- TEST 5: Roll Call Attendance Submission ---');
-await asyncTest('POST /api/local-hub?action=attendance saves records and computes metrics', async () => {
+// TEST 5: Attendance Submission with Present, Late, and Absent
+console.log('\n--- TEST 5: Roll Call Attendance Submission (Present, Late, Absent) ---');
+await asyncTest('POST /api/local-hub?action=attendance saves Present, Late, and Absent records', async () => {
   const records = [
-    { student_id: 'st_1004', status: 'Present' },
-    { student_id: 'st_1009', status: 'Present' },
-    { student_id: 'st_1014', status: 'Absent' },
-    { student_id: 'st_dhruv_1019', status: 'Present' },
+    { student_id: 'ST1001', status: 'Present' },
+    { student_id: 'ST1002', status: 'Late' },
+    { student_id: 'ST1003', status: 'Absent' },
+    { student_id: 'ST1004', status: 'Present' },
   ];
 
   const req = {
     method: 'POST',
     body: {
       action: 'attendance',
-      batch_id: 'b_bsy_sy',
+      batch_id: 'B11',
       date: '2026-10-17',
       records,
     },
@@ -163,16 +169,45 @@ await asyncTest('POST /api/local-hub?action=attendance saves records and compute
   const data = res.getData();
   assert.strictEqual(data.ok, true, 'Attendance submission succeeds');
   assert.strictEqual(data.totalStudents, 4, 'Recorded 4 students');
-  assert.strictEqual(data.presentCount, 3, 'Present count is 3');
+  assert.strictEqual(data.presentCount, 2, 'Present count is 2');
+  assert.strictEqual(data.lateCount, 1, 'Late count is 1');
   assert.strictEqual(data.absentCount, 1, 'Absent count is 1');
   assert(data.message.includes('Successfully saved'), 'Success confirmation message returned');
 });
 
-// TEST 6: Client-Side Hub Service & Offline Queue
-console.log('\n--- TEST 6: Client Hub Service Persistence & Queue ---');
+// TEST 6: Attendance Retrieval & Real-time Updates Polling
+console.log('\n--- TEST 6: Attendance Retrieval & Desktop Updates Polling ---');
+await asyncTest('GET /api/local-hub?action=attendance returns saved roll call for batch & date', async () => {
+  const req = { method: 'GET', query: { action: 'attendance', batch_id: 'B11', date: '2026-10-17' } };
+  const res = createMockRes();
+
+  await handler(req, res);
+  assert.strictEqual(res.getStatusCode(), 200, 'HTTP 200 returned');
+
+  const data = res.getData();
+  assert.strictEqual(data.ok, true, 'Attendance retrieval succeeds');
+  assert(Array.isArray(data.records) && data.records.length === 4, 'Returns 4 records');
+  assert.strictEqual(data.records.find((r) => r.student_id === 'ST1002')?.status, 'Late');
+});
+
+await asyncTest('GET /api/local-hub?action=updates provides real-time polling data', async () => {
+  const req = { method: 'GET', query: { action: 'updates', batch_id: 'B11', date: '2026-10-17' } };
+  const res = createMockRes();
+
+  await handler(req, res);
+  assert.strictEqual(res.getStatusCode(), 200, 'HTTP 200 returned');
+
+  const data = res.getData();
+  assert.strictEqual(data.ok, true);
+  assert.strictEqual(data.hasData, true);
+  assert(Array.isArray(data.records) && data.records.length > 0);
+});
+
+// TEST 7: Client-Side Hub Service & Offline Queue
+console.log('\n--- TEST 7: Client Hub Service Persistence & Queue ---');
 test('getStoredHubUrl and setStoredHubUrl manage connection URL', () => {
-  setStoredHubUrl('http://192.168.1.100:5173/');
-  assert.strictEqual(getStoredHubUrl(), 'http://192.168.1.100:5173', 'Strips trailing slash');
+  setStoredHubUrl('http://192.168.0.104:5173/');
+  assert.strictEqual(getStoredHubUrl(), 'http://192.168.0.104:5173', 'Strips trailing slash');
 });
 
 test('Offline queue stores and clears queued attendance payloads', () => {

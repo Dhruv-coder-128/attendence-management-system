@@ -9,33 +9,16 @@
  */
 
 import { Capacitor } from '@capacitor/core';
-import { supabase } from './supabase.js';
+import {
+  CANONICAL_BATCHES,
+  CANONICAL_STUDENTS,
+  getBatchStudents,
+  getBatchById,
+} from '../data/canonicalSchoolData.js';
 
 const HUB_URL_KEY = 'sms_teacher_hub_url';
 const OFFLINE_QUEUE_KEY = 'sms_teacher_offline_queue';
 export const DEFAULT_SCHOOL_PC_URL = 'http://192.168.0.104:5173';
-
-const DEFAULT_BATCHES = [
-  { id: 'b_11th_com', name: 'B11 — 11th Commerce', code: '11-COM', timing: '08:00 AM – 10:30 AM', classroom: 'Room 101' },
-  { id: 'b_bsy_sy', name: 'BSY — SY', code: 'BSY-SY', timing: '08:00 AM – 10:30 AM', classroom: 'Room 202' },
-  { id: 'b_11th_sci', name: 'Grade 11 Science Morning', code: '11-SCI-A', timing: '07:30 AM – 10:30 AM', classroom: 'LH-1' },
-  { id: 'b_12th_sci', name: 'Grade 12 Science Board & JEE', code: '12-SCI-A', timing: '07:30 AM – 11:00 AM', classroom: 'LH-2' },
-];
-
-const DEFAULT_STUDENTS = [
-  { id: 'st_1001', batch_id: 'b_11th_com', full_name: 'Krishna Dave', roll_no: '1', admission_no: 'ST1001', gender: 'Female' },
-  { id: 'st_1006', batch_id: 'b_11th_com', full_name: 'Ananya Joshi', roll_no: '6', admission_no: 'ST1006', gender: 'Female' },
-  { id: 'st_1011', batch_id: 'b_11th_com', full_name: 'Meera Makwana', roll_no: '11', admission_no: 'ST1011', gender: 'Female' },
-  { id: 'st_1016', batch_id: 'b_11th_com', full_name: 'Rohan Mehta', roll_no: '16', admission_no: 'ST1016', gender: 'Male' },
-  { id: 'st_1021', batch_id: 'b_11th_com', full_name: 'Reyansh Thakkar', roll_no: '1', admission_no: 'ST1021', gender: 'Male' },
-  { id: 'st_1026', batch_id: 'b_11th_com', full_name: 'Vihaan Trivedi', roll_no: '6', admission_no: 'ST1026', gender: 'Male' },
-  { id: 'st_1031', batch_id: 'b_11th_com', full_name: 'Aarav Amin', roll_no: '11', admission_no: 'ST1031', gender: 'Male' },
-  { id: 'st_1004', batch_id: 'b_bsy_sy', full_name: 'Yash Vora', roll_no: '4', admission_no: 'ST1004', gender: 'Male' },
-  { id: 'st_1009', batch_id: 'b_bsy_sy', full_name: 'Pari Joshi', roll_no: '9', admission_no: 'ST1009', gender: 'Female' },
-  { id: 'st_1014', batch_id: 'b_bsy_sy', full_name: 'Dev Thakkar', roll_no: '14', admission_no: 'ST1014', gender: 'Male' },
-  { id: 'st_dhruv_1019', batch_id: 'b_bsy_sy', full_name: 'Dhruv Shah', roll_no: '19', admission_no: 'ST1019', gender: 'Male' },
-  { id: 'st_1024', batch_id: 'b_bsy_sy', full_name: 'Neha Rathod', roll_no: '24', admission_no: 'ST1024', gender: 'Female' },
-];
 
 /**
  * Returns default or previously configured School PC URL
@@ -81,12 +64,28 @@ export function setStoredHubUrl(url) {
 }
 
 /**
- * Tests connection with the School PC over Wi-Fi or Supabase cloud
+ * Tests connection with the School PC over local Wi-Fi.
+ * Distinguishes 3 key physical states:
+ * 1. 'wifi_disconnected': Phone Wi-Fi is toggled off / network offline.
+ * 2. 'pc_unreachable': On network, but School PC HTTP hub is not responding at the configured IP.
+ * 3. 'connected': School PC hub is alive and active on port 5173.
  */
 export async function checkHubConnection(hubUrl = null) {
   const targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
+
+  // 1. Check if device network is completely offline
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return {
+      ok: false,
+      state: 'wifi_disconnected',
+      url: targetUrl,
+      error: 'Phone is offline. Please connect to the School Wi-Fi network.',
+    };
+  }
+
+  // 2. Ping School PC Wi-Fi Hub
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timeoutId = controller ? setTimeout(() => controller.abort(), 2500) : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 2000) : null;
 
   try {
     const res = await fetch(`${targetUrl}/api/local-hub?action=status`, {
@@ -98,32 +97,34 @@ export async function checkHubConnection(hubUrl = null) {
 
     if (res.ok) {
       const data = await res.json();
-      return { ok: true, mode: 'wifi', url: targetUrl, data };
+      if (data && data.service && data.service.includes('SMS Local Wi-Fi Attendance Hub')) {
+        return {
+          ok: true,
+          state: 'connected',
+          mode: 'wifi',
+          url: targetUrl,
+          data,
+        };
+      }
     }
   } catch {
     if (timeoutId) clearTimeout(timeoutId);
   }
 
-  // Fallback: Verify connection to Supabase database
-  try {
-    if (supabase) {
-      const { error } = await supabase.from('batches').select('id').limit(1);
-      if (!error) {
-        return { ok: true, mode: 'cloud', url: 'Cloud Supabase' };
-      }
-    }
-  } catch {}
-
-  return { ok: false, mode: 'offline', url: targetUrl, error: 'Cannot reach School PC over Wi-Fi' };
+  return {
+    ok: false,
+    state: 'pc_unreachable',
+    url: targetUrl,
+    error: `Cannot reach School PC at ${targetUrl}. Make sure your PC is on and phone is on the same Wi-Fi.`,
+  };
 }
 
 /**
- * Fetches cohort batches from School PC or Supabase cloud
+ * Fetches cohort batches from School PC or canonical fallback
  */
 export async function fetchBatchesFromHub(hubUrl = null) {
   const targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
 
-  // 1. Try Local Wi-Fi PC Hub
   try {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timeout = controller ? setTimeout(() => controller.abort(), 2000) : null;
@@ -140,36 +141,18 @@ export async function fetchBatchesFromHub(hubUrl = null) {
         return data.batches;
       }
     }
-  } catch (err) {
-    console.warn('Wi-Fi batches fetch failed, trying database fallback:', err);
-  }
+  } catch {}
 
-  // 2. Direct Supabase Query
-  try {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('batches')
-        .select('id, name, code, timing, classroom, is_active')
-        .order('name');
-      if (!error && Array.isArray(data) && data.length > 0) {
-        return data;
-      }
-    }
-  } catch (err) {
-    console.warn('Supabase batches query failed:', err);
-  }
-
-  return DEFAULT_BATCHES;
+  return CANONICAL_BATCHES;
 }
 
 /**
- * Fetches student roster for a batch from School PC or Supabase cloud
+ * Fetches student roster for a batch from School PC or canonical fallback
  */
 export async function fetchStudentsFromHub(batchId, hubUrl = null) {
   if (!batchId) return [];
   const targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
 
-  // 1. Try Local Wi-Fi PC Hub
   try {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timeout = controller ? setTimeout(() => controller.abort(), 2000) : null;
@@ -189,28 +172,42 @@ export async function fetchStudentsFromHub(batchId, hubUrl = null) {
         return data.students;
       }
     }
-  } catch (err) {
-    console.warn('Wi-Fi students fetch failed, trying database fallback:', err);
-  }
+  } catch {}
 
-  // 2. Direct Supabase Query
+  return getBatchStudents(batchId);
+}
+
+/**
+ * Fetches existing attendance records for a batch & date
+ */
+export async function fetchExistingAttendanceFromHub(batchId, date, hubUrl = null) {
+  if (!batchId) return [];
+  const targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
+
   try {
-    if (supabase) {
-      const { data, error } = await supabase
-        .from('students')
-        .select('id, full_name, roll_no, admission_no, gender, batch_id, status')
-        .eq('batch_id', batchId)
-        .order('admission_no');
-      if (!error && Array.isArray(data) && data.length > 0) {
-        return data;
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeout = controller ? setTimeout(() => controller.abort(), 2000) : null;
+    const res = await fetch(
+      `${targetUrl}/api/local-hub?action=attendance&batch_id=${encodeURIComponent(
+        batchId
+      )}&date=${encodeURIComponent(date)}`,
+      {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: controller ? controller.signal : undefined,
+      }
+    );
+    if (timeout) clearTimeout(timeout);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.records)) {
+        return data.records;
       }
     }
-  } catch (err) {
-    console.warn('Supabase students query failed:', err);
-  }
+  } catch {}
 
-  const filtered = DEFAULT_STUDENTS.filter((s) => s.batch_id === batchId || !batchId);
-  return filtered.length > 0 ? filtered : DEFAULT_STUDENTS;
+  return [];
 }
 
 /**
