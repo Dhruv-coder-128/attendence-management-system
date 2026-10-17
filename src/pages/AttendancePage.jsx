@@ -245,47 +245,93 @@ export default function AttendancePage({ onRefreshCounts }) {
     if (!selectedBatchId) return;
 
     let isMounted = true;
+    const currentBatch = batches.find((b) => b.id === selectedBatchId);
+    const batchCode = currentBatch?.code || '';
+    const batchName = currentBatch?.name || '';
 
-    // Periodically poll local hub updates every 2.5 seconds
+    // Periodically poll local hub updates every 2.0 seconds
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(
-          `/api/local-hub?action=updates&batch_id=${encodeURIComponent(
-            selectedBatchId
-          )}&date=${encodeURIComponent(selectedDate)}`
-        );
+        const queryParams = new URLSearchParams({
+          action: 'updates',
+          date: selectedDate,
+          batch_id: selectedBatchId,
+          batch_code: batchCode,
+          batch_name: batchName,
+        });
+
+        const res = await fetch(`/api/local-hub?${queryParams.toString()}`);
         if (res.ok) {
           const data = await res.json();
-          if (data && data.hasData && Array.isArray(data.records) && data.records.length > 0) {
+          const incomingRecords = data?.records || data?.allRecords || [];
+
+          if (data && data.hasData && Array.isArray(incomingRecords) && incomingRecords.length > 0) {
             if (!isMounted) return;
+
             setAttendanceMap((prev) => {
               let changed = false;
               const next = { ...prev };
-              data.records.forEach((r) => {
-                if (!next[r.student_id] || next[r.student_id].status !== r.status) {
-                  next[r.student_id] = {
-                    ...next[r.student_id],
-                    student_id: r.student_id,
-                    batch_id: selectedBatchId,
-                    date: selectedDate,
-                    status: r.status,
-                    time_in: r.time_in || '11:24',
-                  };
-                  changed = true;
+              const toPersist = [];
+
+              incomingRecords.forEach((r) => {
+                // Find matching student by admission_no, id, or roll_no
+                const matchedStudent = students.find(
+                  (s) =>
+                    s.admission_no === r.admission_no ||
+                    s.admission_no === r.student_id ||
+                    s.id === r.student_id ||
+                    (r.roll_no && Number(s.roll_no) === Number(r.roll_no))
+                );
+
+                if (matchedStudent) {
+                  const targetKey = matchedStudent.id;
+                  const currentRec = next[targetKey];
+
+                  if (!currentRec || currentRec.status !== r.status) {
+                    const updatedRec = {
+                      ...(currentRec || {}),
+                      id: currentRec?.id || r.id,
+                      student_id: matchedStudent.id,
+                      batch_id: selectedBatchId,
+                      date: selectedDate,
+                      session_name: 'Regular',
+                      status: r.status,
+                      time_in: r.time_in || '11:00',
+                      updated_at: new Date().toISOString(),
+                    };
+
+                    next[targetKey] = updatedRec;
+                    if (matchedStudent.admission_no) {
+                      next[matchedStudent.admission_no] = updatedRec;
+                    }
+
+                    toPersist.push(updatedRec);
+                    changed = true;
+                  }
                 }
               });
+
+              // Persist synchronized records to PC's local IndexedDB
+              if (toPersist.length > 0 && supabase) {
+                supabase
+                  .from('attendance')
+                  .upsert(toPersist, { onConflict: 'student_id,batch_id,date,session_name' })
+                  .then(() => {})
+                  .catch(() => {});
+              }
+
               return changed ? next : prev;
             });
           }
         }
       } catch {}
-    }, 2500);
+    }, 2000);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [selectedBatchId, selectedDate]);
+  }, [selectedBatchId, selectedDate, batches, students]);
 
   const activeBatch = batches.find((b) => b.id === selectedBatchId);
 
@@ -569,12 +615,13 @@ export default function AttendancePage({ onRefreshCounts }) {
     }
   };
 
-  // Live Metric Counts
+  // Live Metric Counts (reconciles by both student.id and student.admission_no)
+  const getRecordForStudent = (s) => attendanceMap[s.id] || (s.admission_no ? attendanceMap[s.admission_no] : null);
   const totalCount = students.length;
-  const presentCount = students.filter((s) => attendanceMap[s.id]?.status === 'Present').length;
-  const absentCount = students.filter((s) => attendanceMap[s.id]?.status === 'Absent').length;
-  const lateCount = students.filter((s) => attendanceMap[s.id]?.status === 'Late').length;
-  const excusedCount = students.filter((s) => attendanceMap[s.id]?.status === 'Excused').length;
+  const presentCount = students.filter((s) => getRecordForStudent(s)?.status === 'Present').length;
+  const absentCount = students.filter((s) => getRecordForStudent(s)?.status === 'Absent').length;
+  const lateCount = students.filter((s) => getRecordForStudent(s)?.status === 'Late').length;
+  const excusedCount = students.filter((s) => getRecordForStudent(s)?.status === 'Excused').length;
   const markedCount = presentCount + absentCount + lateCount + excusedCount;
   const attendanceRate = totalCount > 0 ? Math.round(((presentCount + lateCount) / totalCount) * 100) : 0;
 
@@ -1004,7 +1051,9 @@ export default function AttendancePage({ onRefreshCounts }) {
                 </tr>
               ) : (
                 paginatedStudents.map((student, index) => {
-                  const record = attendanceMap[student.id];
+                  const record =
+                    attendanceMap[student.id] ||
+                    (student.admission_no ? attendanceMap[student.admission_no] : null);
                   const currentStatus = record?.status || 'Unmarked';
                   const isRowSaving = savingId === student.id;
                   const rowNumber = (currentPage - 1) * pageSize + index + 1;

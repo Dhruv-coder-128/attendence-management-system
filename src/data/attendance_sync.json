@@ -1,24 +1,153 @@
 {
   "B11_2026-10-17": {
     "batch_id": "B11",
+    "batch_code": "B11",
+    "batch_name": "",
     "date": "2026-10-17",
-    "savedAt": "2026-10-17T18:04:07.773Z",
+    "savedAt": "2026-10-17T18:29:36.491Z",
     "records": [
       {
         "student_id": "ST1001",
-        "status": "Present"
+        "admission_no": "ST1001",
+        "roll_no": 1,
+        "status": "Present",
+        "remarks": "",
+        "time_in": "23:59",
+        "updated_at": "2026-10-17T18:29:36.491Z"
       },
       {
         "student_id": "ST1002",
-        "status": "Late"
+        "admission_no": "ST1002",
+        "roll_no": 2,
+        "status": "Late",
+        "remarks": "",
+        "time_in": "23:59",
+        "updated_at": "2026-10-17T18:29:36.491Z"
       },
       {
         "student_id": "ST1003",
-        "status": "Absent"
+        "admission_no": "ST1003",
+        "roll_no": 3,
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "23:59",
+        "updated_at": "2026-10-17T18:29:36.491Z"
       },
       {
         "student_id": "ST1004",
-        "status": "Present"
+        "admission_no": "ST1004",
+        "roll_no": 4,
+        "status": "Present",
+        "remarks": "",
+        "time_in": "23:59",
+        "updated_at": "2026-10-17T18:29:36.491Z"
+      }
+    ]
+  },
+  "BFY_2026-10-17": {
+    "batch_id": "BFY",
+    "date": "2026-10-17",
+    "savedAt": "2026-10-17T18:12:42.512Z",
+    "records": [
+      {
+        "student_id": "ST1041",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1042",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1043",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1044",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1045",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1046",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1047",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1048",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1049",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1050",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1051",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1052",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1053",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1054",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1055",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1056",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1057",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1058",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1059",
+        "status": "Absent",
+        "remarks": ""
+      },
+      {
+        "student_id": "ST1060",
+        "status": "Absent",
+        "remarks": ""
       }
     ]
   }

@@ -17,6 +17,7 @@ import {
   WifiOff,
   QrCode,
 } from 'lucide-react';
+import { App } from '@capacitor/app';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
   getStoredHubUrl,
@@ -71,6 +72,50 @@ export default function TeacherAttendancePage() {
     setTimeout(() => setToastMessage(''), 4500);
   };
 
+  // =========================================================================
+  // ANDROID HARDWARE / GESTURE BACK BUTTON INTERCEPTION
+  // =========================================================================
+  useEffect(() => {
+    let listenerHandle = null;
+
+    try {
+      App.addListener('backButton', () => {
+        if (showCameraScanner) {
+          setShowCameraScanner(false);
+        } else if (showSettingsModal) {
+          setShowSettingsModal(false);
+        } else if (showSuccessModal) {
+          setShowSuccessModal(false);
+        } else if (viewMode === 'rollcall') {
+          // Go back to the batches list instead of closing the app!
+          setViewMode('batches');
+        } else {
+          // On batches home screen, let Android minimize/exit
+          App.exitApp();
+        }
+      })
+        .then((handle) => {
+          listenerHandle = handle;
+        })
+        .catch(() => {});
+    } catch {}
+
+    // Web / browser popstate support
+    const handlePopState = () => {
+      if (viewMode === 'rollcall') {
+        setViewMode('batches');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      if (listenerHandle && typeof listenerHandle.remove === 'function') {
+        listenerHandle.remove();
+      }
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [viewMode, showCameraScanner, showSettingsModal, showSuccessModal]);
+
   // 1. Load Batches
   const loadBatches = useCallback(async (targetUrl = hubUrl) => {
     setIsLoading(true);
@@ -115,6 +160,11 @@ export default function TeacherAttendancePage() {
     setViewMode('rollcall');
     setIsLoading(true);
 
+    // Push state so back gesture works
+    try {
+      window.history.pushState({ view: 'rollcall' }, '');
+    } catch {}
+
     const studentList = await fetchStudentsFromHub(batchId, hubUrl);
     setStudents(studentList);
 
@@ -124,11 +174,14 @@ export default function TeacherAttendancePage() {
     const initialMap = {};
     if (Array.isArray(existingRecords) && existingRecords.length > 0) {
       existingRecords.forEach((r) => {
-        initialMap[r.student_id] = r.status || 'Present';
+        const idKey = r.student_id || r.admission_no;
+        if (idKey) {
+          initialMap[idKey] = r.status || 'Present';
+        }
       });
       // Fill in any students missing from existing records as Present
       studentList.forEach((s) => {
-        if (!initialMap[s.id]) {
+        if (!initialMap[s.id] && !initialMap[s.admission_no]) {
           initialMap[s.id] = 'Present';
         }
       });
@@ -154,10 +207,11 @@ export default function TeacherAttendancePage() {
     const map = {};
     if (Array.isArray(existingRecords) && existingRecords.length > 0) {
       existingRecords.forEach((r) => {
-        map[r.student_id] = r.status || 'Present';
+        const idKey = r.student_id || r.admission_no;
+        if (idKey) map[idKey] = r.status || 'Present';
       });
       students.forEach((s) => {
-        if (!map[s.id]) map[s.id] = 'Present';
+        if (!map[s.id] && !map[s.admission_no]) map[s.id] = 'Present';
       });
       showToast(`Loaded records for ${newDate}`);
     } else {
@@ -210,6 +264,18 @@ export default function TeacherAttendancePage() {
     return Object.values(attendanceMap).filter((st) => st === 'Absent').length;
   }, [attendanceMap]);
 
+  // Strict Deduplication of Batches by Unique Code
+  const uniqueBatches = useMemo(() => {
+    const map = new Map();
+    (batches || []).forEach((b) => {
+      const codeKey = (b.code || b.id || b.name || '').toUpperCase().trim();
+      if (codeKey && !map.has(codeKey)) {
+        map.set(codeKey, b);
+      }
+    });
+    return Array.from(map.values());
+  }, [batches]);
+
   // Filter students
   const filteredStudents = useMemo(() => {
     if (!searchTerm.trim()) return students;
@@ -222,6 +288,9 @@ export default function TeacherAttendancePage() {
     );
   }, [students, searchTerm]);
 
+  // Active Batch Object
+  const activeBatch = uniqueBatches.find((b) => b.id === selectedBatchId || b.code === selectedBatchId) || uniqueBatches[0] || {};
+
   // Submit attendance ("DONE" Action)
   const handleSubmit = async () => {
     if (!selectedBatchId || students.length === 0) return;
@@ -229,11 +298,24 @@ export default function TeacherAttendancePage() {
     setIsSubmitting(true);
     const records = students.map((s) => ({
       student_id: s.id,
+      admission_no: s.admission_no || s.id,
+      roll_no: s.roll_no,
+      full_name: s.full_name,
       status: attendanceMap[s.id] || 'Present',
       remarks: '',
+      time_in: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
     }));
 
-    const res = await submitAttendanceToHub(selectedBatchId, selectedDate, records, hubUrl);
+    const res = await submitAttendanceToHub(
+      activeBatch.id || selectedBatchId,
+      selectedDate,
+      records,
+      hubUrl,
+      {
+        batch_code: activeBatch.code || selectedBatchId,
+        batch_name: activeBatch.name || '',
+      }
+    );
     setIsSubmitting(false);
 
     if (res.ok) {
@@ -325,8 +407,6 @@ export default function TeacherAttendancePage() {
     }
   }, [showCameraScanner, handleScannedResult]);
 
-  const activeBatch = batches.find((b) => b.id === selectedBatchId) || batches[0] || {};
-
   return (
     <div
       style={{
@@ -334,7 +414,7 @@ export default function TeacherAttendancePage() {
         backgroundColor: '#f8fafc',
         color: '#0f172a',
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-        paddingBottom: viewMode === 'rollcall' ? '110px' : '30px',
+        paddingBottom: viewMode === 'rollcall' ? '120px' : '30px',
       }}
     >
       {/* Toast Notification */}
@@ -708,7 +788,7 @@ export default function TeacherAttendancePage() {
                 boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
               }}
             >
-              {batches.length} Classes
+              {uniqueBatches.length} Classes
             </span>
           </div>
 
@@ -744,9 +824,9 @@ export default function TeacherAttendancePage() {
             />
           </div>
 
-          {/* Batches Cards Grid (Canonical 5 Batches matching Desktop .exe) */}
+          {/* Batches Cards Grid (Cleanly Deduplicated Canonical 5 Batches) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {batches
+            {uniqueBatches
               .filter(
                 (b) =>
                   !searchTerm.trim() ||
@@ -755,8 +835,8 @@ export default function TeacherAttendancePage() {
               )
               .map((batch) => (
                 <div
-                  key={batch.id}
-                  onClick={() => openBatchRollCall(batch.id)}
+                  key={batch.code || batch.id}
+                  onClick={() => openBatchRollCall(batch.id || batch.code)}
                   style={{
                     backgroundColor: '#ffffff',
                     borderRadius: '12px',
@@ -860,7 +940,7 @@ export default function TeacherAttendancePage() {
       )}
 
       {/* ========================================================================= */}
-      {/* SCREEN 2: STUDENT ROLL CALL SCREEN (PRESENT / LATE / ABSENT)             */}
+      {/* SCREEN 2: STUDENT ROLL CALL SCREEN (MOBILE-FRIENDLY 2-TIER CARDS)         */}
       {/* ========================================================================= */}
       {viewMode === 'rollcall' && (
         <main style={{ padding: '16px', maxWidth: '640px', margin: '0 auto' }}>
@@ -879,7 +959,7 @@ export default function TeacherAttendancePage() {
                 background: '#ffffff',
                 border: '1px solid #cbd5e1',
                 color: '#0f172a',
-                padding: '6px 12px',
+                padding: '7px 12px',
                 borderRadius: '8px',
                 fontSize: '12px',
                 fontWeight: 700,
@@ -921,7 +1001,7 @@ export default function TeacherAttendancePage() {
             </div>
           </div>
 
-          {/* 4 Metric Cards Styled Identical to Desktop .exe (Screenshot #3) */}
+          {/* 4 Metric Cards Styled Identical to Desktop .exe */}
           <div
             style={{
               display: 'grid',
@@ -1021,8 +1101,8 @@ export default function TeacherAttendancePage() {
                 border: '1px solid #10b981',
                 color: '#10b981',
                 borderRadius: '8px',
-                padding: '7px 10px',
-                fontSize: '11px',
+                padding: '8px 10px',
+                fontSize: '12px',
                 fontWeight: 700,
                 cursor: 'pointer',
                 display: 'flex',
@@ -1044,8 +1124,8 @@ export default function TeacherAttendancePage() {
                 border: '1px solid #ef4444',
                 color: '#ef4444',
                 borderRadius: '8px',
-                padding: '7px 10px',
-                fontSize: '11px',
+                padding: '8px 10px',
+                fontSize: '12px',
                 fontWeight: 700,
                 cursor: 'pointer',
                 display: 'flex',
@@ -1086,8 +1166,10 @@ export default function TeacherAttendancePage() {
             />
           </div>
 
-          {/* Student Roster Cards with 3-Way Buttons: Present | Late | Absent */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {/* ========================================================================= */}
+          {/* MOBILE-FIRST 2-TIER STUDENT CARDS: 100% FULL NAME READABILITY           */}
+          {/* ========================================================================= */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {filteredStudents.map((student) => {
               const status = attendanceMap[student.id] || 'Present';
               const isPresent = status === 'Present';
@@ -1100,117 +1182,170 @@ export default function TeacherAttendancePage() {
                   style={{
                     backgroundColor: '#ffffff',
                     border: '1px solid #e2e8f0',
-                    borderRadius: '10px',
-                    padding: '10px 12px',
+                    borderRadius: '12px',
+                    padding: '12px 14px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.03)',
                     display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
+                    flexDirection: 'column',
+                    gap: '10px',
                   }}
                 >
-                  {/* Left: Roll No + Name */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
-                    <div
+                  {/* TIER 1: Student Details with FULL NAME VISIBILITY (NO TRUNCATION) */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+                      {/* Roll Number Badge */}
+                      <div
+                        style={{
+                          width: '34px',
+                          height: '34px',
+                          borderRadius: '8px',
+                          backgroundColor: '#0a1122',
+                          color: '#c5a880',
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+                        }}
+                      >
+                        {student.roll_no}
+                      </div>
+
+                      {/* Full Name & Admission No */}
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div
+                          style={{
+                            fontSize: '15px',
+                            fontWeight: 800,
+                            color: '#0f172a',
+                            lineHeight: 1.25,
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          {student.full_name}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: '11px',
+                            color: '#64748b',
+                            marginTop: '2px',
+                            fontWeight: 600,
+                          }}
+                        >
+                          ID: {student.admission_no}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status Pill Badge */}
+                    <span
                       style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '8px',
-                        backgroundColor: '#0a1122',
-                        color: '#c5a880',
-                        fontSize: '12px',
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        fontSize: '11px',
                         fontWeight: 800,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
+                        backgroundColor: isPresent ? '#dcfce7' : isLate ? '#fef3c7' : '#fee2e2',
+                        color: isPresent ? '#15803d' : isLate ? '#b45309' : '#b91c1c',
+                        border: `1px solid ${isPresent ? '#86efac' : isLate ? '#fde68a' : '#fca5a5'}`,
                         flexShrink: 0,
                       }}
                     >
-                      {student.roll_no}
-                    </div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div
-                        style={{
-                          fontSize: '13px',
-                          fontWeight: 700,
-                          color: '#0f172a',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {student.full_name}
-                      </div>
-                      <div style={{ fontSize: '10px', color: '#64748b' }}>
-                        {student.admission_no}
-                      </div>
-                    </div>
+                      {status}
+                    </span>
                   </div>
 
-                  {/* Right: 3-Way Buttons (Present, Late, Absent) */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                  {/* TIER 2: Full-Width 3-Button Segmented Selector for Thumb Comfort */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      gap: '6px',
+                      backgroundColor: '#f1f5f9',
+                      padding: '4px',
+                      borderRadius: '10px',
+                    }}
+                  >
                     {/* Present Button */}
                     <button
+                      type="button"
                       onClick={() => setStudentStatus(student.id, 'Present')}
                       style={{
-                        border: isPresent ? '1px solid #10b981' : '1px solid #cbd5e1',
-                        backgroundColor: isPresent ? '#10b981' : '#ffffff',
-                        color: isPresent ? '#ffffff' : '#64748b',
-                        padding: '6px 9px',
-                        borderRadius: '6px',
-                        fontSize: '11px',
+                        backgroundColor: isPresent ? '#10b981' : 'transparent',
+                        color: isPresent ? '#ffffff' : '#475569',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '10px 4px',
+                        fontSize: '13px',
                         fontWeight: 700,
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '3px',
-                        transition: 'all 0.1s ease',
+                        justifyContent: 'center',
+                        gap: '5px',
+                        boxShadow: isPresent ? '0 2px 5px rgba(16, 185, 129, 0.3)' : 'none',
+                        transition: 'all 0.15s ease',
                       }}
                     >
-                      <Check size={12} strokeWidth={isPresent ? 3 : 2} />
+                      <Check size={15} strokeWidth={isPresent ? 3 : 2} />
                       <span>Present</span>
                     </button>
 
                     {/* Late Button */}
                     <button
+                      type="button"
                       onClick={() => setStudentStatus(student.id, 'Late')}
                       style={{
-                        border: isLate ? '1px solid #f59e0b' : '1px solid #cbd5e1',
-                        backgroundColor: isLate ? '#f59e0b' : '#ffffff',
-                        color: isLate ? '#ffffff' : '#64748b',
-                        padding: '6px 9px',
-                        borderRadius: '6px',
-                        fontSize: '11px',
+                        backgroundColor: isLate ? '#f59e0b' : 'transparent',
+                        color: isLate ? '#ffffff' : '#475569',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '10px 4px',
+                        fontSize: '13px',
                         fontWeight: 700,
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '3px',
-                        transition: 'all 0.1s ease',
+                        justifyContent: 'center',
+                        gap: '5px',
+                        boxShadow: isLate ? '0 2px 5px rgba(245, 158, 11, 0.3)' : 'none',
+                        transition: 'all 0.15s ease',
                       }}
                     >
-                      <Clock size={12} strokeWidth={isLate ? 3 : 2} />
+                      <Clock size={15} strokeWidth={isLate ? 3 : 2} />
                       <span>Late</span>
                     </button>
 
                     {/* Absent Button */}
                     <button
+                      type="button"
                       onClick={() => setStudentStatus(student.id, 'Absent')}
                       style={{
-                        border: isAbsent ? '1px solid #ef4444' : '1px solid #cbd5e1',
-                        backgroundColor: isAbsent ? '#ef4444' : '#ffffff',
-                        color: isAbsent ? '#ffffff' : '#64748b',
-                        padding: '6px 9px',
-                        borderRadius: '6px',
-                        fontSize: '11px',
+                        backgroundColor: isAbsent ? '#ef4444' : 'transparent',
+                        color: isAbsent ? '#ffffff' : '#475569',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '10px 4px',
+                        fontSize: '13px',
                         fontWeight: 700,
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '3px',
-                        transition: 'all 0.1s ease',
+                        justifyContent: 'center',
+                        gap: '5px',
+                        boxShadow: isAbsent ? '0 2px 5px rgba(239, 68, 68, 0.3)' : 'none',
+                        transition: 'all 0.15s ease',
                       }}
                     >
-                      <X size={12} strokeWidth={isAbsent ? 3 : 2} />
+                      <X size={15} strokeWidth={isAbsent ? 3 : 2} />
                       <span>Absent</span>
                     </button>
                   </div>

@@ -188,7 +188,7 @@ export default async function handler(req, res) {
       return res.status(405).json({ ok: false, error: 'POST required for saving attendance.' });
     }
 
-    const { batch_id, date, records } = req.body || {};
+    const { batch_id, batch_code, batch_name, date, records } = req.body || {};
     if (!batch_id || !Array.isArray(records) || records.length === 0) {
       return res.status(400).json({ ok: false, error: 'batch_id and records array are required.' });
     }
@@ -196,27 +196,54 @@ export default async function handler(req, res) {
     const targetDate = date || new Date().toISOString().split('T')[0];
     lastSyncTimestamp = new Date().toISOString();
 
-    // Store in-memory cache and write to persistent file
-    const key = `${batch_id}_${targetDate}`;
+    // Enrich records with admission_no and roll_no if missing
+    const enrichedRecords = records.map((r) => {
+      const canonicalMatch = CANONICAL_STUDENTS.find(
+        (cs) => cs.id === r.student_id || cs.admission_no === r.student_id || cs.admission_no === r.admission_no
+      );
+      return {
+        student_id: r.student_id,
+        admission_no: r.admission_no || canonicalMatch?.admission_no || r.student_id,
+        roll_no: r.roll_no || canonicalMatch?.roll_no || null,
+        status: r.status || 'Present',
+        remarks: r.remarks || '',
+        time_in: r.time_in || new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+        updated_at: lastSyncTimestamp,
+      };
+    });
+
     const sessionData = {
       batch_id,
+      batch_code: batch_code || batch_id,
+      batch_name: batch_name || '',
       date: targetDate,
       savedAt: lastSyncTimestamp,
-      records,
+      records: enrichedRecords,
     };
-    memoryAttendanceStore.set(key, sessionData);
+
+    // Store in-memory cache under all alias keys for 100% reliable matching
+    const keysToSet = new Set([
+      `${batch_id}_${targetDate}`,
+      batch_code ? `${batch_code}_${targetDate}` : null,
+      batch_name ? `${batch_name.replace(/\s+/g, '').toUpperCase()}_${targetDate}` : null,
+    ]);
+
+    keysToSet.forEach((k) => {
+      if (k) memoryAttendanceStore.set(k, sessionData);
+    });
+
     savePersistentAttendance();
 
     // Try database persistence if available
     let dbSuccess = false;
     if (db) {
       try {
-        const payload = records.map((r) => ({
+        const payload = enrichedRecords.map((r) => ({
           student_id: r.student_id,
           batch_id,
           date: targetDate,
-          status: r.status || 'Present',
-          remarks: r.remarks || '',
+          status: r.status,
+          remarks: r.remarks,
           updated_at: lastSyncTimestamp,
         }));
 
@@ -235,7 +262,7 @@ export default async function handler(req, res) {
     let presentCount = 0;
     let absentCount = 0;
     let lateCount = 0;
-    records.forEach((r) => {
+    enrichedRecords.forEach((r) => {
       if (r.status === 'Present') presentCount++;
       else if (r.status === 'Absent') absentCount++;
       else if (r.status === 'Late') lateCount++;
@@ -245,7 +272,7 @@ export default async function handler(req, res) {
       ok: true,
       batch_id,
       date: targetDate,
-      totalStudents: records.length,
+      totalStudents: enrichedRecords.length,
       presentCount,
       absentCount,
       lateCount,
@@ -259,31 +286,46 @@ export default async function handler(req, res) {
   if (action === 'updates') {
     const targetDate = query.date || new Date().toISOString().split('T')[0];
     const batchId = query.batch_id;
+    const batchCode = query.batch_code;
+    const batchName = query.batch_name;
 
-    if (batchId) {
-      const key = `${batchId}_${targetDate}`;
-      const cached = memoryAttendanceStore.get(key);
-      return res.status(200).json({
-        ok: true,
-        lastSyncTimestamp,
-        hasData: Boolean(cached),
-        records: cached ? cached.records : [],
-      });
+    // Search through all cached entries for targetDate
+    let matchedSession = null;
+
+    if (batchId || batchCode || batchName) {
+      for (const [k, v] of memoryAttendanceStore.entries()) {
+        if (k.endsWith(`_${targetDate}`)) {
+          const bMatch =
+            (batchId && (v.batch_id === batchId || k.startsWith(`${batchId}_`))) ||
+            (batchCode && (v.batch_code === batchCode || k.startsWith(`${batchCode}_`))) ||
+            (batchName && (v.batch_name?.toLowerCase().includes(batchName.toLowerCase())));
+          if (bMatch) {
+            matchedSession = v;
+            break;
+          }
+        }
+      }
     }
 
-    // Return all records for targetDate
-    const dateEntries = [];
+    // Collect all records across any batch for this date
+    const allRecordsForDate = [];
     for (const [k, v] of memoryAttendanceStore.entries()) {
-      if (k.endsWith(`_${targetDate}`)) {
-        dateEntries.push(v);
+      if (k.endsWith(`_${targetDate}`) && Array.isArray(v.records)) {
+        v.records.forEach((rec) => {
+          if (!allRecordsForDate.some((existing) => existing.admission_no === rec.admission_no)) {
+            allRecordsForDate.push(rec);
+          }
+        });
       }
     }
 
     return res.status(200).json({
       ok: true,
       lastSyncTimestamp,
+      hasData: Boolean(matchedSession || allRecordsForDate.length > 0),
+      records: matchedSession ? matchedSession.records : allRecordsForDate,
+      allRecords: allRecordsForDate,
       date: targetDate,
-      entries: dateEntries,
     });
   }
 

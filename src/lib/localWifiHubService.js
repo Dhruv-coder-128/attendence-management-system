@@ -213,7 +213,7 @@ export async function fetchExistingAttendanceFromHub(batchId, date, hubUrl = nul
 /**
  * Submits roll call attendance to School PC or Supabase cloud
  */
-export async function submitAttendanceToHub(batchId, date, records, hubUrl = null) {
+export async function submitAttendanceToHub(batchId, date, records, hubUrl = null, extraMeta = {}) {
   const targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
   const targetDate = date || new Date().toISOString().split('T')[0];
   const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -231,6 +231,8 @@ export async function submitAttendanceToHub(batchId, date, records, hubUrl = nul
       body: JSON.stringify({
         action: 'attendance',
         batch_id: batchId,
+        batch_code: extraMeta?.batch_code || batchId,
+        batch_name: extraMeta?.batch_name || '',
         date: targetDate,
         records,
       }),
