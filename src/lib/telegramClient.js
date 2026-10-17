@@ -1170,6 +1170,23 @@ export function renderNotificationMessage(type, variables = {}, customTemplates 
  * without requiring external webhooks or public server URLs.
  */
 /**
+ * Deletes any active Telegram webhook on the bot token,
+ * restoring immediate getUpdates polling capability in desktop mode.
+ */
+export async function deleteTelegramWebhook(overrideToken = null) {
+  const schoolSettings = getSchoolTelegramSettings();
+  const envToken = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env.VITE_TELEGRAM_BOT_TOKEN : '';
+  const botToken = (overrideToken || schoolSettings.botToken || envToken || '').trim();
+  if (!botToken) return { ok: false, error: 'Telegram Bot Token is required.' };
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/deleteWebhook`);
+    return await res.json();
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
  * Direct Telegram Bot Poller & Sync Service
  * Enables 100% automated parent linking in Desktop Offline mode or local development
  * without requiring external webhooks or public server URLs.
@@ -1179,7 +1196,8 @@ export function renderNotificationMessage(type, variables = {}, customTemplates 
  * 2. Parent taps START in Telegram -> bot sends student ward confirmation prompt with Inline Keyboard:
  *    [ ✅ Yes, This is my child ] [ ❌ No, Cancel ]
  * 3. Parent taps "Yes" -> bot connects Chat ID in Supabase and activates daily roll call alerts.
- * 4. Bot handles plain /start or /help with clear registration instructions so it never freezes.
+ * 4. Bot handles plain /start or 10-digit phone number entry directly in chat so parents can connect even without deep link!
+ * 5. Auto-clears conflicting webhooks if Telegram returns HTTP 409 Conflict.
  */
 export async function syncTelegramBotUpdates() {
   const schoolSettings = getSchoolTelegramSettings();
@@ -1195,8 +1213,23 @@ export async function syncTelegramBotUpdates() {
   }
 
   try {
-    const res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=-50`);
-    const data = await res.json();
+    let res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=-50`);
+    let data = await res.json();
+
+    // Auto-recover from HTTP 409 Conflict if a webhook was previously active
+    if (!res.ok || !data.ok) {
+      if (data.error_code === 409 || data.description?.includes('webhook is active')) {
+        console.warn('Active Telegram webhook detected, auto-clearing webhook to allow desktop polling...');
+        try {
+          await fetch(`https://api.telegram.org/bot${botToken}/deleteWebhook`);
+          res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=-50`);
+          data = await res.json();
+        } catch (delErr) {
+          console.warn('Auto deleteWebhook error:', delErr);
+        }
+      }
+    }
+
     if (!res.ok || !data.ok) {
       return {
         success: false,
@@ -1280,19 +1313,26 @@ export async function syncTelegramBotUpdates() {
 
         // 1A. CONFIRM LINKING: Parent tapped "✅ Yes, This is my child"
         if (cbData.startsWith('confirm_link:')) {
-          const rawToken = cbData.replace(/^confirm_link:/, '').trim();
-          const cleanToken = rawToken.replace(/^tk_/, '');
+          const rawParam = cbData.replace(/^confirm_link:/, '').trim();
+          let matchedParent = null;
 
-          const matchedParent = parents.find((p) => {
-            if (p.linking_token === rawToken || p.linking_token === cleanToken || p.linking_token === `tk_${cleanToken}`) return true;
-            if (p.id === rawToken || p.id === cleanToken) return true;
-            return false;
-          }) || (() => {
-            const matchedInv = invitations.find((inv) =>
-              inv.token === rawToken || inv.token === cleanToken || inv.token === `tk_${cleanToken}`
-            );
-            return matchedInv ? parents.find((p) => p.id === matchedInv.parent_id) : null;
-          })();
+          if (rawParam.startsWith('parent_')) {
+            const pid = rawParam.replace(/^parent_/, '').trim();
+            matchedParent = parents.find((p) => p.id === pid);
+          } else {
+            const rawToken = rawParam;
+            const cleanToken = rawToken.replace(/^tk_/, '');
+            matchedParent = parents.find((p) => {
+              if (p.linking_token === rawToken || p.linking_token === cleanToken || p.linking_token === `tk_${cleanToken}`) return true;
+              if (p.id === rawToken || p.id === cleanToken) return true;
+              return false;
+            }) || (() => {
+              const matchedInv = invitations.find((inv) =>
+                inv.token === rawToken || inv.token === cleanToken || inv.token === `tk_${cleanToken}`
+              );
+              return matchedInv ? parents.find((p) => p.id === matchedInv.parent_id) : null;
+            })();
+          }
 
           if (matchedParent) {
             // Acknowledge callback immediately to dismiss Telegram button spinner
@@ -1386,7 +1426,7 @@ export async function syncTelegramBotUpdates() {
       }
 
       // =========================================================================
-      // CASE 2: INCOMING MESSAGE (/start or /start tk_... or general message)
+      // CASE 2: INCOMING MESSAGE (/start, /start tk_..., or phone number entry)
       // =========================================================================
       if (update.message?.text) {
         const chatId = String(update.message.chat?.id || '');
@@ -1396,10 +1436,6 @@ export async function syncTelegramBotUpdates() {
         if (msgText.startsWith('/start ') || (msgText.startsWith('/start') && msgText.length > 6)) {
           const rawToken = msgText.replace(/^\/start\s*/, '').trim();
           const cleanToken = rawToken.replace(/^tk_/, '');
-
-          // Check if we already sent confirmation prompt for this exact message/chat
-          const actionKey = `start_prompt_${chatId}_${rawToken}`;
-          if (processedActions[actionKey]) continue;
 
           const matchedParent = parents.find((p) => {
             if (p.linking_token === rawToken || p.linking_token === cleanToken || p.linking_token === `tk_${cleanToken}`) return true;
@@ -1415,7 +1451,7 @@ export async function syncTelegramBotUpdates() {
           if (matchedParent) {
             const wards = getWardsInfo(matchedParent.id);
 
-            // If already verified and linked
+            // If already verified and linked with this chat_id
             if (matchedParent.is_verified && matchedParent.telegram_chat_id === chatId) {
               try {
                 await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -1423,16 +1459,15 @@ export async function syncTelegramBotUpdates() {
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     chat_id: chatId,
-                    text: `🎉 <b>Already Connected!</b>\n\nNamaste <b>${matchedParent.full_name}</b>,\nYour Telegram account is already verified and connected to receive live attendance alerts for:\n\n${wards.html}`,
+                    text: `🎉 <b>Already Connected!</b>\n\nNamaste <b>${matchedParent.full_name}</b>,\nYour Telegram account is verified and active to receive live attendance alerts for:\n\n${wards.html}`,
                     parse_mode: 'HTML',
                   }),
                 });
-                processedActions[actionKey] = true;
               } catch {}
               continue;
             }
 
-            // Present the 2-step verification Inline Keyboard Confirmation prompt!
+            // Always present the 2-step verification prompt if parent is unlinked!
             const confirmKeyboard = {
               inline_keyboard: [
                 [
@@ -1453,7 +1488,6 @@ export async function syncTelegramBotUpdates() {
                   reply_markup: confirmKeyboard,
                 }),
               });
-              processedActions[actionKey] = true;
             } catch (err) {
               console.warn('Failed to send confirmation prompt to parent:', err);
             }
@@ -1465,7 +1499,7 @@ export async function syncTelegramBotUpdates() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   chat_id: chatId,
-                  text: `⚠️ <b>Invitation Not Found or Expired</b>\n\nThe invitation link you opened was not recognized or has expired (links are valid for 7 days).\n\nPlease request a fresh invitation link from the academy office.`,
+                  text: `⚠️ <b>Invitation Not Found or Expired</b>\n\nThe invitation link was not recognized or has expired (links are valid for 7 days).\n\n📲 <b>Quick Recovery:</b> Reply directly to this message with your 10-digit registered mobile number (e.g. <code>9876543210</code>) and we will locate your student record immediately!`,
                   parse_mode: 'HTML',
                 }),
               });
@@ -1474,11 +1508,46 @@ export async function syncTelegramBotUpdates() {
           continue;
         }
 
-        // 2B. Parent opened bot directly: /start or /help or /status without token
-        if (msgText === '/start' || msgText === '/help' || msgText === '/status') {
-          const actionKey = `welcome_${chatId}_${updateId}`;
-          if (processedActions[actionKey]) continue;
+        // 2B. Direct Phone Number Lookup: Parent sent their 10-digit mobile number in chat!
+        const numericDigits = msgText.replace(/[^0-9]/g, '');
+        if (numericDigits.length >= 10 && numericDigits.length <= 13 && !msgText.startsWith('/')) {
+          const phone10 = numericDigits.slice(-10);
+          const matchedByPhone = parents.find((p) => {
+            const pDigits = String(p.phone || '').replace(/[^0-9]/g, '');
+            return pDigits.endsWith(phone10);
+          });
 
+          if (matchedByPhone) {
+            const wards = getWardsInfo(matchedByPhone.id);
+            const confirmKeyboard = {
+              inline_keyboard: [
+                [
+                  { text: '✅ Yes, This is my child', callback_data: `confirm_link:parent_${matchedByPhone.id}` },
+                  { text: '❌ No, Cancel', callback_data: `cancel_link:parent_${matchedByPhone.id}` },
+                ],
+              ],
+            };
+
+            try {
+              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  chat_id: chatId,
+                  text: `👋 <b>Namaste ${matchedByPhone.full_name}!</b>\n\n❓ <b>Guardian Verification Found:</b>\nWe located your registered mobile number (<code>${phone10}</code>) linked to:\n\n${wards.html}\n\n🏫 <b>SMS — Student Management System</b>\n\nIs this student your child / ward? Tap <b>✅ Yes, This is my child</b> below to link your Telegram account and start receiving instant daily attendance alerts:`,
+                  parse_mode: 'HTML',
+                  reply_markup: confirmKeyboard,
+                }),
+              });
+            } catch (err) {
+              console.warn('Failed to send phone lookup confirmation prompt:', err);
+            }
+            continue;
+          }
+        }
+
+        // 2C. Parent opened bot directly: /start or /help or /status without token
+        if (msgText === '/start' || msgText === '/help' || msgText === '/status') {
           // Check if this chat is already a linked parent
           const existingParent = parents.find((p) => p.telegram_chat_id === chatId && p.is_verified);
           if (existingParent) {
@@ -1489,11 +1558,10 @@ export async function syncTelegramBotUpdates() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   chat_id: chatId,
-                  text: `🟢 <b>Connected & Active</b>\n\nNamaste <b>${existingParent.full_name}</b>,\nYour Telegram account is active and connected to receive attendance alerts for:\n\n${wards.html}\n\n<i>SMS — Student Management System</i>`,
+                  text: `🟢 <b>Connected & Active</b>\n\nNamaste <b>${existingParent.full_name}</b>,\nYour Telegram account is active and connected to receive live attendance alerts for:\n\n${wards.html}\n\n<i>SMS — Student Management System</i>`,
                   parse_mode: 'HTML',
                 }),
               });
-              processedActions[actionKey] = true;
             } catch {}
           } else {
             try {
@@ -1502,22 +1570,16 @@ export async function syncTelegramBotUpdates() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   chat_id: chatId,
-                  text: `👋 <b>Namaste! Welcome to SMS — Student Management System</b>\n\nThis official bot provides real-time daily attendance notices and academic updates to verified guardians.\n\n📲 <b>How to Connect:</b>\n1. Open the unique invitation link sent to your registered WhatsApp mobile number.\n2. Tap <b>Start</b> and confirm your child's name.\n3. Your account will automatically activate.\n\n<i>Need assistance? Please contact the academy administrative desk.</i>`,
+                  text: `👋 <b>Namaste! Welcome to SMS — Student Management System</b>\n\nThis official bot provides real-time daily roll call attendance notices and academic updates to verified guardians.\n\n📲 <b>How to Connect:</b>\n1️⃣ Tap the unique invitation link sent to your registered WhatsApp mobile number, OR\n2️⃣ <b>Simply reply to this message with your 10-digit registered mobile number</b> (e.g. <code>9876543210</code>) and we will locate your child's record automatically!\n\n<i>Need assistance? Please contact the academy administrative desk.</i>`,
                   parse_mode: 'HTML',
                 }),
               });
-              processedActions[actionKey] = true;
             } catch {}
           }
           continue;
         }
       }
     }
-
-    // Persist processed actions map to prevent duplicate messages
-    try {
-      sessionStorage.setItem(processedActionsKey, JSON.stringify(processedActions));
-    } catch {}
 
     return {
       success: true,

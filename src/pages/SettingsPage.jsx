@@ -980,6 +980,76 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal })
                 Save Settings
               </Button>
             </div>
+
+            {/* Telegram Webhook & Desktop Polling Gateway Controls */}
+            <div
+              style={{
+                marginTop: '20px',
+                paddingTop: '16px',
+                borderTop: '1px solid var(--border-subtle)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)' }}>
+                  Bot Gateway &amp; Webhook Diagnostics
+                </span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    backgroundColor: telegramStatus.webhook?.url ? 'var(--status-absent-bg)' : 'var(--status-present-bg)',
+                    color: telegramStatus.webhook?.url ? 'var(--status-absent)' : 'var(--status-present)',
+                  }}
+                >
+                  {telegramStatus.webhook?.url ? 'Webhook Mode (Cloud)' : '🟢 Direct Polling Mode (Desktop / Local)'}
+                </span>
+              </div>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '0 0 10px 0' }}>
+                {telegramStatus.webhook?.url
+                  ? `Active Webhook: ${telegramStatus.webhook.url}. (Note: Polling is blocked when a webhook is active. Switch to Direct Polling for desktop use.)`
+                  : 'Desktop app is in Direct Polling mode. Telegram /start tokens and confirmations are received directly.'}
+              </p>
+
+              {webhookNotice && (
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    backgroundColor: webhookNotice.type === 'success' ? 'var(--status-present-bg)' : 'var(--status-absent-bg)',
+                    border: `1px solid ${webhookNotice.type === 'success' ? 'var(--status-present-border)' : 'var(--status-absent-border)'}`,
+                    color: webhookNotice.type === 'success' ? 'var(--status-present)' : 'var(--status-absent)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    marginBottom: '10px',
+                  }}
+                >
+                  {webhookNotice.message}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <Button
+                  variant="gold"
+                  size="sm"
+                  onClick={() => handleSetWebhook('delete')}
+                  disabled={isConfiguringWebhook}
+                  title="Clear any registered Telegram webhook and switch to desktop polling"
+                >
+                  {isConfiguringWebhook ? 'Clearing...' : 'Clear Webhook (Enable Desktop Polling)'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={RefreshCw}
+                  onClick={fetchTelegramStatus}
+                  disabled={telegramStatus.loading}
+                >
+                  {telegramStatus.loading ? 'Checking...' : 'Refresh Gateway Status'}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

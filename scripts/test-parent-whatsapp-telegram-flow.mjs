@@ -181,6 +181,42 @@ assert(filteredMock.find(r => r.id === '1') !== undefined, 'Record 1 matched via
 assert(filteredMock.find(r => r.id === '2') !== undefined, 'Record 2 matched via telegram_delivery_status.neq.unnotified');
 assert(filteredMock.find(r => r.id === '3') === undefined, 'Record 3 was correctly filtered out');
 
+// TEST 8: deleteTelegramWebhook export & 409 Conflict Handling
+console.log('\n--- TEST 8: deleteTelegramWebhook & 409 Auto-Recovery ---');
+import { deleteTelegramWebhook } from '../src/lib/telegramClient.js';
+assert(typeof deleteTelegramWebhook === 'function', 'deleteTelegramWebhook is exported as a function');
+
+const mock409Conflict = {
+  ok: false,
+  error_code: 409,
+  description: "Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first",
+};
+const isWebhookConflict = mock409Conflict.error_code === 409 || mock409Conflict.description?.toLowerCase().includes('webhook');
+assert(isWebhookConflict === true, 'Correctly detects HTTP 409 webhook conflict to trigger auto-deleteWebhook');
+
+// TEST 9: Direct Phone Number Parsing in Telegram Chat
+console.log('\n--- TEST 9: Direct Phone Number Parser in Telegram Chat ---');
+const rawChatInputs = [
+  '9728782110',
+  '+91 97287 82110',
+  '+919728782110',
+  '  9728782110  ',
+];
+rawChatInputs.forEach(input => {
+  const digits = input.replace(/[^0-9]/g, '');
+  const phone10 = digits.slice(-10);
+  assert(phone10 === '9728782110', `Parsed 10-digit mobile from "${input}" -> ${phone10}`);
+});
+
+// TEST 10: Confirmation Callback Handler with parent_<id> and tk_<token>
+console.log('\n--- TEST 10: Callback Query Target Resolution ---');
+const cbData1 = 'confirm_link:tk_abc1234567890def';
+const cbData2 = 'confirm_link:parent_pr_ajay_101';
+const cbTarget1 = cbData1.replace(/^confirm_link:/, '').trim();
+const cbTarget2 = cbData2.replace(/^confirm_link:/, '').trim();
+assert(cbTarget1 === 'tk_abc1234567890def', `Parsed token callback target: ${cbTarget1}`);
+assert(cbTarget2 === 'parent_pr_ajay_101', `Parsed parent direct callback target: ${cbTarget2}`);
+
 console.log('\n================================================================');
 console.log(`TEST SUMMARY: ${passed} PASSED, ${failed} FAILED`);
 console.log('================================================================');

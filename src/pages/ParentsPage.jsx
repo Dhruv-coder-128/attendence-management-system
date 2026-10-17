@@ -25,6 +25,10 @@ import {
   Zap,
   Key,
   RotateCcw,
+  Play,
+  Pause,
+  Square,
+  Check,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -35,6 +39,7 @@ import Select from '../components/common/Select';
 import BulkImportModal from '../components/importer/BulkImportModal';
 import Pagination from '../components/common/Pagination';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { openExternalLink, copyToClipboard } from '../lib/externalOpener';
 import {
   getParentTelegramDeepLink,
   getParentTelegramAppUri,
@@ -87,6 +92,13 @@ export default function ParentsPage({ onRefreshCounts }) {
   const [showManualOverride, setShowManualOverride] = useState(false);
   const [isSyncingTelegram, setIsSyncingTelegram] = useState(false);
   const [seqWaIndex, setSeqWaIndex] = useState(0);
+  // 1-Click WhatsApp Bulk Auto-Sender Engine State
+  const [isAutoSendingWa, setIsAutoSendingWa] = useState(false);
+  const [autoSendPaused, setAutoSendPaused] = useState(false);
+  const [autoSendCurrentIdx, setAutoSendCurrentIdx] = useState(0);
+  const [autoSendSpeed, setAutoSendSpeed] = useState(1200); // 1.2s delay between messages
+  const [sentWaParentIds, setSentWaParentIds] = useState(() => new Set());
+  const autoSendRef = React.useRef({ cancel: false, pause: false });
   const activeBotUsername = useMemo(() => getActiveBotUsername(), []);
 
   // Form State
@@ -548,24 +560,49 @@ export default function ParentsPage({ onRefreshCounts }) {
     setIsLinkingTelegram(true);
     setTelegramLinkMessage(null);
     try {
+      // 1. Unlink Telegram chat ID and reset verification status in Supabase
       const { error } = await supabase
         .from('parents')
         .update({
           telegram_chat_id: null,
           is_verified: false,
           invitation_status: 'uninvited',
+          linking_token: null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', telegramModalParent.id);
 
       if (error) throw error;
 
-      showToast(`Telegram unlinked for ${telegramModalParent.full_name}.`);
+      // 2. Immediately generate a fresh 7-day secure token so the parent can re-link anytime
+      let freshInv = null;
+      try {
+        freshInv = await createSecureParentInvitation(telegramModalParent.id, 'telegram');
+        if (freshInv?.token) {
+          setInvitationsMap((prev) => ({
+            ...prev,
+            [telegramModalParent.id]: {
+              parent_id: telegramModalParent.id,
+              token: freshInv.token,
+              expires_at: freshInv.expiresAt,
+              invitation_channel: 'telegram',
+              invitation_status: 'sent',
+              linking_status: 'unlinked',
+            },
+          }));
+        }
+      } catch (genErr) {
+        console.warn('Re-link fresh token generation warning:', genErr);
+      }
+
+      showToast(`Telegram unlinked for ${telegramModalParent.full_name}. A fresh re-linking invitation is ready!`);
       setTelegramModalParent((prev) => ({
         ...prev,
         telegram_chat_id: null,
         is_verified: false,
-        invitation_status: 'uninvited',
+        invitation_status: freshInv?.token ? 'pending' : 'uninvited',
+        linking_token: freshInv?.token || null,
+        linking_token_expires_at: freshInv?.expiresAt || null,
       }));
       setTelegramChatIdInput('');
       await fetchData();
@@ -648,6 +685,113 @@ export default function ParentsPage({ onRefreshCounts }) {
     } finally {
       setIsDispatchingInvites(false);
     }
+  };
+
+  // 1-Click WhatsApp Bulk Auto-Sender Handlers
+  const handleStartAutoSendWa = async (items) => {
+    const readyItems = (items || bulkInviteResults?.items || []).filter((i) => i.success && i.phone);
+    if (readyItems.length === 0) {
+      alert('No valid guardian phone numbers found to dispatch.');
+      return;
+    }
+
+    setIsAutoSendingWa(true);
+    setAutoSendPaused(false);
+    autoSendRef.current = { cancel: false, pause: false };
+
+    let startIdx = autoSendCurrentIdx;
+    if (startIdx >= readyItems.length) {
+      startIdx = 0;
+      setAutoSendCurrentIdx(0);
+    }
+
+    for (let i = startIdx; i < readyItems.length; i++) {
+      if (autoSendRef.current.cancel) break;
+
+      while (autoSendRef.current.pause) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        if (autoSendRef.current.cancel) break;
+      }
+      if (autoSendRef.current.cancel) break;
+
+      const item = readyItems[i];
+      setAutoSendCurrentIdx(i);
+
+      const parentObj = parents.find((p) => p.id === item.parentId) || { full_name: item.parentName, phone: item.phone };
+      const wardNames = (parentObj.parent_students || [])
+        .map((ps) => ps.students?.full_name)
+        .filter(Boolean)
+        .join(', ');
+      const waShareUrl = getWhatsAppShareUrl(parentObj, wardNames, item.deepLink);
+
+      if (waShareUrl) {
+        try {
+          await openExternalLink(waShareUrl);
+          setSentWaParentIds((prev) => new Set([...prev, item.parentId]));
+        } catch (e) {
+          console.warn('Auto send error for parent:', item.parentName, e);
+        }
+      }
+
+      // Configured pacing delay between opening links
+      await new Promise((resolve) => setTimeout(resolve, autoSendSpeed));
+    }
+
+    if (!autoSendRef.current.cancel && !autoSendRef.current.pause) {
+      showToast(`🎉 1-Click WhatsApp delivery complete! Dispatched ${readyItems.length} invitations.`);
+      setAutoSendCurrentIdx(readyItems.length);
+    }
+    setIsAutoSendingWa(false);
+  };
+
+  const handlePauseAutoSendWa = () => {
+    autoSendRef.current.pause = true;
+    setAutoSendPaused(true);
+  };
+
+  const handleResumeAutoSendWa = () => {
+    autoSendRef.current.pause = false;
+    setAutoSendPaused(false);
+    handleStartAutoSendWa();
+  };
+
+  const handleStopAutoSendWa = () => {
+    autoSendRef.current.cancel = true;
+    setIsAutoSendingWa(false);
+    setAutoSendPaused(false);
+    setAutoSendCurrentIdx(0);
+  };
+
+  const handleCopyBroadcastNumbers = () => {
+    if (!bulkInviteResults?.items) return;
+    const phoneList = bulkInviteResults.items
+      .filter((i) => i.phone)
+      .map((i) => {
+        let p = String(i.phone).replace(/[^0-9]/g, '');
+        if (p.length === 10) p = `+91${p}`;
+        else if (!p.startsWith('+')) p = `+${p}`;
+        return p;
+      });
+    const uniquePhones = Array.from(new Set(phoneList)).join(', ');
+    copyToClipboard(uniquePhones);
+    showToast(`Copied ${phoneList.length} numbers for WhatsApp Broadcast!`);
+  };
+
+  const handleCopyAllWaMessages = () => {
+    if (!bulkInviteResults?.items) return;
+    const readyItems = bulkInviteResults.items.filter((i) => i.success && i.phone);
+    const textBlocks = readyItems
+      .map((item, idx) => {
+        const parentObj = parents.find((p) => p.id === item.parentId) || { full_name: item.parentName, phone: item.phone };
+        const wardNames = (parentObj.parent_students || [])
+          .map((ps) => ps.students?.full_name)
+          .filter(Boolean)
+          .join(', ');
+        return `[${idx + 1}] ${item.parentName} (${item.phone})\nStudent: ${wardNames || 'N/A'}\nTelegram Link: ${item.deepLink}`;
+      })
+      .join('\n\n');
+    copyToClipboard(textBlocks);
+    showToast(`Copied details for ${readyItems.length} guardians to clipboard!`);
   };
 
   return (
@@ -1861,86 +2005,230 @@ export default function ParentsPage({ onRefreshCounts }) {
                 )}
               </div>
 
-              {/* Sequential 1-Click WhatsApp Sender Bar */}
+              {/* ⚡ 1-Click WhatsApp Bulk Auto-Sender Engine */}
               {(() => {
-                const readyItems = bulkInviteResults.items.filter((i) => i.success);
+                const readyItems = bulkInviteResults.items.filter((i) => i.success && i.phone);
                 if (readyItems.length === 0) return null;
-                const safeIdx = Math.min(seqWaIndex, readyItems.length - 1);
-                const currentItem = readyItems[safeIdx];
-                const currentParent = parents.find((p) => p.id === currentItem.parentId) || { full_name: currentItem.parentName, phone: currentItem.phone };
-                const currentWards = (currentParent.parent_students || [])
-                  .map((ps) => ps.students?.full_name)
-                  .filter(Boolean)
-                  .join(', ');
-                const currentWaUrl = getWhatsAppShareUrl(currentParent, currentWards, currentItem.deepLink);
+                const totalReady = readyItems.length;
+                const sentCount = sentWaParentIds.size;
+                const progressPercent = Math.min(100, Math.round(((autoSendCurrentIdx + (isAutoSendingWa ? 1 : 0)) / totalReady) * 100));
+                const currentItem = readyItems[Math.min(autoSendCurrentIdx, totalReady - 1)];
 
                 return (
                   <div
                     style={{
-                      padding: '12px 14px',
-                      backgroundColor: '#f0fdf4',
-                      border: '1px solid #bbf7d0',
-                      borderRadius: '6px',
-                      marginBottom: '14px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '10px',
+                      padding: '16px',
+                      backgroundColor: isAutoSendingWa ? '#f0fdf4' : '#fafafa',
+                      border: `1.5px solid ${isAutoSendingWa ? '#22c55e' : '#e2e8f0'}`,
+                      borderRadius: '8px',
+                      marginBottom: '16px',
+                      boxShadow: isAutoSendingWa ? '0 4px 12px rgba(34,197,94,0.15)' : 'none',
+                      transition: 'all 0.3s ease',
                     }}
                   >
-                    <div>
-                      <div style={{ fontSize: '11px', color: '#166534', fontWeight: 600 }}>
-                        ⚡ Fast Sequential WhatsApp Sender — Parent {safeIdx + 1} of {readyItems.length}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '12px' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span
+                            style={{
+                              backgroundColor: '#25D366',
+                              color: '#fff',
+                              borderRadius: '4px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              letterSpacing: '0.5px',
+                            }}
+                          >
+                            ⚡ 1-CLICK BULK SENDER
+                          </span>
+                          <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)' }}>
+                            Auto-Dispatch WhatsApp Invitations ({totalReady} Guardians)
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>
+                          Dispatches prefilled WhatsApp messages with deep links directly to each phone number hands-free.
+                        </div>
                       </div>
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#14532d', marginTop: '2px' }}>
-                        {currentItem.parentName} ({currentItem.phone})
-                        {currentWards && <span style={{ fontWeight: 400, color: '#166534', marginLeft: '6px' }}>— Ward: {currentWards}</span>}
+
+                      {/* Speed selector */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>Delay:</span>
+                        <select
+                          value={autoSendSpeed}
+                          onChange={(e) => setAutoSendSpeed(Number(e.target.value))}
+                          disabled={isAutoSendingWa}
+                          style={{
+                            fontSize: '11px',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            border: '1px solid var(--border-subtle)',
+                            backgroundColor: '#fff',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <option value={1000}>1.0s (Fast)</option>
+                          <option value={1200}>1.2s (Recommended)</option>
+                          <option value={1500}>1.5s (Safe)</option>
+                          <option value={2000}>2.0s (Gentle)</option>
+                        </select>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <a
-                        href={currentWaUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => {
-                          if (safeIdx < readyItems.length - 1) {
-                            setSeqWaIndex(safeIdx + 1);
-                          }
-                        }}
-                        className="btn"
+
+                    {/* Progress Bar (when running or paused or completed) */}
+                    {(isAutoSendingWa || autoSendPaused || sentCount > 0) && (
+                      <div style={{ marginBottom: '14px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+                          <span style={{ fontWeight: 600, color: isAutoSendingWa ? '#166534' : 'var(--navy-950)' }}>
+                            {isAutoSendingWa
+                              ? `🚀 Auto-sending to parent ${Math.min(autoSendCurrentIdx + 1, totalReady)} of ${totalReady}: ${currentItem?.parentName} (${currentItem?.phone})`
+                              : autoSendPaused
+                              ? `⏸️ Paused at parent ${autoSendCurrentIdx + 1} of ${totalReady}`
+                              : `✅ Finished! Dispatched to ${sentCount} parents.`}
+                          </span>
+                          <span style={{ fontWeight: 700, color: '#166534' }}>{progressPercent}%</span>
+                        </div>
+                        <div style={{ width: '100%', height: '8px', backgroundColor: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                          <div
+                            style={{
+                              width: `${progressPercent}%`,
+                              height: '100%',
+                              backgroundColor: '#22c55e',
+                              transition: 'width 0.3s ease',
+                              backgroundImage: isAutoSendingWa ? 'linear-gradient(45deg, rgba(255,255,255,0.2) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.2) 75%, transparent 75%, transparent)' : 'none',
+                              backgroundSize: '1rem 1rem',
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Action Controls */}
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      {!isAutoSendingWa && !autoSendPaused && (
+                        <button
+                          type="button"
+                          onClick={() => handleStartAutoSendWa(readyItems)}
+                          className="btn"
+                          style={{
+                            backgroundColor: '#25D366',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            fontSize: '13px',
+                            padding: '8px 18px',
+                            borderRadius: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            boxShadow: '0 2px 6px rgba(37,211,102,0.3)',
+                            border: 'none',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <Play size={16} /> ⚡ 1-Click Auto-Send WhatsApp to All ({totalReady} Parents)
+                        </button>
+                      )}
+
+                      {isAutoSendingWa && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={handlePauseAutoSendWa}
+                            className="btn btn-outline"
+                            style={{
+                              borderColor: '#eab308',
+                              color: '#a16207',
+                              fontWeight: 600,
+                              fontSize: '12px',
+                              padding: '6px 14px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <Pause size={14} /> Pause
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleStopAutoSendWa}
+                            className="btn btn-outline"
+                            style={{
+                              borderColor: '#ef4444',
+                              color: '#b91c1c',
+                              fontWeight: 600,
+                              fontSize: '12px',
+                              padding: '6px 14px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <Square size={14} /> Stop Dispatch
+                          </button>
+                        </>
+                      )}
+
+                      {autoSendPaused && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleResumeAutoSendWa(readyItems)}
+                            className="btn"
+                            style={{
+                              backgroundColor: '#25D366',
+                              color: '#ffffff',
+                              fontWeight: 700,
+                              fontSize: '12px',
+                              padding: '6px 14px',
+                              borderRadius: '4px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <Play size={14} /> Resume (Parent #{autoSendCurrentIdx + 1})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleStopAutoSendWa}
+                            className="btn btn-outline"
+                            style={{ fontSize: '12px', padding: '6px 12px' }}
+                          >
+                            <Square size={14} /> Reset
+                          </button>
+                        </>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleCopyBroadcastNumbers}
+                        className="btn btn-outline"
                         style={{
-                          backgroundColor: '#25D366',
-                          color: '#ffffff',
+                          fontSize: '12px',
+                          padding: '6px 12px',
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '6px',
-                          fontWeight: 600,
+                        }}
+                        title="Copy all phone numbers comma-separated for WhatsApp Broadcast"
+                      >
+                        <Copy size={13} /> Copy WhatsApp Broadcast List
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleCopyAllWaMessages}
+                        className="btn btn-outline"
+                        style={{
                           fontSize: '12px',
                           padding: '6px 12px',
-                          borderRadius: '4px',
-                          textDecoration: 'none',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
                         }}
+                        title="Copy all guardian details and invitation links"
                       >
-                        <MessageCircle size={14} /> Send WhatsApp &amp; Next ▶
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => setSeqWaIndex((prev) => Math.max(0, prev - 1))}
-                        disabled={safeIdx === 0}
-                        className="btn btn-outline"
-                        style={{ padding: '6px 10px', fontSize: '11px' }}
-                      >
-                        ◀ Prev
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSeqWaIndex((prev) => Math.min(readyItems.length - 1, prev + 1))}
-                        disabled={safeIdx >= readyItems.length - 1}
-                        className="btn btn-outline"
-                        style={{ padding: '6px 10px', fontSize: '11px' }}
-                      >
-                        Next ▶
+                        <Copy size={13} /> Copy All Messages
                       </button>
                     </div>
                   </div>
@@ -1975,6 +2263,8 @@ export default function ParentsPage({ onRefreshCounts }) {
                     onClick={() => {
                       setBulkInviteResults(null);
                       setSeqWaIndex(0);
+                      setAutoSendCurrentIdx(0);
+                      setSentWaParentIds(new Set());
                     }}
                   >
                     Generate New Batch
@@ -2008,16 +2298,28 @@ export default function ParentsPage({ onRefreshCounts }) {
                         .filter(Boolean)
                         .join(', ');
                       const waShareUrl = getWhatsAppShareUrl(parentObj, wardNames, item.deepLink);
+                      const isDispatched = sentWaParentIds.has(item.parentId);
+                      const isCurrentlyActive = isAutoSendingWa && bulkInviteResults.items.filter((i) => i.success && i.phone)[autoSendCurrentIdx]?.parentId === item.parentId;
 
                       return (
-                        <tr key={item.parentId}>
+                        <tr
+                          key={item.parentId}
+                          style={{
+                            backgroundColor: isCurrentlyActive ? '#f0fdf4' : isDispatched ? '#fcfdfc' : 'transparent',
+                            transition: 'background-color 0.2s',
+                          }}
+                        >
                           <td>
                             <strong>{item.parentName}</strong>
                             {wardNames && <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Ward: {wardNames}</div>}
                           </td>
                           <td style={{ fontFamily: 'var(--font-mono)' }}>{item.phone}</td>
                           <td>
-                            {item.success ? (
+                            {isDispatched ? (
+                              <span style={{ fontSize: '11px', color: '#166534', backgroundColor: '#dcfce7', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                ✓ WhatsApp Sent
+                              </span>
+                            ) : item.success ? (
                               <span style={{ fontSize: '11px', color: 'var(--status-present)', fontWeight: 600 }}>
                                 ✓ Ready (7d)
                               </span>
@@ -2040,7 +2342,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                                       display: 'inline-flex',
                                       alignItems: 'center',
                                       gap: '4px',
-                                      backgroundColor: '#25D366',
+                                      backgroundColor: isDispatched ? '#166534' : '#25D366',
                                       color: '#ffffff',
                                       textDecoration: 'none',
                                       fontWeight: 600,
@@ -2051,7 +2353,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                                     title="Open WhatsApp chat with prefilled invitation message"
                                   >
                                     <MessageCircle size={12} />
-                                    WhatsApp
+                                    {isDispatched ? 'Re-send' : 'WhatsApp'}
                                   </a>
                                 )}
                                 <Button
