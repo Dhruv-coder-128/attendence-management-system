@@ -38,7 +38,14 @@ export default function App() {
   const [isActivationModalOpen, setIsActivationModalOpen] = useState(false);
 
   // Active View / Navigation State
-  const [activePage, setActivePage] = useState('dashboard');
+  // Desktop EXE: Pure School Client (dashboard)
+  // Vercel Web Cloud: Strictly Super Admin SaaS Console (master-portal)
+  const [activePage, setActivePage] = useState(() => {
+    if (!isTauriDesktop()) {
+      return 'master-portal';
+    }
+    return 'dashboard';
+  });
 
   // Live Counts for Sidebar (Derived from Supabase)
   const [counts, setCounts] = useState({
@@ -235,6 +242,8 @@ export default function App() {
   // Secret Developer Portal Shortcut: Ctrl + Shift + D
   useEffect(() => {
     const handleDevKeyDown = (e) => {
+      // In Desktop EXE, shortcut is disabled to keep EXE 100% focused on school management
+      if (isTauriDesktop()) return;
       if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
         e.preventDefault();
         try {
@@ -251,7 +260,7 @@ export default function App() {
   const handleLoginSuccess = (authenticatedUser) => {
     setUser(authenticatedUser);
     loadProfile(authenticatedUser);
-    setActivePage('dashboard');
+    setActivePage(!isTauriDesktop() ? 'master-portal' : 'dashboard');
   };
 
   const handleLogout = async () => {
@@ -265,12 +274,22 @@ export default function App() {
       setSession(null);
       setUser(null);
       setCurrentUserProfile(null);
-      setActivePage('dashboard');
+      setActivePage(!isTauriDesktop() ? 'master-portal' : 'dashboard');
     }
   };
 
-  // Navigation Handler with Notification Read Tracking
+  // Navigation Handler with Notification Read Tracking & Platform Guard
   const handleNavigate = (page) => {
+    // Desktop EXE guard: prevent accessing SaaS console in desktop
+    if (isTauriDesktop() && page === 'master-portal') {
+      setActivePage('dashboard');
+      return;
+    }
+    // Vercel Web guard: keep web strictly on SaaS Master Admin
+    if (!isTauriDesktop() && page !== 'master-portal') {
+      setActivePage('master-portal');
+      return;
+    }
     if (page === 'notifications') {
       try {
         localStorage.setItem('sms_last_viewed_notifications', new Date().toISOString());

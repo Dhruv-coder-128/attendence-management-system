@@ -20,6 +20,9 @@ import {
   CalendarCheck,
   FileSpreadsheet,
   Download,
+  Share2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Badge from '../components/common/Badge';
@@ -40,6 +43,7 @@ import {
   sendVerifiedAttendanceNotice,
   sendBatchAttendanceNotifications,
   TELEGRAM_BOT_USERNAME,
+  getWhatsAppShareUrl,
 } from '../lib/telegramClient';
 
 /**
@@ -74,6 +78,7 @@ export default function AttendancePage({ onRefreshCounts }) {
   const [testChatIdInput, setTestChatIdInput] = useState('');
   const [isLinkingTelegram, setIsLinkingTelegram] = useState(false);
   const [telegramDispatchStatus, setTelegramDispatchStatus] = useState(null);
+  const [showManualLinking, setShowManualLinking] = useState(false);
 
   // View Switcher & Export State
   const [registerMode, setRegisterMode] = useState('daily'); // 'daily' | 'monthly'
@@ -1212,130 +1217,219 @@ export default function AttendancePage({ onRefreshCounts }) {
                   </div>
                 </div>
 
-                {/* Step A: One-Time Deep Link */}
-                <div
-                  style={{
-                    padding: '14px',
-                    backgroundColor: '#ffffff',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '6px',
-                  }}
-                >
-                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <ShieldCheck size={16} color="var(--gold-dark)" />
-                    1. Secure Parent Linking Deep Link
-                  </h4>
-                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px' }}>
-                    To ensure parent privacy, notifications are strictly dispatched only after the guardian verifies their Telegram account.
-                  </p>
+                {/* Clean Connected View vs Streamlined Invitation */}
+                {parent?.is_verified && parent?.telegram_chat_id ? (
+                  /* STATE A: GUARDIAN ALREADY VERIFIED & CONNECTED */
+                  <div
+                    style={{
+                      padding: '18px',
+                      backgroundColor: 'var(--status-present-bg)',
+                      border: '1px solid var(--status-present-border)',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <CheckCircle2 size={20} color="var(--status-present)" />
+                      <div>
+                        <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--status-present)' }}>
+                          Parent Connected &amp; Ready
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                          <strong>{parent.full_name}</strong> is verified to receive live roll call notifications.
+                        </div>
+                      </div>
+                    </div>
 
-                  <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                    <input
-                      type="text"
-                      readOnly
-                      value={deepLinkInfo || 'Please link guardian in Parent Directory to generate token.'}
-                      className="form-input"
-                      style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', flex: 1, backgroundColor: '#f8fafc' }}
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      icon={Copy}
-                      onClick={() => {
-                        if (deepLinkInfo) {
-                          navigator.clipboard.writeText(deepLinkInfo);
-                          showToast('Telegram deep link copied to clipboard!');
-                        }
-                      }}
-                      disabled={!deepLinkInfo}
-                    >
-                      Copy
-                    </Button>
-                    {deepLinkInfo && (
-                      <a
-                        href={deepLinkInfo}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="btn btn-sm btn-outline"
-                        style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 8px' }}
-                        title="Open in Telegram Web / App"
+                    <div style={{ marginTop: '6px' }}>
+                      <Button
+                        variant="primary"
+                        size="md"
+                        icon={Send}
+                        disabled={telegramDispatchStatus?.sending}
+                        onClick={handleDispatchTelegramTest}
+                        style={{ width: '100%', justifyContent: 'center', padding: '10px 16px', fontSize: '13px' }}
                       >
-                        <ExternalLink size={14} />
-                      </a>
+                        {telegramDispatchStatus?.sending ? 'Sending Alert...' : `Dispatch Attendance Alert (${currentStatus})`}
+                      </Button>
+                    </div>
+
+                    {/* Subtle toggle for account reassignment */}
+                    <div style={{ textAlign: 'center', marginTop: '4px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowManualLinking(!showManualLinking)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                          padding: '4px',
+                        }}
+                      >
+                        {showManualLinking ? 'Hide Reconnect Options ▲' : 'Change or reconnect linked account ▼'}
+                      </button>
+                    </div>
+
+                    {/* Collapsible Reconnect / Update Form */}
+                    {showManualLinking && (
+                      <div
+                        style={{
+                          marginTop: '8px',
+                          padding: '12px',
+                          backgroundColor: '#ffffff',
+                          borderRadius: '6px',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                          Update guardian's Telegram numeric Chat ID (Chat ID: {parent.telegram_chat_id})
+                        </div>
+                        <form onSubmit={handleLinkParentTelegram} style={{ display: 'flex', gap: '8px' }}>
+                          <input
+                            type="text"
+                            placeholder="e.g. 5647526932"
+                            value={testChatIdInput}
+                            onChange={(e) => setTestChatIdInput(e.target.value)}
+                            className="form-input"
+                            style={{ flex: 1, fontSize: '12px' }}
+                            required
+                          />
+                          <Button
+                            type="submit"
+                            variant="primary"
+                            size="sm"
+                            disabled={isLinkingTelegram}
+                          >
+                            {isLinkingTelegram ? 'Updating...' : 'Update'}
+                          </Button>
+                        </form>
+                      </div>
                     )}
                   </div>
-                </div>
+                ) : (
+                  /* STATE B: GUARDIAN NOT YET LINKED */
+                  <div
+                    style={{
+                      padding: '18px',
+                      backgroundColor: '#ffffff',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '14px',
+                    }}
+                  >
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: 'var(--navy-950)' }}>
+                        Connect Guardian to Telegram Alerts
+                      </h4>
+                      <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Send an invitation to {parent?.full_name || 'the guardian'}. Once opened, their account connects automatically.
+                      </p>
+                    </div>
 
-                {/* Step B: Manual Chat ID Verification Form */}
-                <div
-                  style={{
-                    padding: '14px',
-                    backgroundColor: '#ffffff',
-                    border: '1px solid var(--border-subtle)',
-                    borderRadius: '6px',
-                  }}
-                >
-                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '4px' }}>
-                    2. Link or Update Telegram Chat ID
-                  </h4>
-                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px' }}>
-                    Enter the parent's Telegram numeric chat identifier (retrieved via Telegram Bot <code>/start</code> or <code>@userinfobot</code>).
-                  </p>
-                  <form onSubmit={handleLinkParentTelegram} style={{ display: 'flex', gap: '8px' }}>
-                    <input
-                      type="text"
-                      placeholder="e.g. 123456789"
-                      value={testChatIdInput}
-                      onChange={(e) => setTestChatIdInput(e.target.value)}
-                      className="form-input"
-                      style={{ flex: 1, fontSize: '12px' }}
-                      required
-                    />
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      size="sm"
-                      icon={CheckCircle2}
-                      disabled={isLinkingTelegram || !parent}
-                    >
-                      {isLinkingTelegram ? 'Linking...' : 'Verify & Link'}
-                    </Button>
-                  </form>
-                </div>
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                      {(() => {
+                        const waUrl = getWhatsAppShareUrl(parent, activeTestStudent.full_name, deepLinkInfo);
+                        return (
+                          <a
+                            href={waUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-sm"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              backgroundColor: '#16a34a',
+                              borderColor: '#16a34a',
+                              color: '#ffffff',
+                              fontWeight: 600,
+                              padding: '8px 14px',
+                              borderRadius: '6px',
+                              textDecoration: 'none',
+                            }}
+                          >
+                            <Share2 size={14} />
+                            <span>Invite via WhatsApp</span>
+                          </a>
+                        );
+                      })()}
 
-                {/* Step C: Safe Test Workflow Dispatch */}
-                <div
-                  style={{
-                    padding: '14px',
-                    backgroundColor: parent?.is_verified ? 'var(--status-present-bg)' : '#f8fafc',
-                    border: parent?.is_verified ? '1px solid var(--status-present-border)' : '1px solid var(--border-subtle)',
-                    borderRadius: '6px',
-                  }}
-                >
-                  <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '4px' }}>
-                    3. Dispatch Roll Call Telegram Notice
-                  </h4>
-                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                    Dispatches official notification for <strong>{activeTestStudent.full_name}</strong> to their verified parent.
-                  </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        icon={Copy}
+                        onClick={() => {
+                          if (deepLinkInfo) {
+                            navigator.clipboard.writeText(deepLinkInfo);
+                            showToast('Telegram invite link copied to clipboard!');
+                          }
+                        }}
+                        disabled={!deepLinkInfo}
+                      >
+                        Copy Link
+                      </Button>
+                    </div>
 
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <Button
-                      variant={parent?.is_verified ? 'gold' : 'outline'}
-                      size="sm"
-                      icon={Send}
-                      disabled={!parent?.is_verified || telegramDispatchStatus?.sending}
-                      onClick={handleDispatchTelegramTest}
-                    >
-                      {telegramDispatchStatus?.sending ? 'Sending Alert...' : 'Dispatch Verified Alert'}
-                    </Button>
+                    {/* Collapsible Manual Setup */}
+                    <div style={{ marginTop: '4px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowManualLinking(!showManualLinking)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                          padding: 0,
+                        }}
+                      >
+                        {showManualLinking ? 'Hide Manual Setup ▲' : 'Manual Setup (Enter Chat ID) ▼'}
+                      </button>
 
-                    {!parent?.is_verified && (
-                      <span style={{ fontSize: '11px', color: 'var(--status-absent)' }}>
-                        Alerts disabled until parent is verified.
-                      </span>
-                    )}
+                      {showManualLinking && (
+                        <div
+                          style={{
+                            marginTop: '10px',
+                            padding: '12px',
+                            backgroundColor: '#f8fafc',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-subtle)',
+                          }}
+                        >
+                          <form onSubmit={handleLinkParentTelegram} style={{ display: 'flex', gap: '8px' }}>
+                            <input
+                              type="text"
+                              placeholder="e.g. 5647526932"
+                              value={testChatIdInput}
+                              onChange={(e) => setTestChatIdInput(e.target.value)}
+                              className="form-input"
+                              style={{ flex: 1, fontSize: '12px' }}
+                              required
+                            />
+                            <Button
+                              type="submit"
+                              variant="primary"
+                              size="sm"
+                              icon={CheckCircle2}
+                              disabled={isLinkingTelegram || !parent}
+                            >
+                              {isLinkingTelegram ? 'Linking...' : 'Verify & Link'}
+                            </Button>
+                          </form>
+                        </div>
+                      )}
+                    </div>
                   </div>
+                )}
 
                   {telegramDispatchStatus && (
                     <div
@@ -1361,7 +1455,6 @@ export default function AttendancePage({ onRefreshCounts }) {
                     </div>
                   )}
                 </div>
-              </div>
             );
           })()}
         </Modal>

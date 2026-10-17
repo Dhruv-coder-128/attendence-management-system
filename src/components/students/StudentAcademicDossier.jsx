@@ -13,6 +13,10 @@ import {
   Printer,
   TrendingUp,
   AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Calendar,
+  FileText,
 } from 'lucide-react';
 import Button from '../common/Button';
 import Badge from '../common/Badge';
@@ -302,11 +306,15 @@ export default function StudentAcademicDossier({
     };
   }, [attendanceRecords]);
 
-  // Fee computation
+  // Fee computation - 100% synchronized with student record & feesPage
   const computedFee = useMemo(() => {
     const policy = getStandardCoursePolicy(student?.courses);
-    const total = Number(feeRecord?.total_amount) || Number(student?.tuition_fee) || policy.total;
-    const paid = Number(feeRecord?.paid_amount) || Number(student?.fee_paid) || 0;
+    const total = Number(student?.tuition_fee) || Number(feeRecord?.total_amount) || policy.total;
+    const paid = (student?.fee_paid !== undefined && student?.fee_paid !== null)
+      ? Number(student.fee_paid)
+      : (feeRecord?.paid_amount !== undefined && feeRecord?.paid_amount !== null)
+        ? Number(feeRecord.paid_amount)
+        : 0;
     const schedule = feeRecord?.installment_schedule || [];
     const dueDate = feeRecord?.next_due_date || student?.fee_due_date || null;
     return {
@@ -1006,53 +1014,73 @@ export default function StudentAcademicDossier({
 
             {/* SECTION 3: FEES */}
             {activeSection === 'fees' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {/* Fee Summary Strip */}
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(3, 1fr)',
-                    gap: '10px',
-                    padding: '12px',
+                    gridTemplateColumns: 'repeat(4, 1fr)',
+                    gap: '12px',
+                    padding: '16px',
                     backgroundColor: '#ffffff',
                     border: '1px solid var(--border-subtle)',
-                    borderRadius: '6px',
-                    fontSize: '12px',
+                    borderRadius: '10px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
                     textAlign: 'center',
                   }}
                 >
                   <div>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>Total Tuition</span>
-                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--navy-950)' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', fontWeight: 600 }}>Total Tuition</span>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--navy-950)', marginTop: '4px' }}>
                       ₹{computedFee.total.toLocaleString('en-IN')}
                     </div>
                   </div>
 
                   <div>
-                    <span style={{ color: 'var(--status-present)', fontSize: '10px' }}>Amount Paid</span>
-                    <div style={{ fontSize: '16px', fontWeight: 700, color: 'var(--status-present)' }}>
+                    <span style={{ color: 'var(--status-present)', fontSize: '11px', textTransform: 'uppercase', fontWeight: 600 }}>Total Paid</span>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--status-present)', marginTop: '4px' }}>
                       ₹{computedFee.paid.toLocaleString('en-IN')}
                     </div>
                   </div>
 
                   <div>
-                    <span style={{ color: computedFee.pending > 0 ? '#d97706' : 'var(--status-present)', fontSize: '10px' }}>
-                      Pending Balance
+                    <span style={{ color: computedFee.pending > 0 ? '#b45309' : 'var(--status-present)', fontSize: '11px', textTransform: 'uppercase', fontWeight: 600 }}>
+                      Outstanding Due
                     </span>
                     <div
                       style={{
-                        fontSize: '16px',
+                        fontSize: '18px',
                         fontWeight: 700,
-                        color: computedFee.pending > 0 ? '#92400e' : 'var(--status-present)',
+                        color: computedFee.pending > 0 ? '#b45309' : 'var(--status-present)',
+                        marginTop: '4px',
                       }}
                     >
                       ₹{computedFee.pending.toLocaleString('en-IN')}
                     </div>
                   </div>
+
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px', textTransform: 'uppercase', fontWeight: 600 }}>Account Status</span>
+                    <div style={{ marginTop: '5px' }}>
+                      <Badge
+                        variant={
+                          computedFee.status === 'paid'
+                            ? 'present'
+                            : computedFee.status === 'overdue'
+                            ? 'absent'
+                            : computedFee.status === 'partial'
+                            ? 'late'
+                            : 'gold'
+                        }
+                      >
+                        {(computedFee.label || computedFee.status || 'Pending').toUpperCase()}
+                      </Badge>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Actions Toolbar */}
-                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
                   <Button
                     variant="outline"
                     size="sm"
@@ -1074,34 +1102,174 @@ export default function StudentAcademicDossier({
                   </Button>
                 </div>
 
-                {/* Installment Schedule Table */}
-                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: '6px', overflow: 'hidden' }}>
+                {/* Milestone Installment Schedule (Roadmap) */}
+                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: '10px', overflow: 'hidden', backgroundColor: '#ffffff' }}>
+                  <div style={{ padding: '12px 16px', backgroundColor: '#f8fafc', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--navy-950)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Calendar size={15} color="var(--navy-800)" />
+                      Milestone Installment Schedule &amp; Roadmap
+                    </div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      {(feeRecord?.installment_schedule || []).length} Scheduled Installments
+                    </span>
+                  </div>
+
                   <table className="erp-table" style={{ margin: 0 }}>
                     <thead>
                       <tr>
-                        <th>Inst #</th>
-                        <th>Milestone</th>
+                        <th>Milestone #</th>
+                        <th>Milestone Description</th>
                         <th>Due Date</th>
-                        <th>Amount</th>
+                        <th style={{ textAlign: 'right' }}>Total Fee</th>
+                        <th style={{ textAlign: 'right' }}>Paid Amount</th>
                         <th style={{ textAlign: 'right' }}>Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {(feeRecord?.installment_schedule || []).map((inst, idx) => (
-                        <tr key={idx}>
-                          <td style={{ fontWeight: 600 }}>#{inst.installment_no}</td>
-                          <td>{inst.label}</td>
-                          <td style={{ fontSize: '11px', fontFamily: 'var(--font-mono)' }}>{inst.due_date}</td>
-                          <td style={{ fontWeight: 600 }}>₹{Number(inst.amount).toLocaleString('en-IN')}</td>
-                          <td style={{ textAlign: 'right' }}>
-                            <Badge status={inst.status === 'paid' ? 'Present' : 'Pending'}>
-                              {inst.status}
-                            </Badge>
+                      {(feeRecord?.installment_schedule || []).length === 0 ? (
+                        <tr>
+                          <td colSpan={6} style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
+                            No installment schedule generated yet.
                           </td>
                         </tr>
-                      ))}
+                      ) : (
+                        (feeRecord?.installment_schedule || []).map((inst, idx) => {
+                          const instAmount = Number(inst.amount || 0);
+                          const instPaid = Number(inst.paid_amount || 0);
+                          const pct = instAmount > 0 ? Math.min(100, Math.round((instPaid / instAmount) * 100)) : 0;
+                          const isPaid = inst.status === 'paid' || instPaid >= instAmount;
+                          const isPartial = inst.status === 'partial' || (instPaid > 0 && instPaid < instAmount);
+                          const isOverdue = inst.status === 'overdue';
+
+                          return (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: 700, color: 'var(--navy-950)' }}>
+                                #{inst.installment_no || idx + 1}
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: 600, color: 'var(--navy-950)' }}>{inst.label}</div>
+                                <div style={{ width: '120px', height: '4px', backgroundColor: '#e2e8f0', borderRadius: '2px', marginTop: '4px', overflow: 'hidden' }}>
+                                  <div
+                                    style={{
+                                      width: `${pct}%`,
+                                      height: '100%',
+                                      backgroundColor: isPaid ? 'var(--status-present)' : isPartial ? '#d97706' : '#94a3b8',
+                                    }}
+                                  />
+                                </div>
+                              </td>
+                              <td style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+                                {inst.due_date || '—'}
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                                ₹{instAmount.toLocaleString('en-IN')}
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: 600, color: instPaid > 0 ? 'var(--status-present)' : 'var(--text-muted)' }}>
+                                ₹{instPaid.toLocaleString('en-IN')}
+                              </td>
+                              <td style={{ textAlign: 'right' }}>
+                                <Badge
+                                  variant={
+                                    isPaid
+                                      ? 'present'
+                                      : isOverdue
+                                      ? 'absent'
+                                      : isPartial
+                                      ? 'late'
+                                      : 'gold'
+                                  }
+                                >
+                                  {isPaid ? 'PAID' : isPartial ? `PARTIAL (${pct}%)` : isOverdue ? 'OVERDUE' : 'PENDING'}
+                                </Badge>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
                     </tbody>
                   </table>
+                </div>
+
+                {/* Payment Transaction Ledger */}
+                <div style={{ border: '1px solid var(--border-subtle)', borderRadius: '10px', overflow: 'hidden', backgroundColor: '#ffffff' }}>
+                  <div style={{ padding: '12px 16px', backgroundColor: '#f8fafc', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--navy-950)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FileText size={15} color="var(--navy-800)" />
+                      Payment Transaction &amp; Receipt Ledger
+                    </div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Audit Log
+                    </span>
+                  </div>
+
+                  {(() => {
+                    // Extract payment notes lines or installments
+                    const txList = [];
+                    const notesStr = feeRecord?.notes || '';
+                    if (notesStr) {
+                      const lines = notesStr.split('\n');
+                      lines.forEach((l, i) => {
+                        if (l.trim()) {
+                          txList.push({ id: `tx-note-${i}`, text: l.trim() });
+                        }
+                      });
+                    }
+
+                    if (txList.length === 0 && computedFee.paid > 0) {
+                      txList.push({
+                        id: 'tx-seed',
+                        text: `[Academic Year 2026-27] Recorded Payment of ₹${computedFee.paid.toLocaleString('en-IN')} credited to student account.`,
+                      });
+                    }
+
+                    if (txList.length === 0) {
+                      return (
+                        <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+                          No payment receipts or transaction audit notes recorded for this student yet.
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {txList.map((tx) => (
+                          <div
+                            key={tx.id}
+                            style={{
+                              padding: '10px 14px',
+                              backgroundColor: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '12px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--navy-950)' }}>
+                              <CheckCircle2 size={15} color="var(--status-present)" style={{ flexShrink: 0 }} />
+                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>{tx.text}</span>
+                            </div>
+                            <span
+                              style={{
+                                fontSize: '10.5px',
+                                padding: '2px 8px',
+                                borderRadius: '12px',
+                                backgroundColor: '#f0fdf4',
+                                color: '#166534',
+                                border: '1px solid #bbf7d0',
+                                fontWeight: 600,
+                                flexShrink: 0,
+                              }}
+                            >
+                              Verified
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}

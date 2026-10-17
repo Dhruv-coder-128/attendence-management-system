@@ -179,8 +179,9 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
         }
       });
 
-      // Hydrate all logs so linked_guardian is ALWAYS set
-      const hydratedLogs = (rawLogs || []).map((log) => {
+      // Hydrate all logs so linked_guardian is ALWAYS set, filtering strictly for student roll calls
+      const validRollCallLogs = (rawLogs || []).filter((log) => Boolean(log && log.student_id));
+      const hydratedLogs = validRollCallLogs.map((log) => {
         const st = log.students || studentMap.get(log.student_id);
         const resolvedParent =
           log.students?.parent_students?.[0]?.parents ||
@@ -1070,6 +1071,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
           </div>
 
           <DataTable
+            key="table-live-roll-call"
             columns={dispatchColumns}
             data={filteredDispatchLogs}
             searchPlaceholder="Search by student, admission no, or guardian..."
@@ -1098,6 +1100,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
           </div>
 
           <DataTable
+            key="table-outbox-broadcast"
             columns={broadcastColumns}
             data={notifications}
             searchPlaceholder="Search past broadcast dispatches..."

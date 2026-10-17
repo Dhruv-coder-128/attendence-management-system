@@ -153,39 +153,22 @@ export default function Sidebar({
     },
   ];
 
-  // SaaS Developer Console is accessible to the system developer, master owner,
-  // institutional administrators, or on web cloud deployments (e.g. Vercel)
-  const isDevAuthorized =
-    isPersonalDev ||
-    (user?.email || '').trim().toLowerCase() === 'dushah2007@gmail.com' ||
-    (user?.email || '').trim().toLowerCase().includes('dhruv') ||
-    (user?.email || '').trim().toLowerCase().includes('admin') ||
-    (currentUserProfile?.role || '').toLowerCase() === 'administrator' ||
-    (currentUserProfile?.role || '').toLowerCase() === 'admin' ||
-    (currentUserProfile?.role || '').toLowerCase() === 'owner' ||
-    (user?.user_metadata?.role || '').toLowerCase() === 'administrator' ||
-    (typeof window !== 'undefined' && sessionStorage.getItem('sms_dev_console_unlocked') === 'true') ||
-    (typeof window !== 'undefined' && localStorage.getItem('sms_is_master_admin') === 'true') ||
-    !isTauriDesktop();
+  const isDesktop = isTauriDesktop();
 
-  if (isDevAuthorized) {
-    allNavItems.push({
-      id: 'master-portal',
-      label: 'SaaS Console',
-      icon: ShieldAlert,
-      badge: 'Dev',
-      permission: null,
-    });
-  }
-
-  // Keep all 9 operational modules visible for all school staff.
-  // SaaS Developer Console is strictly restricted to verified developer account.
-  const visibleNavItems = allNavItems.filter((item) => {
-    if (item.id === 'master-portal') {
-      return isDevAuthorized;
-    }
-    return true;
-  });
+  // Strict Platform Architecture Split:
+  // 1. Desktop EXE (isDesktop): Pure School ERP Client Only. Zero SaaS Master Console.
+  // 2. Vercel Web (!isDesktop): Pure SaaS Master Admin & License Management Portal for Developer/Owner.
+  const visibleNavItems = !isDesktop
+    ? [
+        {
+          id: 'master-portal',
+          label: 'SaaS Master Console',
+          icon: ShieldAlert,
+          badge: 'Dev',
+          permission: null,
+        },
+      ]
+    : allNavItems;
 
   const handleNavClick = (id) => {
     onNavigate(id);

@@ -1063,8 +1063,8 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
       {/* Staff & Role-Based Access Control Section */}
       <UsersManagement currentUserProfile={currentUserProfile} />
 
-      {/* SaaS Multi-School Admin & Cloud Master Portal Section */}
-      {onNavigate && (
+      {/* SaaS Multi-School Admin & Cloud Master Portal Section (Vercel Web Only) */}
+      {!isTauriDesktop() && onNavigate && (
         <div
           className="card"
           style={{

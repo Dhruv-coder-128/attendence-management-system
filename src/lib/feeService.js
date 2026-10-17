@@ -198,40 +198,104 @@ export async function getStudentFeeRecord(student, course) {
       .from('student_fees')
       .select('*')
       .eq('student_id', student.id)
-      .maybeSingle();
+      .order('updated_at', { ascending: false });
 
-    if (!error && data) {
-      // Validate or recalculate status
-      const schedule = Array.isArray(data.installment_schedule) ? data.installment_schedule : defaultSchedule;
-      const computed = computeFeeStatus(
-        Number(data.total_amount),
-        Number(data.paid_amount),
-        schedule,
-        data.next_due_date
-      );
+    const latestFee = Array.isArray(data) ? data[0] : (data || null);
+
+    if (!error && latestFee) {
+      // Authoritative reconciliation: if student table has updated fee_paid, honor it
+      const totalAmount = Number(latestFee.total_amount) || Number(student.tuition_fee) || defaultTotal;
+      const paidAmount = (student.fee_paid !== undefined && student.fee_paid !== null)
+        ? Number(student.fee_paid)
+        : Number(latestFee.paid_amount || 0);
+
+      const pendingAmount = Math.max(0, totalAmount - paidAmount);
+
+      // Reconcile installment schedule progressively with actual paidAmount
+      const rawSchedule = Array.isArray(latestFee.installment_schedule) && latestFee.installment_schedule.length > 0
+        ? latestFee.installment_schedule
+        : defaultSchedule;
+
+      let remainingCredit = paidAmount;
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      const schedule = rawSchedule.map((inst) => {
+        const instTotal = Number(inst.amount || 0);
+        const instPaid = Math.min(instTotal, remainingCredit);
+        remainingCredit = Math.max(0, remainingCredit - instPaid);
+
+        let instStatus = 'pending';
+        if (instPaid >= instTotal && instTotal > 0) {
+          instStatus = 'paid';
+        } else if (instPaid > 0) {
+          instStatus = 'partial';
+        } else if (inst.due_date && inst.due_date < todayStr) {
+          instStatus = 'overdue';
+        }
+
+        return {
+          ...inst,
+          amount: instTotal,
+          paid_amount: instPaid,
+          status: instStatus,
+        };
+      });
+
+      const nextPending = schedule.find((i) => i.status !== 'paid');
+      const nextDueDate = nextPending ? nextPending.due_date : latestFee.next_due_date || student.fee_due_date;
+      const computed = computeFeeStatus(totalAmount, paidAmount, schedule, nextDueDate);
 
       return {
-        ...data,
-        total_amount: Number(data.total_amount),
-        paid_amount: Number(data.paid_amount),
-        pending_amount: Math.max(0, Number(data.total_amount) - Number(data.paid_amount)),
+        ...latestFee,
+        total_amount: totalAmount,
+        paid_amount: paidAmount,
+        pending_amount: pendingAmount,
         installment_schedule: schedule,
+        next_due_date: nextDueDate,
         status: computed.status,
       };
     }
 
     // Check if student table has convenience columns
-    if (student.tuition_fee) {
-      const total = Number(student.tuition_fee);
+    if (student.tuition_fee || student.fee_paid !== undefined) {
+      const total = Number(student.tuition_fee) || defaultTotal;
       const paid = Number(student.fee_paid || 0);
-      const computed = computeFeeStatus(total, paid, defaultSchedule, student.fee_due_date);
+      let remainingCredit = paid;
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      const schedule = defaultSchedule.map((inst) => {
+        const instTotal = Number(inst.amount || 0);
+        const instPaid = Math.min(instTotal, remainingCredit);
+        remainingCredit = Math.max(0, remainingCredit - instPaid);
+
+        let instStatus = 'pending';
+        if (instPaid >= instTotal && instTotal > 0) {
+          instStatus = 'paid';
+        } else if (instPaid > 0) {
+          instStatus = 'partial';
+        } else if (inst.due_date && inst.due_date < todayStr) {
+          instStatus = 'overdue';
+        }
+
+        return {
+          ...inst,
+          amount: instTotal,
+          paid_amount: instPaid,
+          status: instStatus,
+        };
+      });
+
+      const nextPending = schedule.find((i) => i.status !== 'paid');
+      const nextDueDate = nextPending ? nextPending.due_date : (student.fee_due_date || firstDueDate);
+      const computed = computeFeeStatus(total, paid, schedule, nextDueDate);
       return {
         ...defaultRecord,
         total_amount: total,
         paid_amount: paid,
         pending_amount: Math.max(0, total - paid),
+        installment_schedule: schedule,
         status: computed.status,
-        next_due_date: student.fee_due_date || firstDueDate,
+        next_due_date: nextDueDate,
       };
     }
 
@@ -294,10 +358,10 @@ export async function recordFeePayment(param1, ...rest) {
           .from('student_fees')
           .select('*')
           .eq('student_id', studentId)
-          .maybeSingle(),
+          .order('updated_at', { ascending: false }),
       ]);
       studentData = stRes.data;
-      dbFeeRecord = feeRes.data;
+      dbFeeRecord = Array.isArray(feeRes.data) ? feeRes.data[0] : feeRes.data;
     } catch (e) {
       console.warn('Error fetching latest student fee context in recordFeePayment:', e);
     }
