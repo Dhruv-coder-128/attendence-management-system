@@ -376,6 +376,250 @@ export async function sendDirectTelegramMessage(botToken, chatId, text, parseMod
 }
 
 /**
+ * Sends media files (Photos, PDFs/Documents, Videos) to Telegram Bot API
+ */
+export async function sendDirectTelegramMedia(botToken, chatId, {
+  file,
+  fileType = 'document', // 'photo', 'document', 'video'
+  fileName = '',
+  caption = '',
+  parseMode = 'Markdown',
+}) {
+  if (!botToken || !chatId) {
+    return { ok: false, error: 'Bot token and Chat ID are required.' };
+  }
+  if (!file) {
+    return { ok: false, error: 'Media file is required.' };
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('chat_id', chatId);
+
+    // Clean caption and add if present
+    if (caption) {
+      formData.append('caption', caption);
+      if (parseMode) {
+        formData.append('parse_mode', parseMode);
+      }
+    }
+
+    let endpoint = 'sendDocument';
+    const cleanType = String(fileType || '').toLowerCase();
+
+    if (cleanType.includes('image') || cleanType === 'photo' || cleanType === 'pic') {
+      endpoint = 'sendPhoto';
+      formData.append('photo', file, fileName || 'broadcast_image.jpg');
+    } else if (cleanType.includes('video') || cleanType === 'mp4') {
+      endpoint = 'sendVideo';
+      formData.append('video', file, fileName || 'broadcast_video.mp4');
+    } else {
+      endpoint = 'sendDocument';
+      formData.append('document', file, fileName || 'announcement.pdf');
+    }
+
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/${endpoint}`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      return { ok: true, messageId: data.result?.message_id };
+    }
+
+    // Resilient fallback: if Markdown entity parsing failed, retry with plain text caption
+    if (data.description && (data.description.includes("can't parse entities") || data.description.includes('ENTITY'))) {
+      const retryForm = new FormData();
+      retryForm.append('chat_id', chatId);
+      if (caption) {
+        retryForm.append('caption', caption.replace(/[*_`\[\]]/g, ''));
+      }
+      if (endpoint === 'sendPhoto') {
+        retryForm.append('photo', file, fileName || 'broadcast_image.jpg');
+      } else if (endpoint === 'sendVideo') {
+        retryForm.append('video', file, fileName || 'broadcast_video.mp4');
+      } else {
+        retryForm.append('document', file, fileName || 'announcement.pdf');
+      }
+
+      const retryRes = await fetch(`https://api.telegram.org/bot${botToken}/${endpoint}`, {
+        method: 'POST',
+        body: retryForm,
+      });
+      const retryData = await retryRes.json();
+      if (retryRes.ok && retryData.ok) {
+        return { ok: true, messageId: retryData.result?.message_id };
+      }
+    }
+
+    return { ok: false, error: data.description || `HTTP ${res.status}` };
+  } catch (err) {
+    return { ok: false, error: err.message || 'Network error reaching Telegram API' };
+  }
+}
+
+/**
+ * Dispatches a batch administrative broadcast notification with optional media attachment
+ * to verified guardians via Telegram Bot API.
+ */
+export async function sendBatchBroadcastNotification({
+  title,
+  message,
+  category = 'Academic',
+  audience = 'All Registered Academy Students',
+  mediaFile = null,
+  mediaType = null,
+  mediaName = '',
+  onProgress = null,
+}) {
+  const schoolSettings = getSchoolTelegramSettings();
+  const botToken = schoolSettings.botToken || TELEGRAM_BOT_TOKEN;
+
+  if (!botToken) {
+    return {
+      success: false,
+      error: 'Telegram Bot Token is not configured. Please enter your Bot Token in Settings.',
+      totalRecipients: 0,
+      deliveredCount: 0,
+    };
+  }
+
+  // 1. Fetch all parents and students to resolve audience targets
+  let targetParents = [];
+  try {
+    const { data: allParents } = await supabase
+      .from('parents')
+      .select('id, full_name, phone, telegram_chat_id, is_verified, admission_no, student_id');
+
+    const verifiedParents = (allParents || []).filter(
+      (p) => p.is_verified && p.telegram_chat_id && String(p.telegram_chat_id).trim().length > 0
+    );
+
+    if (verifiedParents.length === 0) {
+      return {
+        success: false,
+        error: 'No verified parents with linked Telegram Chat IDs found in the system. Please link parents first.',
+        totalRecipients: 0,
+        deliveredCount: 0,
+      };
+    }
+
+    // Filter by audience scope if specific
+    if (audience.includes('Absentee')) {
+      // Find today's absentee students
+      const today = new Date().toISOString().split('T')[0];
+      const { data: absAtt } = await supabase
+        .from('attendance')
+        .select('student_id')
+        .eq('date', today)
+        .eq('status', 'Absent');
+
+      const absentStudentIds = new Set((absAtt || []).map((a) => a.student_id));
+      targetParents = verifiedParents.filter(
+        (p) => p.student_id && absentStudentIds.has(p.student_id)
+      );
+      if (targetParents.length === 0) {
+        // Fallback to all verified parents if no absentees marked today
+        targetParents = verifiedParents;
+      }
+    } else {
+      targetParents = verifiedParents;
+    }
+  } catch (dbErr) {
+    return {
+      success: false,
+      error: `Failed to query database: ${dbErr.message}`,
+      totalRecipients: 0,
+      deliveredCount: 0,
+    };
+  }
+
+  // Deduplicate target guardians by telegram_chat_id
+  const seenChats = new Set();
+  const uniqueParents = [];
+  targetParents.forEach((p) => {
+    const cid = String(p.telegram_chat_id).trim();
+    if (cid && !seenChats.has(cid)) {
+      seenChats.add(cid);
+      uniqueParents.push(p);
+    }
+  });
+
+  const total = uniqueParents.length;
+  if (total === 0) {
+    return {
+      success: false,
+      error: 'No valid recipient Chat IDs found for this broadcast.',
+      totalRecipients: 0,
+      deliveredCount: 0,
+    };
+  }
+
+  const schoolName = schoolSettings.botName || 'SMS — Student Management System';
+  const formattedBroadcastText = `📢 *${title}*\n_${schoolName} • ${category}_\n\n${message}\n\n━━━━━━━━━━━━━━━━━━━━\n_Sent to verified guardians via SMS Academy Gateway_`;
+
+  let deliveredCount = 0;
+  let failedCount = 0;
+  const errors = [];
+
+  for (let i = 0; i < total; i++) {
+    const parent = uniqueParents[i];
+    const chatId = parent.telegram_chat_id;
+
+    if (onProgress) {
+      onProgress({
+        current: i + 1,
+        total,
+        parentName: parent.full_name || 'Guardian',
+      });
+    }
+
+    try {
+      let res;
+      if (mediaFile && mediaType) {
+        res = await sendDirectTelegramMedia(botToken, chatId, {
+          file: mediaFile,
+          fileType: mediaType,
+          fileName: mediaName,
+          caption: formattedBroadcastText,
+          parseMode: 'Markdown',
+        });
+      } else {
+        res = await sendDirectTelegramMessage(botToken, chatId, formattedBroadcastText, 'Markdown');
+        if (!res.ok && res.error && res.error.includes("can't parse entities")) {
+          const plain = `📢 ${title}\n${schoolName} • ${category}\n\n${message}\n\nSent to verified guardians via SMS Academy Gateway`;
+          res = await sendDirectTelegramMessage(botToken, chatId, plain, '');
+        }
+      }
+
+      if (res.ok) {
+        deliveredCount++;
+      } else {
+        failedCount++;
+        errors.push(`${parent.full_name || chatId}: ${res.error}`);
+      }
+    } catch (err) {
+      failedCount++;
+      errors.push(`${parent.full_name || chatId}: ${err.message}`);
+    }
+
+    // Throttle to respect Telegram Bot API limits (max 30 msgs/sec overall)
+    if (i < total - 1) {
+      await new Promise((r) => setTimeout(r, 120));
+    }
+  }
+
+  return {
+    success: deliveredCount > 0,
+    totalRecipients: total,
+    deliveredCount,
+    failedCount,
+    errors,
+  };
+}
+
+/**
  * Dispatches one-click attendance notifications for an entire batch.
  * Supports both cloud serverless backend and direct client-side desktop execution.
  */

@@ -4,10 +4,17 @@ import { getContactDeveloperLinks, getStoredLicense } from '../../lib/licenseSer
 import { openExternalLink, copyToClipboard } from '../../lib/externalOpener';
 import SchoolActivationModal from './SchoolActivationModal';
 
-export default function TrialExpiredLockout({ onReactivated }) {
+export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
   const [showActivationModal, setShowActivationModal] = useState(false);
   const license = getStoredLicense();
-  const contactLinks = getContactDeveloperLinks();
+  const contactLinks = getContactDeveloperLinks(licenseStatus?.developerContact || license?.developerContact);
+
+  const isSuspendedOrRevoked =
+    licenseStatus?.status === 'suspended' ||
+    licenseStatus?.status === 'revoked' ||
+    licenseStatus?.status === 'locked' ||
+    license?.status === 'suspended' ||
+    license?.status === 'revoked';
 
   return (
     <div
@@ -38,7 +45,7 @@ export default function TrialExpiredLockout({ onReactivated }) {
         {/* Top Header */}
         <div
           style={{
-            backgroundColor: '#991b1b',
+            backgroundColor: isSuspendedOrRevoked ? '#7f1d1d' : '#991b1b',
             color: '#ffffff',
             padding: '28px 24px',
             display: 'flex',
@@ -69,7 +76,7 @@ export default function TrialExpiredLockout({ onReactivated }) {
               color: '#ffffff',
             }}
           >
-            Evaluation Trial Concluded
+            {isSuspendedOrRevoked ? 'Access Suspended by Developer' : 'Evaluation Trial Concluded'}
           </h2>
           <span style={{ fontSize: '13px', color: '#fecaca', letterSpacing: '0.3px' }}>
             {license?.schoolName ? `${license.schoolName} — ` : ''}SMS Student Management System
@@ -78,7 +85,6 @@ export default function TrialExpiredLockout({ onReactivated }) {
 
         {/* Content Body */}
         <div style={{ padding: '28px 24px' }}>
-          {/* Exact required text specified in prompt */}
           <div
             style={{
               backgroundColor: '#fef2f2',
@@ -97,7 +103,9 @@ export default function TrialExpiredLockout({ onReactivated }) {
                 lineHeight: 1.5,
               }}
             >
-              Your 30-day trial has expired. Contact the developer to activate SMS.
+              {isSuspendedOrRevoked
+                ? 'This school installation has been locked by the developer. Contact developer to resolve.'
+                : 'Your trial period has ended. Contact the developer to activate SMS.'}
             </p>
           </div>
 

@@ -75,6 +75,11 @@ export default function App() {
 
   useEffect(() => {
     checkLicense();
+    // Periodic license heartbeat check every 60s to immediately enforce remote SaaS lock or timer expiry
+    const timer = setInterval(() => {
+      checkLicense();
+    }, 60000);
+    return () => clearInterval(timer);
   }, [checkLicense]);
 
   // Function to refresh database counts for the navigation badges
@@ -298,10 +303,21 @@ export default function App() {
     );
   }
 
-  // 2. Lockout screen if trial has expired or system clock was tampered
-  if (licenseStatus?.isTrialExpired || licenseStatus?.status === 'trial_expired' || licenseStatus?.status === 'clock_tampered') {
+  // 2. Lockout screen if trial has expired, license is suspended/locked/revoked, or system clock was tampered
+  const isLockedOut =
+    licenseStatus?.isTrialExpired ||
+    licenseStatus?.isLocked ||
+    licenseStatus?.status === 'trial_expired' ||
+    licenseStatus?.status === 'suspended' ||
+    licenseStatus?.status === 'revoked' ||
+    licenseStatus?.status === 'locked' ||
+    licenseStatus?.status === 'clock_tampered' ||
+    (licenseStatus?.status === 'trial_active' && licenseStatus?.daysRemaining <= 0);
+
+  if (isLockedOut) {
     return (
       <TrialExpiredLockout
+        licenseStatus={licenseStatus}
         onReactivated={() => {
           checkLicense();
           refreshCounts();

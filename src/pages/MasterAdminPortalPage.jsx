@@ -27,6 +27,7 @@ import Button from '../components/common/Button';
 import Input from '../components/common/Input';
 import Badge from '../components/common/Badge';
 import { supabase } from '../lib/supabase';
+import { getApiBaseUrl } from '../lib/licenseService';
 
 const MASTER_DEV_PIN = '8866';
 const DEVELOPER_EMAIL = 'dushah2007@gmail.com';
@@ -146,6 +147,83 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
     }
   };
 
+  // Remote API Sync Helper
+  const syncWithServer = async (action, payload = {}) => {
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/license-manage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-developer-pin': '8866',
+        },
+        body: JSON.stringify({ action, ...payload }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data;
+      }
+    } catch (err) {
+      console.warn('Licensing server sync notice:', err.message);
+    }
+    return null;
+  };
+
+  // Sync latest cloud licenses on portal load
+  useEffect(() => {
+    const fetchCloudLicenses = async () => {
+      try {
+        const baseUrl = getApiBaseUrl();
+        const res = await fetch(`${baseUrl}/api/license-manage`, {
+          headers: { 'x-developer-pin': '8866' },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ok && Array.isArray(data.licenses) && data.licenses.length > 0) {
+            // Map remote PostgreSQL licenses into client format
+            const remoteMapped = data.licenses.map((lic) => {
+              const trialEnds = lic.trial_ends_at ? new Date(lic.trial_ends_at) : null;
+              const daysRemaining = trialEnds
+                ? Math.max(0, Math.ceil((trialEnds.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+                : 9999;
+              return {
+                id: lic.id,
+                schoolName: lic.school_name,
+                licenseKey: lic.license_key,
+                status: lic.status,
+                daysRemaining,
+                trialStartedAt: lic.trial_started_at,
+                trialEndsAt: lic.trial_ends_at,
+                botUsername: '',
+                contactPerson: 'School Administrator',
+                email: lic.contact_developer?.email || '',
+                phone: lic.contact_developer?.phone || '',
+                notes: lic.notes || '',
+              };
+            });
+
+            // Merge with local list (remote takes precedence by licenseKey)
+            setClients((prev) => {
+              const map = new Map(prev.map((c) => [c.licenseKey, c]));
+              remoteMapped.forEach((r) => map.set(r.licenseKey, { ...(map.get(r.licenseKey) || {}), ...r }));
+              const merged = Array.from(map.values());
+              try {
+                localStorage.setItem(STORAGE_REGISTRY_KEY, JSON.stringify(merged));
+              } catch {}
+              return merged;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load remote licenses:', err);
+      }
+    };
+
+    if (isAuthenticated) {
+      fetchCloudLicenses();
+    }
+  }, [isAuthenticated]);
+
   // Generates cryptographic license key (e.g. SMS-NOBLE-30D-89XK)
   const generateCryptographicKey = (schoolName, durationDays) => {
     const slug = schoolName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'SCH';
@@ -194,6 +272,11 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
     const updated = [newClientObj, ...clients];
     saveClients(updated);
 
+    // Sync to Cloud Server
+    syncWithServer('upsert', {
+      license: newClientObj,
+    });
+
     // Reset Form
     setNewSchoolName('');
     setNewContactPerson('');
@@ -207,6 +290,7 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
   };
 
   const handleExtendTrial = (clientId, extraDays) => {
+    const target = clients.find((c) => c.id === clientId);
     const updated = clients.map((c) => {
       if (c.id === clientId) {
         const currentDays = c.daysRemaining > 0 ? c.daysRemaining : 0;
@@ -221,6 +305,15 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
       return c;
     });
     saveClients(updated);
+
+    if (target) {
+      const newDays = (target.daysRemaining > 0 ? target.daysRemaining : 0) + extraDays;
+      syncWithServer('set_days', {
+        licenseKey: target.licenseKey,
+        durationDays: newDays,
+      });
+    }
+
     showToast(`Added +${extraDays} days to school's trial period!`);
   };
 
@@ -239,26 +332,47 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
       return c;
     });
     saveClients(updated);
+
+    syncWithServer('set_days', {
+      licenseKey: editingClient.licenseKey,
+      durationDays: days,
+    });
+
     setEditingClient(null);
     showToast(`Updated remaining days to ${days} days for ${editingClient.schoolName}!`);
   };
 
-  const handleToggleSuspend = (clientId) => {
-    const updated = clients.map((c) => {
-      if (c.id === clientId) {
-        const newStatus = c.status === 'suspended' ? (c.daysRemaining > 0 ? 'trial_active' : 'trial_expired') : 'suspended';
-        return { ...c, status: newStatus };
-      }
-      return c;
-    });
+  const handleToggleSuspend = async (clientId) => {
+    const target = clients.find((c) => c.id === clientId);
+    if (!target) return;
+
+    const newStatus = target.status === 'suspended' ? (target.daysRemaining > 0 ? 'trial_active' : 'trial_expired') : 'suspended';
+    const updated = clients.map((c) => (c.id === clientId ? { ...c, status: newStatus } : c));
     saveClients(updated);
-    showToast(`Updated client status.`);
+
+    // Sync to Cloud Server so the school's exe immediately locks!
+    await syncWithServer(newStatus === 'suspended' ? 'suspend' : 'unlock', {
+      licenseKey: target.licenseKey,
+      newStatus,
+    });
+
+    showToast(
+      newStatus === 'suspended'
+        ? `🔒 School "${target.schoolName}" LOCKED remotely! Client EXE will now be blocked.`
+        : `🔓 School "${target.schoolName}" unlocked successfully!`
+    );
   };
 
   const handleDeleteClient = (clientId) => {
+    const target = clients.find((c) => c.id === clientId);
     if (confirm('Are you sure you want to delete this school client from the SaaS registry?')) {
       const updated = clients.filter((c) => c.id !== clientId);
       saveClients(updated);
+
+      if (target?.licenseKey) {
+        syncWithServer('delete', { licenseKey: target.licenseKey });
+      }
+
       showToast('Client deleted from registry.');
     }
   };

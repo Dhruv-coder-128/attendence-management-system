@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Send,
   Bell,
@@ -8,6 +8,13 @@ import {
   RefreshCw,
   CheckCircle2,
   XCircle,
+  Paperclip,
+  FileText,
+  Image as ImageIcon,
+  Video,
+  Trash2,
+  Loader2,
+  UploadCloud,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -16,6 +23,7 @@ import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { sendBatchBroadcastNotification } from '../lib/telegramClient';
 
 /**
  * Notifications and Telegram Alert Broadcast Manager
@@ -37,7 +45,16 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
   const [channel, setChannel] = useState('Telegram Bot');
   const [audience, setAudience] = useState('Absentee Guardians (Today)');
 
-  // Fetch Real Telegram Dispatch Audit Logs from Supabase public.attendance
+  // Media Attachment State (Photo, PDF/Document, Video)
+  const [mediaFile, setMediaFile] = useState(null);
+  const [mediaType, setMediaType] = useState(null); // 'photo' | 'document' | 'video'
+  const [mediaPreview, setMediaPreview] = useState(null);
+  const [isDispatching, setIsDispatching] = useState(false);
+  const [dispatchProgress, setDispatchProgress] = useState(null);
+  const [dispatchFeedback, setDispatchFeedback] = useState(null);
+  const fileInputRef = useRef(null);
+
+  // Fetch Real Telegram Dispatch Audit Logs from Supabase public.attendance with full guardian hydration
   const fetchDispatchLogs = async () => {
     if (!supabase || !isSupabaseConfigured) {
       setLoadingLogs(false);
@@ -45,7 +62,8 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
     }
     setLoadingLogs(true);
     try {
-      const { data, error } = await supabase
+      // 1. Fetch raw attendance records
+      const { data: rawLogs, error } = await supabase
         .from('attendance')
         .select(`
           id,
@@ -56,11 +74,15 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
           telegram_notified_at,
           telegram_delivery_status,
           telegram_error,
+          student_id,
+          batch_id,
           students:student_id (
             id,
             admission_no,
             full_name,
             roll_no,
+            guardian_name,
+            guardian_phone,
             parent_students (
               is_primary_contact,
               parents:parent_id (
@@ -83,7 +105,73 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
         .limit(100);
 
       if (error) throw error;
-      setDispatchLogs(data || []);
+
+      // 2. Fetch parents, parent_students, students for resilient hydration
+      const [{ data: allParents }, { data: allParentStudents }, { data: allStudents }] = await Promise.all([
+        supabase.from('parents').select('id, full_name, phone, telegram_chat_id, is_verified, admission_no, student_id'),
+        supabase.from('parent_students').select('id, parent_id, student_id, is_primary_contact'),
+        supabase.from('students').select('id, admission_no, full_name, roll_no, guardian_name, guardian_phone, batch_id'),
+      ]);
+
+      const parentMap = new Map((allParents || []).map((p) => [p.id, p]));
+      const studentMap = new Map((allStudents || []).map((s) => [s.id, s]));
+
+      // Map student_id -> primary parent
+      const parentByStudentId = new Map();
+
+      // Priority A: parent_students junction
+      (allParentStudents || []).forEach((ps) => {
+        const parent = parentMap.get(ps.parent_id);
+        if (parent && (!parentByStudentId.has(ps.student_id) || ps.is_primary_contact)) {
+          parentByStudentId.set(ps.student_id, parent);
+        }
+      });
+
+      // Priority B: direct parent.student_id or parent.admission_no matching
+      (allParents || []).forEach((p) => {
+        if (p.student_id && !parentByStudentId.has(p.student_id)) {
+          parentByStudentId.set(p.student_id, p);
+        }
+        if (p.admission_no) {
+          const cleanAdm = String(p.admission_no).trim().toLowerCase();
+          const matchedStudent = (allStudents || []).find(
+            (s) => String(s.admission_no).trim().toLowerCase() === cleanAdm
+          );
+          if (matchedStudent && !parentByStudentId.has(matchedStudent.id)) {
+            parentByStudentId.set(matchedStudent.id, p);
+          }
+        }
+        if (p.phone) {
+          const cleanPhone = String(p.phone).replace(/\D/g, '').slice(-7);
+          if (cleanPhone.length >= 7) {
+            const matchedStudent = (allStudents || []).find((s) => {
+              const sp = String(s.guardian_phone || '').replace(/\D/g, '').slice(-7);
+              return sp && sp === cleanPhone;
+            });
+            if (matchedStudent && !parentByStudentId.has(matchedStudent.id)) {
+              parentByStudentId.set(matchedStudent.id, p);
+            }
+          }
+        }
+      });
+
+      // Hydrate all logs so linked_guardian is ALWAYS set
+      const hydratedLogs = (rawLogs || []).map((log) => {
+        const st = log.students || studentMap.get(log.student_id);
+        const resolvedParent =
+          log.students?.parent_students?.[0]?.parents ||
+          log.linked_guardian ||
+          parentByStudentId.get(log.student_id) ||
+          null;
+
+        return {
+          ...log,
+          students: st,
+          linked_guardian: resolvedParent,
+        };
+      });
+
+      setDispatchLogs(hydratedLogs);
     } catch (err) {
       console.error('Failed to load dispatch logs:', err);
     } finally {
@@ -124,22 +212,153 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
     }
   };
 
-  const handleSend = (e) => {
-    e.preventDefault();
-    const newLog = {
-      id: `notif-${Date.now()}`,
-      title,
-      message,
-      category: template === 'attendance' ? 'Attendance' : template === 'fee' ? 'Fee Alert' : 'Academic',
-      channel,
-      recipientsCount: audience.includes('Registered') ? 45 : audience.includes('Absentee') ? 12 : 25,
-      sentAt: 'Just now',
-      status: 'Queued (Outbox)',
-      sender: 'Director Desk',
-    };
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-    onBroadcast(newLog);
-    setIsComposerOpen(false);
+    const fileTypeStr = file.type || '';
+    let detectedType = 'document';
+    if (fileTypeStr.startsWith('image/')) {
+      detectedType = 'photo';
+      setMediaPreview(URL.createObjectURL(file));
+    } else if (fileTypeStr.startsWith('video/')) {
+      detectedType = 'video';
+      setMediaPreview(null);
+    } else {
+      detectedType = 'document';
+      setMediaPreview(null);
+    }
+
+    setMediaFile(file);
+    setMediaType(detectedType);
+    setDispatchFeedback(null);
+  };
+
+  const handleRemoveFile = () => {
+    setMediaFile(null);
+    setMediaType(null);
+    setMediaPreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleSend = async (e) => {
+    e.preventDefault();
+
+    if (!title.trim() || !message.trim()) {
+      alert('Please provide a subject title and message content.');
+      return;
+    }
+
+    if (channel === 'Telegram Bot') {
+      setIsDispatching(true);
+      setDispatchFeedback(null);
+      setDispatchProgress({ current: 0, total: 1, parentName: 'Initializing Gateway...' });
+
+      try {
+        const result = await sendBatchBroadcastNotification({
+          title,
+          message,
+          category: template === 'attendance' ? 'Attendance' : template === 'fee' ? 'Fee Alert' : 'Academic',
+          audience,
+          mediaFile,
+          mediaType,
+          mediaName: mediaFile?.name || '',
+          onProgress: (p) => setDispatchProgress(p),
+        });
+
+        const newLog = {
+          id: `notif-${Date.now()}`,
+          title,
+          message,
+          category: template === 'attendance' ? 'Attendance' : template === 'fee' ? 'Fee Alert' : 'Academic',
+          channel,
+          recipientsCount: result.deliveredCount || 0,
+          totalTargeted: result.totalRecipients || 0,
+          sentAt: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          status: result.success ? `Delivered (${result.deliveredCount} guardians)` : 'Failed',
+          sender: 'Director Desk',
+          mediaType,
+          mediaName: mediaFile?.name || null,
+        };
+
+        onBroadcast(newLog);
+
+        if (result.success) {
+          alert(`✅ Broadcast delivered successfully to ${result.deliveredCount} verified guardian(s) via Telegram Bot API!`);
+          setIsComposerOpen(false);
+          handleRemoveFile();
+        } else {
+          setDispatchFeedback({
+            success: false,
+            message: result.error || 'Failed to dispatch telegram broadcast.',
+            errors: result.errors,
+          });
+        }
+      } catch (err) {
+        setDispatchFeedback({
+          success: false,
+          message: err.message || 'Error occurred while sending broadcast.',
+        });
+      } finally {
+        setIsDispatching(false);
+      }
+    } else {
+      // Non-Telegram Outbox
+      const newLog = {
+        id: `notif-${Date.now()}`,
+        title,
+        message,
+        category: template === 'attendance' ? 'Attendance' : template === 'fee' ? 'Fee Alert' : 'Academic',
+        channel,
+        recipientsCount: audience.includes('Registered') ? 45 : audience.includes('Absentee') ? 12 : 25,
+        sentAt: 'Just now',
+        status: 'Queued (Outbox)',
+        sender: 'Director Desk',
+        mediaType,
+        mediaName: mediaFile?.name || null,
+      };
+
+      onBroadcast(newLog);
+      setIsComposerOpen(false);
+      handleRemoveFile();
+    }
+  };
+
+  const handleResendBroadcast = async (broadcastItem) => {
+    if (broadcastItem.channel !== 'Telegram Bot') {
+      alert(`Re-dispatch is only available for Telegram Bot gateway.`);
+      return;
+    }
+    if (!confirm(`Re-dispatch broadcast "${broadcastItem.title}" to all verified guardians now?`)) {
+      return;
+    }
+
+    try {
+      const result = await sendBatchBroadcastNotification({
+        title: broadcastItem.title,
+        message: broadcastItem.message,
+        category: broadcastItem.category,
+        audience: 'All Registered Academy Students',
+      });
+
+      if (result.success) {
+        alert(`✅ Broadcast re-dispatched to ${result.deliveredCount} guardians!`);
+        // Update item in local list
+        const updated = {
+          ...broadcastItem,
+          status: `Delivered (${result.deliveredCount} guardians)`,
+          sentAt: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+          recipientsCount: result.deliveredCount,
+        };
+        onBroadcast(updated);
+      } else {
+        alert(`❌ Dispatch failed: ${result.error}`);
+      }
+    } catch (err) {
+      alert(`Error re-dispatching: ${err.message}`);
+    }
   };
 
   // Filtered Dispatch Logs
@@ -163,7 +382,28 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
       key: 'title',
       render: (item) => (
         <div>
-          <div style={{ fontWeight: 600, color: 'var(--navy-950)' }}>{item.title}</div>
+          <div style={{ fontWeight: 600, color: 'var(--navy-950)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {item.title}
+            {item.mediaType && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '10px',
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  backgroundColor: '#f1f5f9',
+                  color: '#475569',
+                }}
+              >
+                {item.mediaType === 'photo' && <ImageIcon size={11} />}
+                {item.mediaType === 'document' && <FileText size={11} />}
+                {item.mediaType === 'video' && <Video size={11} />}
+                {item.mediaType.toUpperCase()}
+              </span>
+            )}
+          </div>
           <div
             style={{
               fontSize: '11px',
@@ -215,7 +455,48 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
     {
       header: 'Status',
       key: 'status',
-      render: (item) => <Badge status="Present">{item.status}</Badge>,
+      render: (item) => {
+        const isDelivered = String(item.status || '').toLowerCase().includes('delivered');
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                fontWeight: 600,
+                color: isDelivered ? 'var(--status-present)' : '#d97706',
+                backgroundColor: isDelivered ? 'var(--status-present-bg)' : '#fef3c7',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                border: `1px solid ${isDelivered ? 'var(--status-present-border)' : '#fde68a'}`,
+              }}
+            >
+              {isDelivered ? <CheckCircle2 size={12} /> : <AlertCircle size={12} />}
+              {item.status}
+            </span>
+            {!isDelivered && item.channel === 'Telegram Bot' && (
+              <button
+                type="button"
+                onClick={() => handleResendBroadcast(item)}
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: '#0284c7',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  padding: 0,
+                }}
+              >
+                Send Now
+              </button>
+            )}
+          </div>
+        );
+      },
     },
   ];
 
@@ -257,14 +538,16 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
       header: 'Linked Guardian',
       key: 'guardian',
       render: (item) => {
-        const parent = item.students?.parent_students?.[0]?.parents;
+        const parent = item.linked_guardian || item.students?.parent_students?.[0]?.parents;
+        const guardianName = parent?.full_name || item.students?.guardian_name || 'Guardian Unassigned';
+        const guardianPhone = parent?.phone || item.students?.guardian_phone || 'No phone';
         return (
           <div>
             <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)' }}>
-              {parent?.full_name || 'Guardian Unassigned'}
+              {guardianName}
             </div>
             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              {parent?.phone || 'No phone'}
+              {guardianPhone}
             </div>
           </div>
         );
@@ -274,8 +557,9 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
       header: 'Chat ID Target',
       key: 'chatId',
       render: (item) => {
-        const parent = item.students?.parent_students?.[0]?.parents;
-        return parent?.telegram_chat_id ? (
+        const parent = item.linked_guardian || item.students?.parent_students?.[0]?.parents;
+        const chatId = parent?.telegram_chat_id;
+        return chatId ? (
           <span
             style={{
               fontFamily: 'var(--font-mono)',
@@ -286,7 +570,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
               color: '#334155',
             }}
           >
-            {parent.telegram_chat_id}
+            {chatId}
           </span>
         ) : (
           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Unlinked</span>
@@ -672,21 +956,76 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
       {/* Composer Modal */}
       <Modal
         isOpen={isComposerOpen}
-        onClose={() => setIsComposerOpen(false)}
+        onClose={() => {
+          if (!isDispatching) {
+            setIsComposerOpen(false);
+          }
+        }}
         title="Compose Telegram &amp; Parent Alert"
-        subtitle="Format message and dispatch to Telegram Bot API or SMS gateway"
+        subtitle="Format announcement and dispatch directly via Telegram Bot API with media attachments"
         footer={
           <>
-            <Button variant="outline" size="sm" onClick={() => setIsComposerOpen(false)}>
+            <Button variant="outline" size="sm" disabled={isDispatching} onClick={() => setIsComposerOpen(false)}>
               Discard
             </Button>
-            <Button variant="gold" size="sm" icon={Send} onClick={handleSend}>
-              Dispatch Broadcast
+            <Button
+              variant="gold"
+              size="sm"
+              icon={isDispatching ? Loader2 : Send}
+              disabled={isDispatching}
+              onClick={handleSend}
+            >
+              {isDispatching ? 'Dispatching...' : 'Dispatch Broadcast'}
             </Button>
           </>
         }
       >
         <form onSubmit={handleSend}>
+          {/* Dispatching Progress Banner */}
+          {isDispatching && (
+            <div
+              style={{
+                marginBottom: '16px',
+                padding: '12px 16px',
+                backgroundColor: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                color: '#1e40af',
+              }}
+            >
+              <Loader2 size={20} className="spin" style={{ flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '13px' }}>
+                  Broadcasting live via Telegram Bot...
+                </div>
+                {dispatchProgress && (
+                  <div style={{ fontSize: '12px', color: '#3b82f6' }}>
+                    Sent {dispatchProgress.current} of {dispatchProgress.total} &bull; Targeting: {dispatchProgress.parentName}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {dispatchFeedback && !dispatchFeedback.success && (
+            <div
+              style={{
+                marginBottom: '16px',
+                padding: '10px 14px',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '6px',
+                color: '#991b1b',
+                fontSize: '12px',
+              }}
+            >
+              <strong>Dispatch Issue:</strong> {dispatchFeedback.message}
+            </div>
+          )}
+
           <div style={{ marginBottom: '14px' }}>
             <label className="form-label">Template Preset</label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
@@ -721,7 +1060,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
             <Select
               label="Gateway Channel"
               value={channel}
@@ -733,10 +1072,10 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
               value={audience}
               onChange={(e) => setAudience(e.target.value)}
               options={[
+                'All Registered Academy Students',
                 'Absentee Guardians (Today)',
                 'Active Batches & Guardians',
                 'Pending Fee Accounts',
-                'All Registered Academy Students',
               ]}
             />
           </div>
@@ -748,7 +1087,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
             required
           />
 
-          <div className="form-group">
+          <div className="form-group" style={{ marginTop: '12px' }}>
             <label className="form-label">Message Content</label>
             <textarea
               className="form-textarea"
@@ -758,8 +1097,101 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
               required
             />
             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-              Supports dynamic merge tags: {'{StudentName}'}, {'{BatchName}'}, {'{Date}'}
+              Supports formatting: *bold*, _italic_, and line breaks
             </span>
+          </div>
+
+          {/* Media Attachment Selector (Photo, PDF, Video) */}
+          <div style={{ marginBottom: '16px' }}>
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Paperclip size={14} /> Attach Media (Photo / PDF Document / Video)
+            </label>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept="image/*,video/*,.pdf,.doc,.docx"
+              style={{ display: 'none' }}
+              id="broadcast-media-input"
+            />
+
+            {!mediaFile ? (
+              <label
+                htmlFor="broadcast-media-input"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  padding: '12px',
+                  border: '1px dashed #cbd5e1',
+                  borderRadius: '6px',
+                  backgroundColor: '#f8fafc',
+                  cursor: 'pointer',
+                  color: 'var(--text-secondary)',
+                  fontSize: '12px',
+                }}
+              >
+                <UploadCloud size={16} /> Choose Photo (JPG/PNG), PDF Document, or Video (MP4)
+              </label>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 14px',
+                  backgroundColor: '#f0fdf4',
+                  border: '1px solid #bbf7d0',
+                  borderRadius: '6px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  {mediaType === 'photo' && <ImageIcon size={20} color="#16a34a" />}
+                  {mediaType === 'document' && <FileText size={20} color="#2563eb" />}
+                  {mediaType === 'video' && <Video size={20} color="#9333ea" />}
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--navy-950)' }}>
+                      {mediaFile.name}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      {(mediaFile.size / 1024).toFixed(1)} KB &bull; Type: {mediaType.toUpperCase()}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRemoveFile}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#dc2626',
+                    cursor: 'pointer',
+                    padding: '4px',
+                  }}
+                  title="Remove attachment"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            )}
+
+            {mediaPreview && (
+              <div style={{ marginTop: '8px', textAlign: 'center' }}>
+                <img
+                  src={mediaPreview}
+                  alt="Attachment preview"
+                  style={{
+                    maxHeight: '140px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-subtle)',
+                    objectFit: 'contain',
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Telegram Preview Bubble */}
@@ -778,6 +1210,11 @@ export default function NotificationsPage({ notifications = [], onBroadcast }) {
             <div style={{ color: '#14532d', fontStyle: 'italic' }}>
               &quot;{message}&quot;
             </div>
+            {mediaFile && (
+              <div style={{ marginTop: '6px', fontSize: '11px', color: '#15803d', fontWeight: 500 }}>
+                📎 Attached: {mediaFile.name} ({mediaType.toUpperCase()})
+              </div>
+            )}
           </div>
         </form>
       </Modal>

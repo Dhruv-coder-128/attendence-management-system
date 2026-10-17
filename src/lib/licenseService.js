@@ -64,9 +64,11 @@ export function saveStoredLicense(data) {
   if (typeof window === 'undefined' || !data) return;
   try {
     const existing = getStoredLicense() || {};
+    const shouldResetLock = (data.status === 'trial_active' || data.status === 'licensed') && data.isLocked === undefined;
     const merged = {
       ...existing,
       ...data,
+      isLocked: shouldResetLock ? false : (data.isLocked !== undefined ? data.isLocked : Boolean(existing.isLocked)),
       cachedAtLocal: Date.now(),
       cachedPerformanceNow: performance.now(),
     };
@@ -274,15 +276,35 @@ export async function validateLicense(options = {}) {
         ...cached,
         status: 'trial_expired',
         daysRemaining: 0,
+        isLocked: true,
       });
 
       return {
         ok: false,
         status: 'trial_expired',
         isTrialExpired: true,
-        error: 'Your 30-day trial has expired. Contact the developer to activate SMS.',
+        isLocked: true,
+        error: 'Your trial period has expired. Contact the developer to activate SMS.',
         developerContact: data.developerContact || cached.developerContact || DEFAULT_DEV_CONTACT,
         trialEndsAt: data.trialEndsAt,
+      };
+    }
+
+    if (data.status === 'suspended' || data.status === 'revoked' || data.status === 'locked') {
+      saveStoredLicense({
+        ...cached,
+        status: data.status,
+        daysRemaining: 0,
+        isLocked: true,
+      });
+
+      return {
+        ok: false,
+        status: data.status,
+        isTrialExpired: true,
+        isLocked: true,
+        error: data.error || 'This school installation has been suspended by the developer/administrator. Contact developer to resolve.',
+        developerContact: data.developerContact || cached.developerContact || DEFAULT_DEV_CONTACT,
       };
     }
 
@@ -296,20 +318,55 @@ export async function validateLicense(options = {}) {
   } catch (netErr) {
     console.warn('Licensing server unreachable, evaluating secure offline lease:', netErr.message);
 
-    // Secure Offline Lease Evaluation
-    // Rule: Do not trust computer clock or local storage as authority.
-    // Allow operation ONLY if the last authoritative server sync was within the grace period (24 hours).
-    const lastSyncMs = cached.lastServerSync ? new Date(cached.lastServerSync).getTime() : 0;
     const nowMs = Date.now();
-    const graceMs = (cached.gracePeriodHours || 24) * 60 * 60 * 1000;
 
-    // Clock Tampering Check:
+    // 1. If explicitly locked or suspended prior to offline
+    if (cached.status === 'suspended' || cached.status === 'revoked' || cached.status === 'locked' || cached.isLocked) {
+      return {
+        ok: false,
+        status: cached.status || 'suspended',
+        isTrialExpired: true,
+        isLocked: true,
+        error: 'This school installation is suspended by the developer. Please contact Dhruv Shah.',
+        developerContact: cached.developerContact || DEFAULT_DEV_CONTACT,
+      };
+    }
+
+    // 2. Strict Timer Expiry Check against trialEndsAt (30-day, 15-day, or custom days)
+    if (cached.trialEndsAt && cached.status !== 'licensed') {
+      const trialEndsMs = new Date(cached.trialEndsAt).getTime();
+      const diffMs = trialEndsMs - nowMs;
+      const actualDaysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+
+      if (trialEndsMs <= nowMs || actualDaysRemaining <= 0) {
+        saveStoredLicense({
+          ...cached,
+          status: 'trial_expired',
+          daysRemaining: 0,
+          isLocked: true,
+        });
+
+        return {
+          ok: false,
+          status: 'trial_expired',
+          isTrialExpired: true,
+          isLocked: true,
+          error: 'Your trial period has expired. Contact the developer to activate SMS.',
+          developerContact: cached.developerContact || DEFAULT_DEV_CONTACT,
+          trialEndsAt: cached.trialEndsAt,
+        };
+      }
+    }
+
+    // 3. Clock Tampering Check:
     // If local system clock was set backwards before the last sync time:
+    const lastSyncMs = cached.lastServerSync ? new Date(cached.lastServerSync).getTime() : 0;
     if (nowMs < lastSyncMs - 60000) {
       return {
         ok: false,
         status: 'clock_tampered',
         isTrialExpired: true,
+        isLocked: true,
         error: 'System clock discrepancy detected. Please connect to the internet to verify your SMS license.',
         developerContact: cached.developerContact || DEFAULT_DEV_CONTACT,
       };
@@ -335,13 +392,20 @@ export async function validateLicense(options = {}) {
       };
     }
 
+    // Compute live days remaining from trialEndsAt
+    let currentDaysRemaining = cached.daysRemaining;
+    if (cached.trialEndsAt) {
+      const trialEndsMs = new Date(cached.trialEndsAt).getTime();
+      currentDaysRemaining = Math.max(0, Math.ceil((trialEndsMs - nowMs) / (1000 * 60 * 60 * 24)));
+    }
+
     // Standard trial: if trial period is still active
-    if (cached.daysRemaining > 0 && cached.status !== 'trial_expired') {
+    if (currentDaysRemaining > 0 && cached.status !== 'trial_expired') {
       return {
         ok: true,
         status: cached.status || 'trial_active',
         schoolName: cached.schoolName,
-        daysRemaining: cached.daysRemaining,
+        daysRemaining: currentDaysRemaining,
         isTrialExpired: false,
         isOfflineLease: true,
         developerContact: cached.developerContact || DEFAULT_DEV_CONTACT,
@@ -349,12 +413,13 @@ export async function validateLicense(options = {}) {
     }
 
     // Check if trial was already expired prior to offline
-    if (cached.status === 'trial_expired') {
+    if (cached.status === 'trial_expired' || currentDaysRemaining <= 0) {
       return {
         ok: false,
         status: 'trial_expired',
         isTrialExpired: true,
-        error: 'Your 30-day trial has expired. Contact the developer to activate SMS.',
+        isLocked: true,
+        error: 'Your trial period has expired. Contact the developer to activate SMS.',
         developerContact: cached.developerContact || DEFAULT_DEV_CONTACT,
       };
     }
@@ -364,7 +429,7 @@ export async function validateLicense(options = {}) {
       ok: true,
       status: cached.status,
       schoolName: cached.schoolName,
-      daysRemaining: cached.daysRemaining,
+      daysRemaining: currentDaysRemaining,
       isTrialExpired: false,
       isOfflineLease: true,
       developerContact: cached.developerContact || DEFAULT_DEV_CONTACT,

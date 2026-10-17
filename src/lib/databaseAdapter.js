@@ -471,14 +471,70 @@ async function resolveRelations(tableName, records, selectString) {
     if (tableName === 'attendance') {
       const allStudents = await getAllFromStore('students');
       const allBatches = await getAllFromStore('batches');
-      const studentMap = new Map(allStudents.map((s) => [s.id, s]));
-      const batchMap = new Map(allBatches.map((b) => [b.id, b]));
+      const allParents = await getAllFromStore('parents');
+      const allParentStudents = await getAllFromStore('parent_students');
 
-      return records.map((rec) => ({
-        ...rec,
-        students: studentMap.get(rec.student_id) || null,
-        batches: batchMap.get(rec.batch_id) || null,
-      }));
+      const batchMap = new Map(allBatches.map((b) => [b.id, b]));
+      const parentMap = new Map(allParents.map((p) => [p.id, p]));
+
+      // Build rich student map with fully joined parent_students and genuine guardian
+      const studentMap = new Map();
+      allStudents.forEach((student, index) => {
+        const junctions = allParentStudents.filter((ps) => ps.student_id === student.id);
+        let parentStudents = [];
+        let primaryParent = null;
+
+        if (junctions.length > 0) {
+          parentStudents = junctions.map((ps) => {
+            const p = parentMap.get(ps.parent_id) || null;
+            if (!primaryParent && p) primaryParent = p;
+            return {
+              ...ps,
+              parents: p,
+            };
+          });
+        }
+
+        // Resilient fallback matching if junction row was bypassed
+        if (!primaryParent) {
+          const matchedParent =
+            allParents.find(
+              (p) =>
+                (p.student_id && p.student_id === student.id) ||
+                (p.admission_no && String(p.admission_no).trim().toLowerCase() === String(student.admission_no).trim().toLowerCase()) ||
+                (student.guardian_phone && p.phone && p.phone.replace(/\D/g, '').slice(-7) === student.guardian_phone.replace(/\D/g, '').slice(-7))
+            ) || (allParents.length === allStudents.length ? allParents[index] : null);
+
+          if (matchedParent) {
+            primaryParent = matchedParent;
+            parentStudents = [
+              {
+                id: 'ps_auto_' + student.id,
+                relationship: matchedParent.relationship || 'Guardian',
+                is_primary_contact: true,
+                parents: matchedParent,
+              },
+            ];
+          }
+        }
+
+        studentMap.set(student.id, {
+          ...student,
+          parent_students: parentStudents,
+          linked_guardian: primaryParent,
+        });
+      });
+
+      return records.map((rec) => {
+        const s = studentMap.get(rec.student_id) || null;
+        const guardian = s?.linked_guardian || s?.parent_students?.[0]?.parents || null;
+        return {
+          ...rec,
+          students: s,
+          batches: batchMap.get(rec.batch_id) || null,
+          linked_guardian: guardian,
+        };
+      });
     }
 
     if (tableName === 'batches') {
