@@ -21,6 +21,7 @@ import TrialExpiredLockout from './components/license/TrialExpiredLockout';
 import ParentPortalPage from './pages/ParentPortalPage';
 import TeacherAttendancePage from './pages/TeacherAttendancePage';
 import { RefreshCw, GraduationCap } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 
 /**
  * SMS — Student Management System Root Application Component
@@ -41,8 +42,12 @@ export default function App() {
 
   // Active View / Navigation State
   // Desktop EXE: Pure School Client (dashboard)
+  // Android Native APK: Pure Teacher Mobile Roll Call (teacher-portal)
   // Vercel Web Cloud: Strictly Super Admin SaaS Console (master-portal)
   const [activePage, setActivePage] = useState(() => {
+    if (Capacitor.isNativePlatform() || (typeof window !== 'undefined' && window.location.search.includes('portal=teacher'))) {
+      return 'teacher-portal';
+    }
     if (!isTauriDesktop()) {
       return 'master-portal';
     }
@@ -314,6 +319,26 @@ export default function App() {
     });
   };
 
+  // 0. Dedicated Native Mobile Mode / Teacher Attendance Portal
+  // If running inside Capacitor APK on mobile, or query ?portal=teacher, render teacher view immediately
+  const isTeacherApp =
+    Capacitor.isNativePlatform() ||
+    (typeof window !== 'undefined' &&
+      (window.location.search.includes('portal=teacher') || activePage === 'teacher-portal'));
+
+  if (isTeacherApp) {
+    return <TeacherAttendancePage />;
+  }
+
+  // 0.5. Parent Portal PWA Standalone Mode
+  const isParentPortal =
+    typeof window !== 'undefined' &&
+    (window.location.search.includes('portal=parent') || activePage === 'parent-portal');
+
+  if (isParentPortal) {
+    return <ParentPortalPage />;
+  }
+
   // 1. Loading Splash Screen
   if (authLoading) {
     return (
@@ -388,22 +413,6 @@ export default function App() {
         }}
       />
     );
-  }
-
-  // 3.5. Parent Portal PWA Standalone Mode
-  const isParentPortal = typeof window !== 'undefined' && 
-    (window.location.search.includes('portal=parent') || activePage === 'parent-portal');
-
-  if (isParentPortal) {
-    return <ParentPortalPage />;
-  }
-
-  // 3.6. Teacher Mobile Attendance Mode (Over Local Wi-Fi)
-  const isTeacherPortal = typeof window !== 'undefined' && 
-    (window.location.search.includes('portal=teacher') || activePage === 'teacher-portal');
-
-  if (isTeacherPortal) {
-    return <TeacherAttendancePage />;
   }
 
   // 4. Route Protection: If unauthenticated, render Login Page

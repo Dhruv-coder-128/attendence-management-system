@@ -6,24 +6,46 @@
  * Zero-cloud, real-time student fetching and roll call sync.
  */
 
+import { Capacitor } from '@capacitor/core';
+
 const HUB_URL_KEY = 'sms_teacher_hub_url';
 const OFFLINE_QUEUE_KEY = 'sms_teacher_offline_queue';
+export const DEFAULT_SCHOOL_PC_URL = 'http://10.102.139.146:5173';
 
 /**
  * Returns default or previously configured School PC URL
  */
 export function getStoredHubUrl() {
-  if (typeof window === 'undefined') return '';
+  if (typeof window === 'undefined') return DEFAULT_SCHOOL_PC_URL;
   try {
     const saved = localStorage.getItem(HUB_URL_KEY);
-    if (saved && saved.trim()) return saved.trim().replace(/\/+$/, '');
-    // If running in browser over Wi-Fi, use current origin
-    if (window.location && window.location.origin && !window.location.origin.includes('file://')) {
+    if (saved && saved.trim()) {
+      const cleanSaved = saved.trim().replace(/\/+$/, '');
+      // If running inside Capacitor APK on Android, localhost refers to the phone, not PC!
+      if (Capacitor.isNativePlatform() && (cleanSaved.includes('localhost') || cleanSaved.includes('127.0.0.1'))) {
+        return DEFAULT_SCHOOL_PC_URL;
+      }
+      return cleanSaved;
+    }
+
+    // In Capacitor native mobile app, webview origin is http://localhost
+    if (Capacitor.isNativePlatform()) {
+      return DEFAULT_SCHOOL_PC_URL;
+    }
+
+    // If running in browser over Wi-Fi on phone (not localhost/file)
+    if (
+      window.location &&
+      window.location.origin &&
+      !window.location.origin.includes('file://') &&
+      !window.location.origin.includes('localhost') &&
+      !window.location.origin.includes('127.0.0.1')
+    ) {
       return window.location.origin;
     }
-    return 'http://10.102.139.146:5173';
+    return DEFAULT_SCHOOL_PC_URL;
   } catch {
-    return 'http://10.102.139.146:5173';
+    return DEFAULT_SCHOOL_PC_URL;
   }
 }
 
