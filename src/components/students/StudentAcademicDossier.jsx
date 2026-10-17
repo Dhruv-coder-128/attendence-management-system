@@ -25,7 +25,7 @@ import Input from '../common/Input';
 import Select from '../common/Select';
 import ReportCardModal from '../exams/ReportCardModal';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
-import { getStoredAcademySettings, fetchAcademySettings } from '../../lib/academySettings';
+import { useAcademySettings } from '../../lib/academySettings';
 import {
   getStudentFeeRecord,
   recordFeePayment,
@@ -87,13 +87,7 @@ export default function StudentAcademicDossier({
   const [selectedReportExam, setSelectedReportExam] = useState(null);
 
   const [toastMessage, setToastMessage] = useState('');
-  const [branding, setBranding] = useState(() => getStoredAcademySettings());
-
-  useEffect(() => {
-    fetchAcademySettings().then((s) => {
-      if (s) setBranding(s);
-    });
-  }, []);
+  const branding = useAcademySettings();
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -644,6 +638,29 @@ export default function StudentAcademicDossier({
 
           {/* Key Indicators */}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            {branding.logo_url && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                }}
+                title={branding.academy_name}
+              >
+                <img
+                  src={branding.logo_url}
+                  alt={branding.academy_name}
+                  style={{ maxHeight: '18px', maxWidth: '36px', objectFit: 'contain' }}
+                />
+                <span style={{ fontSize: '11px', color: '#e2e8f0', fontWeight: 600 }}>
+                  {branding.academy_name}
+                </span>
+              </div>
+            )}
             <Badge status={student.status === 'active' ? 'Present' : 'Pending'}>
               {student.status.toUpperCase()}
             </Badge>

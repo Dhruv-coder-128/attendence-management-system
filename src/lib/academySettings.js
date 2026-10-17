@@ -1,4 +1,5 @@
-import { supabase, isSupabaseConfigured } from './supabase';
+import React, { useState, useEffect } from 'react';
+import { supabase, isSupabaseConfigured } from './supabase.js';
 
 /**
  * Default Academy Branding & Configuration
@@ -49,7 +50,7 @@ export function getStoredAcademySettings() {
 export const getAcademySettings = getStoredAcademySettings;
 
 /**
- * Saves settings to localStorage
+ * Saves settings to localStorage and dispatches instant sync event across all components
  */
 export function saveSettingsToLocal(settings) {
   if (typeof window === 'undefined') return;
@@ -61,9 +62,43 @@ export function saveSettingsToLocal(settings) {
     if (settings.academic_year) localStorage.setItem('erp_academic_year', settings.academic_year);
     if (settings.min_attendance_threshold) localStorage.setItem('erp_min_attendance', String(settings.min_attendance_threshold));
     if (settings.late_grace_minutes) localStorage.setItem('erp_late_grace', String(settings.late_grace_minutes));
+
+    // Dispatch global event for instant logo and branding propagation
+    window.dispatchEvent(new CustomEvent('sms_academy_settings_updated', { detail: settings }));
   } catch (err) {
     console.warn('Failed to save settings to localStorage:', err);
   }
+}
+
+/**
+ * Custom React hook for live, dynamic branding & logo propagation
+ * Components automatically re-render whenever the logo or institute name is updated in Settings
+ */
+export function useAcademySettings() {
+  const [settings, setSettings] = useState(() => getStoredAcademySettings());
+
+  useEffect(() => {
+    fetchAcademySettings().then((s) => {
+      if (s) setSettings(s);
+    });
+
+    const handleUpdate = (e) => {
+      if (e.detail) {
+        setSettings(e.detail);
+      } else {
+        setSettings(getStoredAcademySettings());
+      }
+    };
+
+    window.addEventListener('sms_academy_settings_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('sms_academy_settings_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, []);
+
+  return settings;
 }
 
 /**

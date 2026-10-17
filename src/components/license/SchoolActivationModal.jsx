@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { KeyRound, ShieldCheck, AlertCircle, Building2, ExternalLink, Mail, Phone, MessageSquare, CheckCircle2, Database } from 'lucide-react';
+import { KeyRound, ShieldCheck, AlertCircle, Building2, ExternalLink, Mail, Phone, MessageSquare, CheckCircle2, Database, Copy, Check, ArrowLeft } from 'lucide-react';
 import { activateSchoolLicense, configureCustomSchoolDatabase, getContactDeveloperLinks, getStoredLicense, isTauriDesktop } from '../../lib/licenseService';
 import { reinitializeSupabaseClient } from '../../lib/supabase';
 import { openExternalLink, copyToClipboard } from '../../lib/externalOpener';
@@ -8,6 +8,8 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
   const currentLicense = getStoredLicense();
   const [activeTab, setActiveTab] = useState('license'); // 'license' | 'customDb'
   const [licenseKey, setLicenseKey] = useState(currentLicense?.licenseKey || '');
+  const [isChangingKey, setIsChangingKey] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
   
   // Custom Supabase Database fields
   const [schoolName, setSchoolName] = useState(currentLicense?.schoolName || '');
@@ -22,6 +24,10 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
   const contactLinks = getContactDeveloperLinks();
 
   if (!isOpen) return null;
+
+  const isAlreadyActive = !isChangingKey && !successData && 
+    (currentLicense?.status === 'licensed' || currentLicense?.status === 'trial_active') &&
+    (currentLicense?.daysRemaining === undefined || currentLicense?.daysRemaining > 0);
 
   const handleActivateLicense = async (e) => {
     e.preventDefault();
@@ -39,6 +45,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
     if (res.ok) {
       reinitializeSupabaseClient();
       setSuccessData(res.data);
+      setIsChangingKey(false);
       if (onActivated) {
         onActivated(res.data);
       }
@@ -69,6 +76,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
     if (res.ok) {
       reinitializeSupabaseClient();
       setSuccessData(res.data);
+      setIsChangingKey(false);
       if (onActivated) {
         onActivated(res.data);
       }
@@ -89,7 +97,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, fontFamily: 'var(--font-heading)', color: '#ffffff' }}>
-                School License &amp; Database Setup
+                {isAlreadyActive ? 'Active School License' : 'School License & Database Setup'}
               </h3>
               <p style={{ margin: '2px 0 0 0', fontSize: '12.5px', color: 'var(--text-on-navy-muted)' }}>
                 SMS — Student Management System
@@ -97,14 +105,16 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
             </div>
           </div>
           <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-on-navy-muted)', lineHeight: 1.5 }}>
-            {isTauriDesktop()
-              ? 'Each institution operates on a private, isolated local on-device database. Enter your School License Key to activate.'
-              : 'Each client/school operates on an isolated database. Connect using your School License Key or your own dedicated Supabase cloud project.'}
+            {isAlreadyActive
+              ? `Currently connected to ${currentLicense?.schoolName || 'Enrolled School'}. Manage your license or switch keys below.`
+              : (isTauriDesktop()
+                ? 'Each institution operates on a private, isolated local on-device database. Enter your School License Key to activate.'
+                : 'Each client/school operates on an isolated database. Connect using your School License Key or your own dedicated Supabase cloud project.')}
           </p>
         </div>
 
-        {/* Tab Selector — Only shown in web mode */}
-        {!successData && !isTauriDesktop() && (
+        {/* Tab Selector — Only shown when setting up or changing key in web mode */}
+        {!isAlreadyActive && !successData && !isTauriDesktop() && (
           <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', backgroundColor: 'var(--bg-subtle)' }}>
             <button
               type="button"
@@ -153,7 +163,157 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
 
         {/* Body */}
         <div className="modal-body" style={{ padding: '24px', backgroundColor: '#ffffff' }}>
-          {successData ? (
+          {isAlreadyActive ? (
+            /* Connected & Active View */
+            <div style={{ padding: '4px 0' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: '#ecfdf5',
+                border: '1px solid #a7f3d0',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                marginBottom: '16px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{
+                    width: '10px',
+                    height: '10px',
+                    borderRadius: '50%',
+                    backgroundColor: '#10b981',
+                    boxShadow: '0 0 0 4px rgba(16, 185, 129, 0.2)'
+                  }} />
+                  <div>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#065f46' }}>
+                      {currentLicense?.status === 'licensed' ? 'Enterprise License Active' : 'Active Evaluation License'}
+                    </span>
+                    <span style={{ display: 'block', fontSize: '11px', color: '#047857' }}>
+                      Institutional database connected and authenticated
+                    </span>
+                  </div>
+                </div>
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  backgroundColor: '#d1fae5',
+                  color: '#065f46',
+                  padding: '3px 8px',
+                  borderRadius: '12px',
+                  border: '1px solid #6ee7b7'
+                }}>
+                  🟢 Connected
+                </span>
+              </div>
+
+              <div style={{
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '10px',
+                padding: '14px 16px',
+                marginBottom: '18px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                  <Building2 size={18} color="#334155" />
+                  <div>
+                    <div style={{ fontSize: '10.5px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
+                      Licensed School / Institution
+                    </div>
+                    <div style={{ fontSize: '15px', fontWeight: 700, color: '#0f172a' }}>
+                      {currentLicense?.schoolName || 'SMS Academy'}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+                  <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>Remaining Time</div>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: (currentLicense?.daysRemaining !== undefined && currentLicense?.daysRemaining <= 5) ? '#dc2626' : '#0f172a', marginTop: '2px' }}>
+                      {currentLicense?.status === 'licensed' || (currentLicense?.daysRemaining !== undefined && currentLicense?.daysRemaining >= 9000)
+                        ? 'Lifetime / Pro'
+                        : `${currentLicense?.daysRemaining ?? 30} Days Remaining`}
+                    </div>
+                  </div>
+                  <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>Database Architecture</div>
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a', marginTop: '3px' }}>
+                      {isTauriDesktop()
+                        ? 'Private Local DB'
+                        : (currentLicense?.isCustomSchoolDb ? 'Dedicated Supabase' : 'Isolated Cloud DB')}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '6px',
+                  padding: '9px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px'
+                }}>
+                  <div style={{ overflow: 'hidden' }}>
+                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 500 }}>Active License Key</div>
+                    <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '13px', fontWeight: 700, color: '#0f172a', letterSpacing: '0.5px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      {currentLicense?.licenseKey || 'N/A'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (currentLicense?.licenseKey) {
+                        await copyToClipboard(currentLicense.licenseKey);
+                        setCopiedKey(true);
+                        setTimeout(() => setCopiedKey(false), 2000);
+                      }
+                    }}
+                    className="btn btn-outline"
+                    style={{ padding: '5px 9px', fontSize: '11px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px' }}
+                    title="Copy License Key"
+                  >
+                    {copiedKey ? <Check size={13} color="#16a34a" /> : <Copy size={13} />}
+                    <span>{copiedKey ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    if (onClose) onClose();
+                  }}
+                  style={{ width: '100%', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '13.5px' }}
+                >
+                  <CheckCircle2 size={16} />
+                  Continue to System
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsChangingKey(true);
+                    setError('');
+                  }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted, #64748b)',
+                    fontSize: '12px',
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    padding: '4px 0',
+                    textAlign: 'center'
+                  }}
+                >
+                  Enter or switch to a different license key
+                </button>
+              </div>
+            </div>
+          ) : successData ? (
             <div style={{ textAlign: 'center', padding: '16px 0' }}>
               <div style={{ width: '56px', height: '56px', borderRadius: '50%', backgroundColor: 'var(--status-present-bg)', border: '2px solid var(--status-present-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto' }}>
                 <CheckCircle2 size={32} color="var(--status-present)" />
@@ -183,6 +343,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                 className="btn btn-primary"
                 onClick={() => {
                   setSuccessData(null);
+                  setIsChangingKey(false);
                   if (onClose) onClose();
                 }}
                 style={{ width: '100%', padding: '10px 16px' }}
@@ -228,7 +389,20 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                {!isForced && (
+                {isChangingKey && (currentLicense?.status === 'licensed' || currentLicense?.status === 'trial_active') ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsChangingKey(false);
+                      setError('');
+                    }}
+                    className="btn btn-outline"
+                    disabled={loading}
+                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                  >
+                    <ArrowLeft size={14} /> Back
+                  </button>
+                ) : !isForced ? (
                   <button
                     type="button"
                     onClick={onClose}
@@ -238,7 +412,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                   >
                     Cancel
                   </button>
-                )}
+                ) : null}
                 <button
                   type="submit"
                   className="btn btn-primary"
@@ -311,7 +485,20 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
-                {!isForced && (
+                {isChangingKey && (currentLicense?.status === 'licensed' || currentLicense?.status === 'trial_active') ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsChangingKey(false);
+                      setError('');
+                    }}
+                    className="btn btn-outline"
+                    disabled={loading}
+                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                  >
+                    <ArrowLeft size={14} /> Back
+                  </button>
+                ) : !isForced ? (
                   <button
                     type="button"
                     onClick={onClose}
@@ -321,7 +508,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                   >
                     Cancel
                   </button>
-                )}
+                ) : null}
                 <button
                   type="submit"
                   className="btn btn-primary"

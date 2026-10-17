@@ -31,6 +31,7 @@ import Select from '../components/common/Select';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { sendBatchBroadcastNotification, getSchoolTelegramSettings } from '../lib/telegramClient';
 import { getAcademySettings } from '../lib/academySettings';
+import { saveDataUrlWithPicker } from '../lib/fileSaveHelper';
 
 /**
  * Notifications and Telegram Alert Broadcast Manager
@@ -1778,23 +1779,14 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
                     {selectedNotice.attachments.map((att, aIdx) => (
                       <div
                         key={att.id || aIdx}
-                        style={{
-                          padding: '12px 14px',
-                          backgroundColor: '#f8fafc',
-                          borderRadius: '8px',
-                          border: '1px solid #cbd5e1',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '12px',
-                        }}
+                        className="erp-attachment-card"
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', overflow: 'hidden' }}>
                           <div
                             style={{
-                              width: '36px',
-                              height: '36px',
-                              borderRadius: '8px',
+                              width: '38px',
+                              height: '38px',
+                              borderRadius: '10px',
                               backgroundColor: att.type === 'photo' ? '#e0f2fe' : att.type === 'video' ? '#f3e8ff' : '#fee2e2',
                               color: att.type === 'photo' ? '#0284c7' : att.type === 'video' ? '#9333ea' : '#dc2626',
                               display: 'flex',
@@ -1803,10 +1795,10 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
                               flexShrink: 0,
                             }}
                           >
-                            {att.type === 'photo' ? <ImageIcon size={18} /> : att.type === 'video' ? <Video size={18} /> : <FileText size={18} />}
+                            {att.type === 'photo' ? <ImageIcon size={19} /> : att.type === 'video' ? <Video size={19} /> : <FileText size={19} />}
                           </div>
                           <div style={{ overflow: 'hidden' }}>
-                            <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--navy-950)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--navy-950)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {att.name || `Attachment ${aIdx + 1}`}
                             </div>
                             <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
@@ -1816,29 +1808,39 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
                         </div>
 
                         {att.dataUrl && (
-                          <a
-                            href={att.dataUrl}
-                            download={att.name || `attachment_${aIdx + 1}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              padding: '5px 10px',
-                              borderRadius: '6px',
-                              backgroundColor: '#ffffff',
-                              color: '#0284c7',
-                              border: '1px solid #bae6fd',
-                              textDecoration: 'none',
-                              flexShrink: 0,
-                            }}
-                          >
-                            <ExternalLink size={12} />
-                            <span>View / Download</span>
-                          </a>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                            <a
+                              href={att.dataUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn btn-outline"
+                              style={{
+                                padding: '5px 8px',
+                                fontSize: '11px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                textDecoration: 'none',
+                                borderRadius: '6px',
+                                color: '#64748b',
+                              }}
+                              title="Preview in new tab"
+                            >
+                              <Eye size={12} />
+                              <span>View</span>
+                            </a>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await saveDataUrlWithPicker(att.dataUrl, att.name || `attachment_${aIdx + 1}`);
+                              }}
+                              className="erp-btn-download-action"
+                              title="Choose folder to save attachment"
+                            >
+                              <Download size={12} />
+                              <span>Save As...</span>
+                            </button>
+                          </div>
                         )}
                       </div>
                     ))}
@@ -1941,28 +1943,39 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
                         </div>
                       </div>
                       {selectedNotice.mediaDataUrl && (
-                        <a
-                          href={selectedNotice.mediaDataUrl}
-                          download={selectedNotice.mediaName || 'document.pdf'}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontSize: '11.5px',
-                            fontWeight: 600,
-                            padding: '6px 12px',
-                            borderRadius: '6px',
-                            backgroundColor: '#ffffff',
-                            color: '#0284c7',
-                            border: '1px solid #bae6fd',
-                            textDecoration: 'none',
-                          }}
-                        >
-                          <ExternalLink size={13} />
-                          <span>Open / Download</span>
-                        </a>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                          <a
+                            href={selectedNotice.mediaDataUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn btn-outline"
+                            style={{
+                              padding: '6px 10px',
+                              fontSize: '11.5px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              textDecoration: 'none',
+                              borderRadius: '6px',
+                              color: '#64748b',
+                            }}
+                            title="Preview in new tab"
+                          >
+                            <Eye size={13} />
+                            <span>View</span>
+                          </a>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await saveDataUrlWithPicker(selectedNotice.mediaDataUrl, selectedNotice.mediaName || 'document.pdf');
+                            }}
+                            className="erp-btn-download-action"
+                            title="Choose folder to save attachment"
+                          >
+                            <Download size={13} />
+                            <span>Save As...</span>
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>

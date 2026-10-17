@@ -17,7 +17,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import { hasPermission } from '../../lib/authService';
-import { getStoredAcademySettings } from '../../lib/academySettings';
+import { useAcademySettings } from '../../lib/academySettings';
 import { isTauriDesktop } from '../../lib/licenseService';
 
 /**
@@ -34,7 +34,7 @@ export default function Sidebar({
   user,
   currentUserProfile,
 }) {
-  const branding = getStoredAcademySettings();
+  const branding = useAcademySettings();
   const logoClicksRef = useRef({ count: 0, lastTime: 0 });
 
   const rawStaffName =

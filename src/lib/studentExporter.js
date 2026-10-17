@@ -3,18 +3,13 @@
  * Exports full or filtered student records with academic and financial details
  */
 
+import { saveFileWithPicker } from './fileSaveHelper.js';
+
 /**
- * Triggers browser download of a Blob
+ * Triggers browser or native file explorer download of a Blob
  */
-function triggerBlobDownload(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+async function triggerBlobDownload(blob, filename) {
+  return await saveFileWithPicker(blob, filename);
 }
 
 /**

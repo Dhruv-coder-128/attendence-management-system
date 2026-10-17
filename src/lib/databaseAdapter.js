@@ -9,6 +9,8 @@
  * 4. Transparent Supabase Query Builder Compatibility
  */
 
+import { saveFileWithPicker } from './fileSaveHelper.js';
+
 const DB_NAME = 'sms_offline_db';
 const DB_VERSION = 1;
 const STORAGE_MODE_KEY = 'sms_storage_mode';
@@ -814,14 +816,7 @@ export async function exportDatabaseBackup() {
   const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
   const filename = `sms_universal_database_backup_${new Date().toISOString().split('T')[0]}.smsdb`;
 
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  await saveFileWithPicker(blob, filename, 'application/json');
 
   return {
     ok: true,

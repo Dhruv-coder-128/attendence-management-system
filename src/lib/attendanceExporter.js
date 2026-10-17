@@ -16,20 +16,20 @@ function formatDateIndian(dateStr) {
   }
 }
 
+import { saveFileWithPicker } from './fileSaveHelper.js';
+
 /**
- * Triggers a browser download of a CSV file using a Blob
+ * Triggers native or browser download of a CSV file using a Blob
  */
-function downloadCSV(csvContent, filename) {
+async function downloadCSV(csvContent, filename) {
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  return await saveFileWithPicker(blob, filename);
+}
+
+async function saveWorkbook(workbook, filename) {
+  const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  return await saveFileWithPicker(blob, filename);
 }
 
 /**
@@ -200,7 +200,7 @@ export async function exportMonthlyRegisterToExcel({
 
   const cleanBatch = (batch?.code || 'Batch').replace(/[^a-zA-Z0-9-_]/g, '_');
   const filename = `Attendance_Monthly_${cleanBatch}_${monthName}_${year}.xlsx`;
-  XLSX.writeFile(workbook, filename);
+  await saveWorkbook(workbook, filename);
 }
 
 /**
@@ -400,5 +400,5 @@ export async function exportDailyRegisterToExcel({
 
   const cleanBatch = (batch?.code || 'Batch').replace(/[^a-zA-Z0-9-_]/g, '_');
   const filename = `Attendance_Daily_${cleanBatch}_${date}.xlsx`;
-  XLSX.writeFile(workbook, filename);
+  await saveWorkbook(workbook, filename);
 }

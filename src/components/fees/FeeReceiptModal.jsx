@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import Button from '../common/Button';
 import Badge from '../common/Badge';
-import { getStoredAcademySettings, fetchAcademySettings } from '../../lib/academySettings';
+import { useAcademySettings } from '../../lib/academySettings';
 
 /**
  * Printable Official Tuition Fee Receipt Modal
@@ -25,13 +25,7 @@ export default function FeeReceiptModal({
 }) {
   if (!isOpen || !student) return null;
 
-  const [branding, setBranding] = React.useState(() => getStoredAcademySettings());
-
-  React.useEffect(() => {
-    fetchAcademySettings().then((s) => {
-      if (s) setBranding(s);
-    });
-  }, []);
+  const branding = useAcademySettings();
 
   const handlePrint = () => {
     window.print();
