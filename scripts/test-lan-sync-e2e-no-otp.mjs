@@ -2,11 +2,15 @@
 // with NO TOKEN and NO OTP over LAN IP (192.168.31.196)
 
 async function testMobileLanSync() {
-  const lanBase = 'http://192.168.31.196:5173/api/local-hub';
+  // First query local loopback to discover the dynamically active LAN IP
+  const localRes = await fetch('http://127.0.0.1:5173/api/local-hub?action=status');
+  const localStatus = await localRes.json();
+  const lanIp = localStatus.localIp || '127.0.0.1';
+  const lanBase = `http://${lanIp}:5173/api/local-hub`;
 
-  console.log('Testing Mobile LAN Sync against:', lanBase);
+  console.log('Testing Mobile LAN Sync against LAN IP:', lanBase);
 
-  // 1. Check status
+  // 1. Check status over real LAN IP
   const statusRes = await fetch(`${lanBase}?action=status`);
   const status = await statusRes.json();
   console.log('[1] Hub Status:', status.ok ? 'ONLINE' : 'OFFLINE', 'IP:', status.localIp);

@@ -807,7 +807,7 @@ fn handle_post_action(
     action: &str,
     body_bytes: &[u8],
     headers: &HashMap<String, String>,
-    is_loopback: bool,
+    _is_loopback: bool,
     state: &SharedHubState,
 ) -> (u16, Value) {
     let payload: Value = match serde_json::from_slice(body_bytes) {
