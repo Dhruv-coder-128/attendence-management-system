@@ -274,6 +274,7 @@ export default function AttendancePage({ onRefreshCounts }) {
 
       setStudents(resolvedStudents);
       setAttendanceMap(map);
+      if (onRefreshCounts) onRefreshCounts();
     } catch (err) {
       console.error('Error fetching attendance, using canonical roster:', err);
       const canonical = getBatchStudents(selectedBatchId);

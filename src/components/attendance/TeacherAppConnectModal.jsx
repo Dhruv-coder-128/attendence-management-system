@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import Modal from '../common/Modal';
 import Button from '../common/Button';
+import QRCode from 'qrcode';
 import { checkHubConnection } from '../../lib/localWifiHubService';
 import { resolveHubInfo } from '../../lib/useSchoolDatabaseSync';
 
@@ -22,6 +23,7 @@ export default function TeacherAppConnectModal({ isOpen, onClose }) {
   const [registeredDevicesCount, setRegisteredDevicesCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [hubStatus, setHubStatus] = useState(null);
+  const [offlineQrDataUrl, setOfflineQrDataUrl] = useState('');
 
   const loadStatus = React.useCallback(async () => {
     setIsLoading(true);
@@ -109,6 +111,19 @@ export default function TeacherAppConnectModal({ isOpen, onClose }) {
   if (pairingOtp) queryParams.set('otp', pairingOtp);
 
   const teacherUrl = `http://${activeIp}:${activePort}/?${queryParams.toString()}`;
+
+  // Generate 100% offline QR Code Base64 Data URL (works without internet access)
+  useEffect(() => {
+    if (teacherUrl) {
+      QRCode.toDataURL(teacherUrl, {
+        width: 240,
+        margin: 2,
+        color: { dark: '#0b1329', light: '#ffffff' },
+      })
+        .then((url) => setOfflineQrDataUrl(url))
+        .catch(() => {});
+    }
+  }, [teacherUrl]);
 
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
     teacherUrl
@@ -261,7 +276,7 @@ export default function TeacherAppConnectModal({ isOpen, onClose }) {
             }}
           >
             <img
-              src={qrCodeUrl}
+              src={offlineQrDataUrl || qrCodeUrl}
               alt="Scan QR code for Teacher App"
               style={{ width: '185px', height: '185px', display: 'block' }}
             />

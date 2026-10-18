@@ -406,7 +406,7 @@ fn handle_connection(mut stream: TcpStream, state: SharedHubState) {
         let response = "HTTP/1.1 204 No Content\r\n\
 Access-Control-Allow-Origin: *\r\n\
 Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
-Access-Control-Allow-Headers: Content-Type, Accept, Authorization, X-Hub-Token, X-School-Token\r\n\
+Access-Control-Allow-Headers: Content-Type, Accept, Authorization, X-Hub-Token, X-School-Token, X-Device-Id, *\r\n\
 Access-Control-Max-Age: 86400\r\n\
 Connection: close\r\n\r\n";
         let _ = stream.write_all(response.as_bytes());

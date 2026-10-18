@@ -233,22 +233,37 @@ export default function TeacherAttendancePage() {
     return () => clearInterval(interval);
   }, [connectionStatus.ok, viewMode, hubUrl, loadBatches]);
 
+  // Live real-time reactivity in roll call mode: pick up any PC changes (PC marked student or changed status)
+  useEffect(() => {
+    if (!connectionStatus.ok || viewMode !== 'rollcall' || !selectedBatchId) return;
+    const interval = setInterval(async () => {
+      try {
+        const existingRecords = await fetchExistingAttendanceFromHub(selectedBatchId, selectedDate, hubUrl);
+        if (Array.isArray(existingRecords) && existingRecords.length > 0) {
+          setAttendanceMap((prev) => {
+            let changed = false;
+            const next = { ...prev };
+            existingRecords.forEach((r) => {
+              const idKey = r.student_id || r.admission_no;
+              if (idKey && r.status && next[idKey] !== r.status) {
+                next[idKey] = r.status;
+                changed = true;
+              }
+            });
+            return changed ? next : prev;
+          });
+        }
+      } catch {}
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [connectionStatus.ok, viewMode, selectedBatchId, selectedDate, hubUrl]);
+
   // Recheck when phone reconnects to network
   useEffect(() => {
-    const handleOnline = () => verifyConnection(hubUrl, true);
-    const handleOffline = () => {
-      setConnectionStatus({
-        ok: false,
-        state: 'wifi_disconnected',
-        url: hubUrl,
-        error: 'Phone is offline. Please connect to the School Wi-Fi network.',
-      });
-    };
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    const handleNetworkChange = () => verifyConnection(hubUrl, false);
+    window.addEventListener('online', handleNetworkChange);
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleNetworkChange);
     };
   }, [hubUrl, verifyConnection]);
 

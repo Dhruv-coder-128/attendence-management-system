@@ -25,6 +25,23 @@ async function testMobileLanSync() {
     throw new Error('No students returned for 11-COM');
   }
 
+  // 2b. Verify OPTIONS CORS Preflight allows X-Device-Id
+  console.log('[2b] Testing OPTIONS CORS Preflight...');
+  const optRes = await fetch(`${lanBase}?action=attendance`, {
+    method: 'OPTIONS',
+    headers: {
+      'Origin': 'http://localhost',
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'content-type, x-device-id'
+    }
+  });
+  const allowHeaders = optRes.headers.get('access-control-allow-headers') || '';
+  console.log('    OPTIONS Status:', optRes.status, 'Allow-Headers:', allowHeaders);
+  if (!allowHeaders.toLowerCase().includes('x-device-id') && !allowHeaders.includes('*')) {
+    throw new Error('OPTIONS preflight missing X-Device-Id in Access-Control-Allow-Headers');
+  }
+  console.log('✓ OPTIONS CORS Preflight verified successfully!');
+
   // 3. Mark all 20 students ABSENT (matching user scenario from screenshot)
   const today = '2026-10-18';
   const records = stuData.students.map(s => ({

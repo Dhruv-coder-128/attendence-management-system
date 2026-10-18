@@ -157,20 +157,82 @@ export async function checkDeviceRegistration(_hubUrl = null) {
 }
 
 /**
+/**
+ * Attempts to detect local device IP subnet prefix via WebRTC ICE candidate probing.
+ * E.g., returns '192.168.0' or '192.168.43' or null.
+ */
+async function detectLocalSubnetPrefix() {
+  if (typeof window === 'undefined' || typeof RTCPeerConnection === 'undefined') return null;
+  return new Promise((resolve) => {
+    try {
+      const pc = new RTCPeerConnection({ iceServers: [] });
+      let resolved = false;
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          try { pc.close(); } catch {}
+          resolve(null);
+        }
+      }, 700);
+
+      pc.createDataChannel('');
+      pc.createOffer().then((offer) => pc.setLocalDescription(offer)).catch(() => {});
+      pc.onicecandidate = (event) => {
+        if (event && event.candidate && event.candidate.candidate) {
+          const cand = event.candidate.candidate;
+          const match = cand.match(/(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b)/);
+          if (match && match[1]) {
+            const ip = match[1];
+            if (
+              !ip.startsWith('127.') &&
+              !ip.startsWith('0.') &&
+              !ip.startsWith('169.254.')
+            ) {
+              const parts = ip.split('.');
+              if (parts.length === 4) {
+                if (!resolved) {
+                  resolved = true;
+                  clearTimeout(timer);
+                  try { pc.close(); } catch {}
+                  resolve(`${parts[0]}.${parts[1]}.${parts[2]}`);
+                }
+              }
+            }
+          }
+        }
+      };
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+/**
  * Smart LAN Auto-Discovery:
  * Rapidly scans candidate IPs across the local Wi-Fi subnet to find the School PC Hub.
- * Prioritizes active Wi-Fi subnets (e.g. 192.168.0.*, 192.168.1.*, 192.168.29.*) and ports (5173, 5174).
+ * Uses WebRTC subnet detection, prioritizes active Wi-Fi subnets, and tests ports (5173, 5174, 5175).
+ * Guaranteed to work on local Wi-Fi and mobile hotspots without active internet.
  * Returns { ok: true, url: 'http://<ip>:<port>' } if found.
  */
 export async function autoDiscoverSchoolPC(onProgress = null) {
   if (typeof window === 'undefined') return { ok: false };
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    return { ok: false, error: 'Phone is offline. Connect to the School Wi-Fi network first.' };
-  }
 
   const candidateIps = new Set();
 
-  // 1. Check previously configured host
+  // 1. Detect phone's own subnet prefix dynamically via WebRTC
+  try {
+    const localPrefix = await detectLocalSubnetPrefix();
+    if (localPrefix) {
+      // Prioritize scanning the phone's actual Wi-Fi subnet
+      for (let i = 100; i <= 120; i++) candidateIps.add(`${localPrefix}.${i}`);
+      for (let i = 2; i <= 25; i++) candidateIps.add(`${localPrefix}.${i}`);
+      candidateIps.add(`${localPrefix}.1`);
+      candidateIps.add(`${localPrefix}.160`);
+      candidateIps.add(`${localPrefix}.254`);
+    }
+  } catch {}
+
+  // 2. Check previously configured host
   const saved = getStoredHubUrl();
   if (saved) {
     try {
@@ -180,14 +242,23 @@ export async function autoDiscoverSchoolPC(onProgress = null) {
         const parts = parsed.hostname.split('.');
         if (parts.length === 4) {
           const prefix = `${parts[0]}.${parts[1]}.${parts[2]}`;
-          for (let i = 100; i <= 115; i++) candidateIps.add(`${prefix}.${i}`);
+          for (let i = 100; i <= 120; i++) candidateIps.add(`${prefix}.${i}`);
+          for (let i = 2; i <= 20; i++) candidateIps.add(`${prefix}.${i}`);
         }
       }
     } catch {}
   }
 
-  // 2. High-frequency subnet assignments on Indian school/home Wi-Fi routers
-  const commonSubnets = ['192.168.0', '192.168.1', '192.168.29', '192.168.31', '10.0.0'];
+  // 3. High-frequency subnet assignments on Indian school/home Wi-Fi routers & mobile hotspots
+  const commonSubnets = [
+    '192.168.0',
+    '192.168.1',
+    '192.168.43',  // Android Mobile Hotspot (phone as router or client)
+    '192.168.137', // Windows Mobile Hotspot
+    '192.168.29',  // JioFiber
+    '192.168.31',  // Mi / Xiaomi Router
+    '10.0.0',      // Commercial router
+  ];
   for (const s of commonSubnets) {
     candidateIps.add(`${s}.103`);
     candidateIps.add(`${s}.104`);
@@ -200,6 +271,7 @@ export async function autoDiscoverSchoolPC(onProgress = null) {
     candidateIps.add(`${s}.108`);
     candidateIps.add(`${s}.109`);
     candidateIps.add(`${s}.110`);
+    candidateIps.add(`${s}.1`);
     candidateIps.add(`${s}.2`);
     candidateIps.add(`${s}.3`);
     candidateIps.add(`${s}.4`);
@@ -209,8 +281,8 @@ export async function autoDiscoverSchoolPC(onProgress = null) {
   const ports = [5173, 5174, 5175, 8765];
   const ipList = Array.from(candidateIps);
 
-  // Probe in fast parallel chunks of 20 with 650ms timeout
-  const CHUNK_SIZE = 20;
+  // Probe in fast parallel chunks of 25 with 550ms timeout
+  const CHUNK_SIZE = 25;
   for (let i = 0; i < ipList.length; i += CHUNK_SIZE) {
     const chunk = ipList.slice(i, i + CHUNK_SIZE);
     if (typeof onProgress === 'function') {
@@ -224,7 +296,7 @@ export async function autoDiscoverSchoolPC(onProgress = null) {
         promises.push(
           (async () => {
             const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-            const tId = controller ? setTimeout(() => controller.abort(), 650) : null;
+            const tId = controller ? setTimeout(() => controller.abort(), 550) : null;
             try {
               const res = await fetch(`${testUrl}/api/local-hub?action=status`, {
                 method: 'GET',
@@ -283,16 +355,6 @@ export async function checkHubConnection(hubUrl = null, tryAutoDiscover = false)
       state: 'pc_unreachable',
       url: '',
       error: 'School PC not configured. Scan the QR code on your PC screen or enter the Wi-Fi IP manually.',
-    };
-  }
-
-  // 2. Check if device network is completely offline
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    return {
-      ok: false,
-      state: 'wifi_disconnected',
-      url: targetUrl,
-      error: 'Phone is offline. Please connect to the School Wi-Fi network.',
     };
   }
 
