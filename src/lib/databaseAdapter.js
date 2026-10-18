@@ -10,10 +10,70 @@
  */
 
 import { saveFileWithPicker } from './fileSaveHelper.js';
+import {
+  CANONICAL_COURSES,
+  CANONICAL_BATCHES,
+  CANONICAL_STUDENTS,
+  CANONICAL_PARENTS,
+  CANONICAL_PARENT_STUDENTS,
+} from '../data/canonicalSchoolData.js';
 
 const DB_NAME = 'sms_offline_db';
 const DB_VERSION = 1;
 const STORAGE_MODE_KEY = 'sms_storage_mode';
+const ROSTER_MIGRATION_KEY = 'sms_roster_dataset_v4';
+
+let rosterMigrationPromise = null;
+
+async function ensureAuthoritativeRosterMigration() {
+  if (typeof window === 'undefined' || !window.indexedDB) return;
+  if (localStorage.getItem(ROSTER_MIGRATION_KEY) === 'true') return;
+
+  if (!rosterMigrationPromise) {
+    rosterMigrationPromise = (async () => {
+      try {
+        const db = await openOfflineDB();
+        const tx = db.transaction(['batches', 'students', 'courses', 'parents', 'parent_students'], 'readwrite');
+        
+        // Clear old stale/scrambled batches and students
+        tx.objectStore('batches').clear();
+        tx.objectStore('students').clear();
+        
+        const bStore = tx.objectStore('batches');
+        CANONICAL_BATCHES.forEach((b) => bStore.put(b));
+
+        const sStore = tx.objectStore('students');
+        CANONICAL_STUDENTS.forEach((s) => sStore.put(s));
+
+        if (CANONICAL_COURSES && CANONICAL_COURSES.length > 0) {
+          const cStore = tx.objectStore('courses');
+          CANONICAL_COURSES.forEach((c) => cStore.put(c));
+        }
+
+        if (CANONICAL_PARENTS && CANONICAL_PARENTS.length > 0) {
+          const pStore = tx.objectStore('parents');
+          CANONICAL_PARENTS.forEach((p) => pStore.put(p));
+        }
+
+        if (CANONICAL_PARENT_STUDENTS && CANONICAL_PARENT_STUDENTS.length > 0) {
+          const psStore = tx.objectStore('parent_students');
+          CANONICAL_PARENT_STUDENTS.forEach((ps) => psStore.put(ps));
+        }
+
+        await new Promise((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+
+        localStorage.setItem(ROSTER_MIGRATION_KEY, 'true');
+        console.log('[SMS Database Engine] Migrated to authoritative 100-student roster.');
+      } catch (err) {
+        console.warn('[SMS Database Engine] Migration warning:', err);
+      }
+    })();
+  }
+  return rosterMigrationPromise;
+}
 
 const ALL_TABLES = [
   'courses',
@@ -104,6 +164,7 @@ export function generateLocalId() {
  * Helper to perform read transaction
  */
 async function getAllFromStore(tableName) {
+  await ensureAuthoritativeRosterMigration();
   const db = await openOfflineDB();
   return new Promise((resolve, reject) => {
     if (!db.objectStoreNames.contains(tableName)) {
@@ -112,7 +173,20 @@ async function getAllFromStore(tableName) {
     const tx = db.transaction(tableName, 'readonly');
     const store = tx.objectStore(tableName);
     const req = store.getAll();
-    req.onsuccess = () => resolve(req.result || []);
+    req.onsuccess = () => {
+      const results = req.result || [];
+      if (results.length === 0) {
+        if (tableName === 'batches' && CANONICAL_BATCHES.length > 0) {
+          putRecordsInStore('batches', CANONICAL_BATCHES).catch(() => {});
+          return resolve(CANONICAL_BATCHES);
+        }
+        if (tableName === 'students' && CANONICAL_STUDENTS.length > 0) {
+          putRecordsInStore('students', CANONICAL_STUDENTS).catch(() => {});
+          return resolve(CANONICAL_STUDENTS);
+        }
+      }
+      resolve(results);
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -142,7 +216,12 @@ async function putRecordsInStore(tableName, records) {
       store.put(item);
     });
 
-    tx.oncomplete = () => resolve(list);
+    tx.oncomplete = () => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sms-db-mutation', { detail: { tableName, count: list.length } }));
+      }
+      resolve(list);
+    };
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -156,7 +235,12 @@ async function deleteRecordsFromStore(tableName, idsToDelete) {
     const tx = db.transaction(tableName, 'readwrite');
     const store = tx.objectStore(tableName);
     idsToDelete.forEach((id) => store.delete(id));
-    tx.oncomplete = () => resolve(true);
+    tx.oncomplete = () => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sms-db-mutation', { detail: { tableName, deletedCount: idsToDelete.length } }));
+      }
+      resolve(true);
+    };
     tx.onerror = () => reject(tx.error);
   });
 }
@@ -289,9 +373,18 @@ export function createLocalTableQueryBuilder(tableName) {
 
     // Promise execution
     then(resolve, reject) {
-      executeLocalQuery(state)
-        .then((res) => resolve(res))
-        .catch((err) => (reject ? reject(err) : resolve({ data: null, error: err, count: 0 })));
+      return executeLocalQuery(state)
+        .then((res) => (resolve ? resolve(res) : res))
+        .catch((err) => (reject ? reject(err) : { data: null, error: err, count: 0 }));
+    },
+
+    catch(reject) {
+      return executeLocalQuery(state)
+        .catch((err) => (reject ? reject(err) : { data: null, error: err, count: 0 }));
+    },
+
+    finally(callback) {
+      return executeLocalQuery(state).finally(callback);
     },
   };
 

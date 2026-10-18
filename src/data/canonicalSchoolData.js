@@ -1,69 +1,95 @@
 /**
- * SMS — Canonical School Batches & Student Roster
- * Embedded institutional data from official school records.
- * 5 Cohort Batches & 100 Enrolled Students (20 students per batch).
+ * SMS — Student Management System
+ * Production Canonical School Cohort & Student Roster
+ * 
+ * 100% synchronized with PC Desktop EXE and Android Mobile App.
+ * Contains 5 Batches (20 Students each = 100 total students)
+ * Direct import from official school Excel roster.
  */
+
+export const CANONICAL_COURSES = [
+  {
+    "id": "C11",
+    "name": "11th Commerce",
+    "code": "11-COM",
+    "level": "Higher Secondary"
+  },
+  {
+    "id": "C12",
+    "name": "12th Commerce",
+    "code": "12-COM",
+    "level": "Higher Secondary"
+  },
+  {
+    "id": "CFY",
+    "name": "First Year — Bachelor of Computer Applications",
+    "code": "FY-BCA",
+    "level": "Undergraduate"
+  },
+  {
+    "id": "CSY",
+    "name": "Second Year — Bachelor of Computer Applications",
+    "code": "SY-BCA",
+    "level": "Undergraduate"
+  },
+  {
+    "id": "CTY",
+    "name": "Third Year — Bachelor of Computer Applications",
+    "code": "TY-BCA",
+    "level": "Undergraduate"
+  }
+];
 
 export const CANONICAL_BATCHES = [
   {
     "id": "B11",
-    "code": "B11",
     "name": "11th Commerce",
-    "displayName": "B11 — 11th Commerce",
+    "code": "11-COM",
+    "course_id": "C11",
     "timing": "08:00 AM - 10:30 AM",
     "classroom": "Room 101",
-    "capacity": 25,
-    "status": "Active",
-    "is_active": true,
-    "student_count": 20
+    "max_capacity": 40,
+    "is_active": true
   },
   {
     "id": "B12",
-    "code": "B12",
     "name": "12th Commerce",
-    "displayName": "B12 — 12th Commerce",
+    "code": "12-COM",
+    "course_id": "C12",
     "timing": "11:00 AM - 01:30 PM",
     "classroom": "Room 102",
-    "capacity": 25,
-    "status": "Active",
-    "is_active": true,
-    "student_count": 20
+    "max_capacity": 40,
+    "is_active": true
   },
   {
     "id": "BFY",
-    "code": "BFY",
     "name": "FY",
-    "displayName": "BFY — FY",
-    "timing": "02:00 PM - 04:30 PM",
+    "code": "FY-BCA",
+    "course_id": "CFY",
+    "timing": "08:00 AM - 10:30 AM",
     "classroom": "Room 201",
-    "capacity": 25,
-    "status": "Active",
-    "is_active": true,
-    "student_count": 20
+    "max_capacity": 40,
+    "is_active": true
   },
   {
     "id": "BSY",
-    "code": "BSY",
     "name": "SY",
-    "displayName": "BSY — SY",
-    "timing": "08:00 AM - 10:30 AM",
+    "code": "SY-BCA",
+    "course_id": "CSY",
+    "timing": "11:00 AM - 01:30 PM",
     "classroom": "Room 202",
-    "capacity": 25,
-    "status": "Active",
-    "is_active": true,
-    "student_count": 20
+    "max_capacity": 40,
+    "is_active": true
   },
   {
     "id": "BTY",
-    "code": "BTY",
     "name": "TY",
-    "displayName": "BTY — TY",
-    "timing": "11:00 AM - 01:30 PM",
+    "code": "TY-BCA",
+    "course_id": "CTY",
+    "timing": "02:00 PM - 04:30 PM",
     "classroom": "Room 203",
-    "capacity": 25,
-    "status": "Active",
-    "is_active": true,
-    "student_count": 20
+    "max_capacity": 40,
+    "is_active": true
   }
 ];
 
@@ -75,10 +101,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Krishna Dave",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "981349847",
+    "phone": "981349847",
     "parent_name": "Dinesh Dave",
-    "email": "krishna.dave58@gmail.com"
+    "email": "krishna.dave58@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1002",
@@ -87,10 +118,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Ananya Zala",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "975072527",
+    "phone": "975072527",
     "parent_name": "Alpesh Zala",
-    "email": "ananya.zala70@gmail.com"
+    "email": "ananya.zala70@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1003",
@@ -99,10 +135,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Arjun Patel",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "985997685",
+    "phone": "985997685",
     "parent_name": "Sunil Patel",
-    "email": "arjun.patel14@gmail.com"
+    "email": "arjun.patel14@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1004",
@@ -111,10 +152,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Yash Vora",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "975685250",
+    "phone": "975685250",
     "parent_name": "Vijay Vora",
-    "email": "yash.vora29@gmail.com"
+    "email": "yash.vora29@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1005",
@@ -123,10 +169,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Diya Vora",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "998715180",
+    "phone": "998715180",
     "parent_name": "Sunil Vora",
-    "email": "diya.vora74@gmail.com"
+    "email": "diya.vora74@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1006",
@@ -135,10 +186,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Ananya Joshi",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Female",
     "contact_number": "985335912",
+    "phone": "985335912",
     "parent_name": "Kishor Joshi",
-    "email": "ananya.joshi93@gmail.com"
+    "email": "ananya.joshi93@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1007",
@@ -147,10 +203,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Vihaan Jadeja",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "970570583",
+    "phone": "970570583",
     "parent_name": "Nilesh Jadeja",
-    "email": "vihaan.jadeja70@gmail.com"
+    "email": "vihaan.jadeja70@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1008",
@@ -159,10 +220,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Karan Mehta",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "999497439",
+    "phone": "999497439",
     "parent_name": "Nilesh Mehta",
-    "email": "karan.mehta86@gmail.com"
+    "email": "karan.mehta86@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1009",
@@ -171,10 +237,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Pari Joshi",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "986467396",
+    "phone": "986467396",
     "parent_name": "Kishor Joshi",
-    "email": "pari.joshi33@gmail.com"
+    "email": "pari.joshi33@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1010",
@@ -183,10 +254,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Reyansh Vora",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "982863198",
+    "phone": "982863198",
     "parent_name": "Jignesh Vora",
-    "email": "reyansh.vora40@gmail.com"
+    "email": "reyansh.vora40@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1011",
@@ -195,10 +271,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Meera Makwana",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "988678800",
+    "phone": "988678800",
     "parent_name": "Rajesh Makwana",
-    "email": "meera.makwana96@gmail.com"
+    "email": "meera.makwana96@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1012",
@@ -207,10 +288,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Meera Thakkar",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "981553781",
+    "phone": "981553781",
     "parent_name": "Hitesh Thakkar",
-    "email": "meera.thakkar54@gmail.com"
+    "email": "meera.thakkar54@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1013",
@@ -219,10 +305,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Saanvi Trivedi",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Female",
     "contact_number": "980404186",
+    "phone": "980404186",
     "parent_name": "Manish Trivedi",
-    "email": "saanvi.trivedi77@gmail.com"
+    "email": "saanvi.trivedi77@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1014",
@@ -231,10 +322,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Dev Thakkar",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Female",
     "contact_number": "983180381",
+    "phone": "983180381",
     "parent_name": "Alpesh Thakkar",
-    "email": "dev.thakkar38@gmail.com"
+    "email": "dev.thakkar38@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1015",
@@ -243,10 +339,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Ananya Makwana",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "980643530",
+    "phone": "980643530",
     "parent_name": "Uday Makwana",
-    "email": "ananya.makwana40@gmail.com"
+    "email": "ananya.makwana40@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1016",
@@ -255,10 +356,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Rohan Mehta",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Female",
     "contact_number": "992385004",
+    "phone": "992385004",
     "parent_name": "Sanjay Mehta",
-    "email": "rohan.mehta48@gmail.com"
+    "email": "rohan.mehta48@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1017",
@@ -267,10 +373,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Riya Bhatt",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "971953066",
+    "phone": "971953066",
     "parent_name": "Kirit Bhatt",
-    "email": "riya.bhatt54@gmail.com"
+    "email": "riya.bhatt54@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1018",
@@ -279,10 +390,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Tanvi Trivedi",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "983512400",
+    "phone": "983512400",
     "parent_name": "Vijay Trivedi",
-    "email": "tanvi.trivedi12@gmail.com"
+    "email": "tanvi.trivedi12@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1019",
@@ -291,10 +407,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Saanvi Amin",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "991055285",
+    "phone": "991055285",
     "parent_name": "Ajay Amin",
-    "email": "saanvi.amin21@gmail.com"
+    "email": "saanvi.amin21@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1020",
@@ -303,10 +424,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Ishaan Sanghani",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
+    "batch_code": "11-COM",
     "gender": "Male",
     "contact_number": "991956307",
+    "phone": "991956307",
     "parent_name": "Prakash Sanghani",
-    "email": "ishaan.sanghani71@gmail.com"
+    "email": "ishaan.sanghani71@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1021",
@@ -315,10 +441,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Reyansh Thakkar",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Male",
     "contact_number": "993526069",
+    "phone": "993526069",
     "parent_name": "Ajay Thakkar",
-    "email": "reyansh.thakkar24@gmail.com"
+    "email": "reyansh.thakkar24@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1022",
@@ -327,10 +458,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Ishaan Rathod",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Male",
     "contact_number": "988726604",
+    "phone": "988726604",
     "parent_name": "Manish Rathod",
-    "email": "ishaan.rathod23@gmail.com"
+    "email": "ishaan.rathod23@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1023",
@@ -339,10 +475,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Ishaan Patel",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Female",
     "contact_number": "976221004",
+    "phone": "976221004",
     "parent_name": "Mukesh Patel",
-    "email": "ishaan.patel46@gmail.com"
+    "email": "ishaan.patel46@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1024",
@@ -351,10 +492,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Neha Rathod",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Female",
     "contact_number": "990171425",
+    "phone": "990171425",
     "parent_name": "Sunil Rathod",
-    "email": "neha.rathod98@gmail.com"
+    "email": "neha.rathod98@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1025",
@@ -363,10 +509,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Pranav Zala",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Male",
     "contact_number": "991705254",
+    "phone": "991705254",
     "parent_name": "Nilesh Zala",
-    "email": "pranav.zala97@gmail.com"
+    "email": "pranav.zala97@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1026",
@@ -375,10 +526,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Vihaan Trivedi",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Male",
     "contact_number": "979362875",
+    "phone": "979362875",
     "parent_name": "Nilesh Trivedi",
-    "email": "vihaan.trivedi58@gmail.com"
+    "email": "vihaan.trivedi58@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1027",
@@ -387,10 +543,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Pari Chauhan",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Male",
     "contact_number": "976968603",
+    "phone": "976968603",
     "parent_name": "Kishor Chauhan",
-    "email": "pari.chauhan80@gmail.com"
+    "email": "pari.chauhan80@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1028",
@@ -399,10 +560,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Aadhya Chauhan",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Male",
     "contact_number": "991364677",
+    "phone": "991364677",
     "parent_name": "Vijay Chauhan",
-    "email": "aadhya.chauhan44@gmail.com"
+    "email": "aadhya.chauhan44@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1029",
@@ -411,10 +577,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Meera Trivedi",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Male",
     "contact_number": "981537472",
+    "phone": "981537472",
     "parent_name": "Mukesh Trivedi",
-    "email": "meera.trivedi69@gmail.com"
+    "email": "meera.trivedi69@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1030",
@@ -423,10 +594,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Diya Makwana",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Female",
     "contact_number": "972848305",
+    "phone": "972848305",
     "parent_name": "Jignesh Makwana",
-    "email": "diya.makwana91@gmail.com"
+    "email": "diya.makwana91@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1031",
@@ -435,10 +611,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Aarav Amin",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Female",
     "contact_number": "976070145",
+    "phone": "976070145",
     "parent_name": "Sunil Amin",
-    "email": "aarav.amin61@gmail.com"
+    "email": "aarav.amin61@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1032",
@@ -447,10 +628,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Reyansh Dave",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Male",
     "contact_number": "977620511",
+    "phone": "977620511",
     "parent_name": "Rajesh Dave",
-    "email": "reyansh.dave62@gmail.com"
+    "email": "reyansh.dave62@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1033",
@@ -459,10 +645,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Pranav Rathod",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Male",
     "contact_number": "984721026",
+    "phone": "984721026",
     "parent_name": "Rajesh Rathod",
-    "email": "pranav.rathod71@gmail.com"
+    "email": "pranav.rathod71@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1034",
@@ -471,10 +662,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Atharv Modi",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Female",
     "contact_number": "988944700",
+    "phone": "988944700",
     "parent_name": "Hitesh Modi",
-    "email": "atharv.modi43@gmail.com"
+    "email": "atharv.modi43@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1035",
@@ -483,10 +679,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Ananya Vora",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Male",
     "contact_number": "986887652",
+    "phone": "986887652",
     "parent_name": "Mahesh Vora",
-    "email": "ananya.vora72@gmail.com"
+    "email": "ananya.vora72@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1036",
@@ -495,10 +696,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Aarav Dave",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Male",
     "contact_number": "982058135",
+    "phone": "982058135",
     "parent_name": "Kishor Dave",
-    "email": "aarav.dave17@gmail.com"
+    "email": "aarav.dave17@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1037",
@@ -507,10 +713,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Vivaan Solanki",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Female",
     "contact_number": "979581974",
+    "phone": "979581974",
     "parent_name": "Haresh Solanki",
-    "email": "vivaan.solanki58@gmail.com"
+    "email": "vivaan.solanki58@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1038",
@@ -519,10 +730,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Ayaan Bhatt",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Male",
     "contact_number": "978354906",
+    "phone": "978354906",
     "parent_name": "Anil Bhatt",
-    "email": "ayaan.bhatt17@gmail.com"
+    "email": "ayaan.bhatt17@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1039",
@@ -531,10 +747,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Aadhya Zala",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Female",
     "contact_number": "991359959",
+    "phone": "991359959",
     "parent_name": "Manish Zala",
-    "email": "aadhya.zala78@gmail.com"
+    "email": "aadhya.zala78@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1040",
@@ -543,10 +764,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Reyansh Trivedi",
     "batch_id": "B12",
     "batch_name": "12th Commerce",
+    "batch_code": "12-COM",
     "gender": "Female",
     "contact_number": "976262220",
+    "phone": "976262220",
     "parent_name": "Paresh Trivedi",
-    "email": "reyansh.trivedi51@gmail.com"
+    "email": "reyansh.trivedi51@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1041",
@@ -555,10 +781,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Neha Pandya",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "993917745",
+    "phone": "993917745",
     "parent_name": "Kirit Pandya",
-    "email": "neha.pandya81@gmail.com"
+    "email": "neha.pandya81@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1042",
@@ -567,10 +798,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Pooja Patel",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "992474154",
+    "phone": "992474154",
     "parent_name": "Anil Patel",
-    "email": "pooja.patel97@gmail.com"
+    "email": "pooja.patel97@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1043",
@@ -579,10 +815,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Yash Mehta",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Female",
     "contact_number": "990039510",
+    "phone": "990039510",
     "parent_name": "Manish Mehta",
-    "email": "yash.mehta62@gmail.com"
+    "email": "yash.mehta62@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1044",
@@ -591,10 +832,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Sai Patel",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "982606618",
+    "phone": "982606618",
     "parent_name": "Manish Patel",
-    "email": "sai.patel47@gmail.com"
+    "email": "sai.patel47@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1045",
@@ -603,10 +849,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Ishaan Pandya",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Female",
     "contact_number": "994853518",
+    "phone": "994853518",
     "parent_name": "Vijay Pandya",
-    "email": "ishaan.pandya28@gmail.com"
+    "email": "ishaan.pandya28@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1046",
@@ -615,10 +866,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Meera Jadeja",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "978046137",
+    "phone": "978046137",
     "parent_name": "Mahesh Jadeja",
-    "email": "meera.jadeja69@gmail.com"
+    "email": "meera.jadeja69@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1047",
@@ -627,10 +883,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Krishna Vora",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Female",
     "contact_number": "991446180",
+    "phone": "991446180",
     "parent_name": "Dhiraj Vora",
-    "email": "krishna.vora44@gmail.com"
+    "email": "krishna.vora44@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1048",
@@ -639,10 +900,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Advik Dave",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "994337212",
+    "phone": "994337212",
     "parent_name": "Sanjay Dave",
-    "email": "advik.dave73@gmail.com"
+    "email": "advik.dave73@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1049",
@@ -651,10 +917,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Krishna Mehta",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "974861179",
+    "phone": "974861179",
     "parent_name": "Jatin Mehta",
-    "email": "krishna.mehta22@gmail.com"
+    "email": "krishna.mehta22@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1050",
@@ -663,10 +934,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Tanvi Solanki",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Female",
     "contact_number": "993592590",
+    "phone": "993592590",
     "parent_name": "Ramesh Solanki",
-    "email": "tanvi.solanki88@gmail.com"
+    "email": "tanvi.solanki88@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1051",
@@ -675,10 +951,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Riya Vora",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "973560385",
+    "phone": "973560385",
     "parent_name": "Uday Vora",
-    "email": "riya.vora30@gmail.com"
+    "email": "riya.vora30@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1052",
@@ -687,10 +968,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Sai Thakkar",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Female",
     "contact_number": "999838107",
+    "phone": "999838107",
     "parent_name": "Kishor Thakkar",
-    "email": "sai.thakkar81@gmail.com"
+    "email": "sai.thakkar81@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1053",
@@ -699,10 +985,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Adhira Mehta",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "981662707",
+    "phone": "981662707",
     "parent_name": "Paresh Mehta",
-    "email": "adhira.mehta23@gmail.com"
+    "email": "adhira.mehta23@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1054",
@@ -711,10 +1002,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Reyansh Bhatt",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "992624742",
+    "phone": "992624742",
     "parent_name": "Vijay Bhatt",
-    "email": "reyansh.bhatt45@gmail.com"
+    "email": "reyansh.bhatt45@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1055",
@@ -723,10 +1019,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Aarav Thakkar",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "972824647",
+    "phone": "972824647",
     "parent_name": "Vijay Thakkar",
-    "email": "aarav.thakkar98@gmail.com"
+    "email": "aarav.thakkar98@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1056",
@@ -735,10 +1036,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Pooja Joshi",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Female",
     "contact_number": "982681823",
+    "phone": "982681823",
     "parent_name": "Kirit Joshi",
-    "email": "pooja.joshi79@gmail.com"
+    "email": "pooja.joshi79@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1057",
@@ -747,10 +1053,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Ishaan Sanghani",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "983219515",
+    "phone": "983219515",
     "parent_name": "Sanjay Sanghani",
-    "email": "ishaan.sanghani32@gmail.com"
+    "email": "ishaan.sanghani32@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1058",
@@ -759,10 +1070,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Atharv Pandya",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "994577955",
+    "phone": "994577955",
     "parent_name": "Manish Pandya",
-    "email": "atharv.pandya75@gmail.com"
+    "email": "atharv.pandya75@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1059",
@@ -771,10 +1087,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Adhira Rathod",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "990916771",
+    "phone": "990916771",
     "parent_name": "Ashok Rathod",
-    "email": "adhira.rathod61@gmail.com"
+    "email": "adhira.rathod61@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1060",
@@ -783,10 +1104,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Saanvi Shah",
     "batch_id": "BFY",
     "batch_name": "FY",
+    "batch_code": "FY-BCA",
     "gender": "Male",
     "contact_number": "985177617",
+    "phone": "985177617",
     "parent_name": "Anil Shah",
-    "email": "saanvi.shah59@gmail.com"
+    "email": "saanvi.shah59@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1061",
@@ -795,10 +1121,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Saanvi Vora",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Male",
     "contact_number": "980702957",
+    "phone": "980702957",
     "parent_name": "Kirit Vora",
-    "email": "saanvi.vora33@gmail.com"
+    "email": "saanvi.vora33@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1062",
@@ -807,10 +1138,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Karan Dave",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Male",
     "contact_number": "973894299",
+    "phone": "973894299",
     "parent_name": "Vijay Dave",
-    "email": "karan.dave47@gmail.com"
+    "email": "karan.dave47@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1063",
@@ -819,10 +1155,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Pooja Dave",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Female",
     "contact_number": "984046871",
+    "phone": "984046871",
     "parent_name": "Prakash Dave",
-    "email": "pooja.dave34@gmail.com"
+    "email": "pooja.dave34@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1064",
@@ -831,10 +1172,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Adhira Pandya",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Female",
     "contact_number": "995693551",
+    "phone": "995693551",
     "parent_name": "Kirit Pandya",
-    "email": "adhira.pandya81@gmail.com"
+    "email": "adhira.pandya81@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1065",
@@ -843,10 +1189,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Diya Vora",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Female",
     "contact_number": "993678692",
+    "phone": "993678692",
     "parent_name": "Ramesh Vora",
-    "email": "diya.vora56@gmail.com"
+    "email": "diya.vora56@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1066",
@@ -855,10 +1206,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Pranav Vora",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Female",
     "contact_number": "991265508",
+    "phone": "991265508",
     "parent_name": "Ramesh Vora",
-    "email": "pranav.vora66@gmail.com"
+    "email": "pranav.vora66@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1067",
@@ -867,10 +1223,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Dev Modi",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Male",
     "contact_number": "981019688",
+    "phone": "981019688",
     "parent_name": "Bharat Modi",
-    "email": "dev.modi66@gmail.com"
+    "email": "dev.modi66@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1068",
@@ -879,10 +1240,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Aditya Amin",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Female",
     "contact_number": "993669602",
+    "phone": "993669602",
     "parent_name": "Alpesh Amin",
-    "email": "aditya.amin54@gmail.com"
+    "email": "aditya.amin54@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1069",
@@ -891,10 +1257,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Atharv Pandya",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Male",
     "contact_number": "987315927",
+    "phone": "987315927",
     "parent_name": "Bharat Pandya",
-    "email": "atharv.pandya48@gmail.com"
+    "email": "atharv.pandya48@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1070",
@@ -903,10 +1274,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Ayaan Solanki",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Male",
     "contact_number": "980060087",
+    "phone": "980060087",
     "parent_name": "Prakash Solanki",
-    "email": "ayaan.solanki23@gmail.com"
+    "email": "ayaan.solanki23@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1071",
@@ -915,10 +1291,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Vihaan Shah",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Female",
     "contact_number": "981337245",
+    "phone": "981337245",
     "parent_name": "Dinesh Shah",
-    "email": "vihaan.shah24@gmail.com"
+    "email": "vihaan.shah24@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1072",
@@ -927,10 +1308,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Dev Jadeja",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Male",
     "contact_number": "994201975",
+    "phone": "994201975",
     "parent_name": "Haresh Jadeja",
-    "email": "dev.jadeja77@gmail.com"
+    "email": "dev.jadeja77@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1073",
@@ -939,10 +1325,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Arjun Mehta",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Male",
     "contact_number": "999050835",
+    "phone": "999050835",
     "parent_name": "Dhiraj Mehta",
-    "email": "arjun.mehta30@gmail.com"
+    "email": "arjun.mehta30@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1074",
@@ -951,10 +1342,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Krishna Chauhan",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Female",
     "contact_number": "993254843",
+    "phone": "993254843",
     "parent_name": "Vijay Chauhan",
-    "email": "krishna.chauhan25@gmail.com"
+    "email": "krishna.chauhan25@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1075",
@@ -963,10 +1359,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Sai Vora",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Female",
     "contact_number": "997266283",
+    "phone": "997266283",
     "parent_name": "Jignesh Vora",
-    "email": "sai.vora17@gmail.com"
+    "email": "sai.vora17@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1076",
@@ -975,10 +1376,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Dev Shah",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Female",
     "contact_number": "970905890",
+    "phone": "970905890",
     "parent_name": "Paresh Shah",
-    "email": "dev.shah35@gmail.com"
+    "email": "dev.shah35@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1077",
@@ -987,10 +1393,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Ananya Sanghani",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Female",
     "contact_number": "979108698",
+    "phone": "979108698",
     "parent_name": "Rajesh Sanghani",
-    "email": "ananya.sanghani77@gmail.com"
+    "email": "ananya.sanghani77@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1078",
@@ -999,10 +1410,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Arjun Jadeja",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Male",
     "contact_number": "979848616",
+    "phone": "979848616",
     "parent_name": "Kirit Jadeja",
-    "email": "arjun.jadeja50@gmail.com"
+    "email": "arjun.jadeja50@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1079",
@@ -1011,10 +1427,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Arjun Shah",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Female",
     "contact_number": "980996543",
+    "phone": "980996543",
     "parent_name": "Bharat Shah",
-    "email": "arjun.shah95@gmail.com"
+    "email": "arjun.shah95@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1080",
@@ -1023,10 +1444,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Atharv Patel",
     "batch_id": "BSY",
     "batch_name": "SY",
+    "batch_code": "SY-BCA",
     "gender": "Female",
     "contact_number": "994059202",
+    "phone": "994059202",
     "parent_name": "Kirit Patel",
-    "email": "atharv.patel44@gmail.com"
+    "email": "atharv.patel44@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1081",
@@ -1035,10 +1461,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Reyansh Amin",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Female",
     "contact_number": "990557461",
+    "phone": "990557461",
     "parent_name": "Hitesh Amin",
-    "email": "reyansh.amin68@gmail.com"
+    "email": "reyansh.amin68@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1082",
@@ -1047,10 +1478,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Aarav Solanki",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Female",
     "contact_number": "973311684",
+    "phone": "973311684",
     "parent_name": "Bharat Solanki",
-    "email": "aarav.solanki91@gmail.com"
+    "email": "aarav.solanki91@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1083",
@@ -1059,10 +1495,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Adhira Parmar",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Female",
     "contact_number": "982499110",
+    "phone": "982499110",
     "parent_name": "Mahesh Parmar",
-    "email": "adhira.parmar27@gmail.com"
+    "email": "adhira.parmar27@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1084",
@@ -1071,10 +1512,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Vivaan Thakkar",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Female",
     "contact_number": "981828024",
+    "phone": "981828024",
     "parent_name": "Paresh Thakkar",
-    "email": "vivaan.thakkar85@gmail.com"
+    "email": "vivaan.thakkar85@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1085",
@@ -1083,10 +1529,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Meera Shah",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Male",
     "contact_number": "991044432",
+    "phone": "991044432",
     "parent_name": "Ramesh Shah",
-    "email": "meera.shah33@gmail.com"
+    "email": "meera.shah33@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1086",
@@ -1095,10 +1546,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Vihaan Modi",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Female",
     "contact_number": "990418471",
+    "phone": "990418471",
     "parent_name": "Hitesh Modi",
-    "email": "vihaan.modi66@gmail.com"
+    "email": "vihaan.modi66@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1087",
@@ -1107,10 +1563,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Aadhya Trivedi",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Male",
     "contact_number": "994913820",
+    "phone": "994913820",
     "parent_name": "Rajesh Trivedi",
-    "email": "aadhya.trivedi48@gmail.com"
+    "email": "aadhya.trivedi48@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1088",
@@ -1119,10 +1580,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Meera Parmar",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Male",
     "contact_number": "986573498",
+    "phone": "986573498",
     "parent_name": "Ajay Parmar",
-    "email": "meera.parmar38@gmail.com"
+    "email": "meera.parmar38@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1089",
@@ -1131,10 +1597,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Krishna Dave",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Female",
     "contact_number": "988989212",
+    "phone": "988989212",
     "parent_name": "Ramesh Dave",
-    "email": "krishna.dave87@gmail.com"
+    "email": "krishna.dave87@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1090",
@@ -1143,10 +1614,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Diya Shah",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Male",
     "contact_number": "980780365",
+    "phone": "980780365",
     "parent_name": "Mahesh Shah",
-    "email": "diya.shah77@gmail.com"
+    "email": "diya.shah77@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1091",
@@ -1155,10 +1631,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Riya Jadeja",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Female",
     "contact_number": "989060096",
+    "phone": "989060096",
     "parent_name": "Haresh Jadeja",
-    "email": "riya.jadeja12@gmail.com"
+    "email": "riya.jadeja12@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1092",
@@ -1167,10 +1648,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Reyansh Dave",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Male",
     "contact_number": "985555036",
+    "phone": "985555036",
     "parent_name": "Rajesh Dave",
-    "email": "reyansh.dave55@gmail.com"
+    "email": "reyansh.dave55@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1093",
@@ -1179,10 +1665,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Arjun Trivedi",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Female",
     "contact_number": "989151883",
+    "phone": "989151883",
     "parent_name": "Manish Trivedi",
-    "email": "arjun.trivedi46@gmail.com"
+    "email": "arjun.trivedi46@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1094",
@@ -1191,10 +1682,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Krishna Modi",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Male",
     "contact_number": "988389459",
+    "phone": "988389459",
     "parent_name": "Ashok Modi",
-    "email": "krishna.modi93@gmail.com"
+    "email": "krishna.modi93@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1095",
@@ -1203,10 +1699,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Aadhya Parmar",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Female",
     "contact_number": "990501700",
+    "phone": "990501700",
     "parent_name": "Sanjay Parmar",
-    "email": "aadhya.parmar60@gmail.com"
+    "email": "aadhya.parmar60@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1096",
@@ -1215,10 +1716,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Krishna Parmar",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Male",
     "contact_number": "986992562",
+    "phone": "986992562",
     "parent_name": "Rajesh Parmar",
-    "email": "krishna.parmar35@gmail.com"
+    "email": "krishna.parmar35@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1097",
@@ -1227,10 +1733,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Diya Patel",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Female",
     "contact_number": "980682809",
+    "phone": "980682809",
     "parent_name": "Jatin Patel",
-    "email": "diya.patel93@gmail.com"
+    "email": "diya.patel93@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1098",
@@ -1239,10 +1750,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Yash Thakkar",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Male",
     "contact_number": "981907376",
+    "phone": "981907376",
     "parent_name": "Ashok Thakkar",
-    "email": "yash.thakkar52@gmail.com"
+    "email": "yash.thakkar52@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1099",
@@ -1251,10 +1767,15 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Aditya Solanki",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Female",
     "contact_number": "999494283",
+    "phone": "999494283",
     "parent_name": "Mukesh Solanki",
-    "email": "aditya.solanki62@gmail.com"
+    "email": "aditya.solanki62@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   },
   {
     "id": "ST1100",
@@ -1263,34 +1784,1851 @@ export const CANONICAL_STUDENTS = [
     "full_name": "Adhira Patel",
     "batch_id": "BTY",
     "batch_name": "TY",
+    "batch_code": "TY-BCA",
     "gender": "Male",
     "contact_number": "995012740",
+    "phone": "995012740",
     "parent_name": "Alpesh Patel",
-    "email": "adhira.patel90@gmail.com"
+    "email": "adhira.patel90@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z"
   }
 ];
 
-export function getBatchStudents(batchId) {
-  if (!batchId) return [];
-  const clean = String(batchId).trim().toUpperCase();
-  return CANONICAL_STUDENTS.filter(
-    (s) =>
-      s.batch_id.toUpperCase() === clean ||
-      s.batch_name.toUpperCase() === clean ||
-      clean.includes(s.batch_id.toUpperCase())
-  );
+export const CANONICAL_PARENTS = [
+  {
+    "id": "P_ST1001",
+    "full_name": "Dinesh Dave",
+    "phone": "981349847",
+    "email": "krishna.dave58@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1002",
+    "full_name": "Alpesh Zala",
+    "phone": "975072527",
+    "email": "ananya.zala70@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1003",
+    "full_name": "Sunil Patel",
+    "phone": "985997685",
+    "email": "arjun.patel14@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1004",
+    "full_name": "Vijay Vora",
+    "phone": "975685250",
+    "email": "yash.vora29@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1005",
+    "full_name": "Sunil Vora",
+    "phone": "998715180",
+    "email": "diya.vora74@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1006",
+    "full_name": "Kishor Joshi",
+    "phone": "985335912",
+    "email": "ananya.joshi93@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1007",
+    "full_name": "Nilesh Jadeja",
+    "phone": "970570583",
+    "email": "vihaan.jadeja70@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1008",
+    "full_name": "Nilesh Mehta",
+    "phone": "999497439",
+    "email": "karan.mehta86@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1009",
+    "full_name": "Kishor Joshi",
+    "phone": "986467396",
+    "email": "pari.joshi33@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1010",
+    "full_name": "Jignesh Vora",
+    "phone": "982863198",
+    "email": "reyansh.vora40@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1011",
+    "full_name": "Rajesh Makwana",
+    "phone": "988678800",
+    "email": "meera.makwana96@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1012",
+    "full_name": "Hitesh Thakkar",
+    "phone": "981553781",
+    "email": "meera.thakkar54@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1013",
+    "full_name": "Manish Trivedi",
+    "phone": "980404186",
+    "email": "saanvi.trivedi77@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1014",
+    "full_name": "Alpesh Thakkar",
+    "phone": "983180381",
+    "email": "dev.thakkar38@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1015",
+    "full_name": "Uday Makwana",
+    "phone": "980643530",
+    "email": "ananya.makwana40@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1016",
+    "full_name": "Sanjay Mehta",
+    "phone": "992385004",
+    "email": "rohan.mehta48@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1017",
+    "full_name": "Kirit Bhatt",
+    "phone": "971953066",
+    "email": "riya.bhatt54@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1018",
+    "full_name": "Vijay Trivedi",
+    "phone": "983512400",
+    "email": "tanvi.trivedi12@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1019",
+    "full_name": "Ajay Amin",
+    "phone": "991055285",
+    "email": "saanvi.amin21@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1020",
+    "full_name": "Prakash Sanghani",
+    "phone": "991956307",
+    "email": "ishaan.sanghani71@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1021",
+    "full_name": "Ajay Thakkar",
+    "phone": "993526069",
+    "email": "reyansh.thakkar24@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1022",
+    "full_name": "Manish Rathod",
+    "phone": "988726604",
+    "email": "ishaan.rathod23@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1023",
+    "full_name": "Mukesh Patel",
+    "phone": "976221004",
+    "email": "ishaan.patel46@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1024",
+    "full_name": "Sunil Rathod",
+    "phone": "990171425",
+    "email": "neha.rathod98@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1025",
+    "full_name": "Nilesh Zala",
+    "phone": "991705254",
+    "email": "pranav.zala97@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1026",
+    "full_name": "Nilesh Trivedi",
+    "phone": "979362875",
+    "email": "vihaan.trivedi58@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1027",
+    "full_name": "Kishor Chauhan",
+    "phone": "976968603",
+    "email": "pari.chauhan80@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1028",
+    "full_name": "Vijay Chauhan",
+    "phone": "991364677",
+    "email": "aadhya.chauhan44@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1029",
+    "full_name": "Mukesh Trivedi",
+    "phone": "981537472",
+    "email": "meera.trivedi69@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1030",
+    "full_name": "Jignesh Makwana",
+    "phone": "972848305",
+    "email": "diya.makwana91@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1031",
+    "full_name": "Sunil Amin",
+    "phone": "976070145",
+    "email": "aarav.amin61@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1032",
+    "full_name": "Rajesh Dave",
+    "phone": "977620511",
+    "email": "reyansh.dave62@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1033",
+    "full_name": "Rajesh Rathod",
+    "phone": "984721026",
+    "email": "pranav.rathod71@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1034",
+    "full_name": "Hitesh Modi",
+    "phone": "988944700",
+    "email": "atharv.modi43@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1035",
+    "full_name": "Mahesh Vora",
+    "phone": "986887652",
+    "email": "ananya.vora72@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1036",
+    "full_name": "Kishor Dave",
+    "phone": "982058135",
+    "email": "aarav.dave17@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1037",
+    "full_name": "Haresh Solanki",
+    "phone": "979581974",
+    "email": "vivaan.solanki58@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1038",
+    "full_name": "Anil Bhatt",
+    "phone": "978354906",
+    "email": "ayaan.bhatt17@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1039",
+    "full_name": "Manish Zala",
+    "phone": "991359959",
+    "email": "aadhya.zala78@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1040",
+    "full_name": "Paresh Trivedi",
+    "phone": "976262220",
+    "email": "reyansh.trivedi51@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1041",
+    "full_name": "Kirit Pandya",
+    "phone": "993917745",
+    "email": "neha.pandya81@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1042",
+    "full_name": "Anil Patel",
+    "phone": "992474154",
+    "email": "pooja.patel97@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1043",
+    "full_name": "Manish Mehta",
+    "phone": "990039510",
+    "email": "yash.mehta62@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1044",
+    "full_name": "Manish Patel",
+    "phone": "982606618",
+    "email": "sai.patel47@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1045",
+    "full_name": "Vijay Pandya",
+    "phone": "994853518",
+    "email": "ishaan.pandya28@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1046",
+    "full_name": "Mahesh Jadeja",
+    "phone": "978046137",
+    "email": "meera.jadeja69@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1047",
+    "full_name": "Dhiraj Vora",
+    "phone": "991446180",
+    "email": "krishna.vora44@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1048",
+    "full_name": "Sanjay Dave",
+    "phone": "994337212",
+    "email": "advik.dave73@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1049",
+    "full_name": "Jatin Mehta",
+    "phone": "974861179",
+    "email": "krishna.mehta22@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1050",
+    "full_name": "Ramesh Solanki",
+    "phone": "993592590",
+    "email": "tanvi.solanki88@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1051",
+    "full_name": "Uday Vora",
+    "phone": "973560385",
+    "email": "riya.vora30@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1052",
+    "full_name": "Kishor Thakkar",
+    "phone": "999838107",
+    "email": "sai.thakkar81@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1053",
+    "full_name": "Paresh Mehta",
+    "phone": "981662707",
+    "email": "adhira.mehta23@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1054",
+    "full_name": "Vijay Bhatt",
+    "phone": "992624742",
+    "email": "reyansh.bhatt45@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1055",
+    "full_name": "Vijay Thakkar",
+    "phone": "972824647",
+    "email": "aarav.thakkar98@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1056",
+    "full_name": "Kirit Joshi",
+    "phone": "982681823",
+    "email": "pooja.joshi79@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1057",
+    "full_name": "Sanjay Sanghani",
+    "phone": "983219515",
+    "email": "ishaan.sanghani32@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1058",
+    "full_name": "Manish Pandya",
+    "phone": "994577955",
+    "email": "atharv.pandya75@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1059",
+    "full_name": "Ashok Rathod",
+    "phone": "990916771",
+    "email": "adhira.rathod61@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1060",
+    "full_name": "Anil Shah",
+    "phone": "985177617",
+    "email": "saanvi.shah59@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1061",
+    "full_name": "Kirit Vora",
+    "phone": "980702957",
+    "email": "saanvi.vora33@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1062",
+    "full_name": "Vijay Dave",
+    "phone": "973894299",
+    "email": "karan.dave47@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1063",
+    "full_name": "Prakash Dave",
+    "phone": "984046871",
+    "email": "pooja.dave34@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1064",
+    "full_name": "Kirit Pandya",
+    "phone": "995693551",
+    "email": "adhira.pandya81@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1065",
+    "full_name": "Ramesh Vora",
+    "phone": "993678692",
+    "email": "diya.vora56@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1066",
+    "full_name": "Ramesh Vora",
+    "phone": "991265508",
+    "email": "pranav.vora66@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1067",
+    "full_name": "Bharat Modi",
+    "phone": "981019688",
+    "email": "dev.modi66@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1068",
+    "full_name": "Alpesh Amin",
+    "phone": "993669602",
+    "email": "aditya.amin54@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1069",
+    "full_name": "Bharat Pandya",
+    "phone": "987315927",
+    "email": "atharv.pandya48@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1070",
+    "full_name": "Prakash Solanki",
+    "phone": "980060087",
+    "email": "ayaan.solanki23@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1071",
+    "full_name": "Dinesh Shah",
+    "phone": "981337245",
+    "email": "vihaan.shah24@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1072",
+    "full_name": "Haresh Jadeja",
+    "phone": "994201975",
+    "email": "dev.jadeja77@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1073",
+    "full_name": "Dhiraj Mehta",
+    "phone": "999050835",
+    "email": "arjun.mehta30@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1074",
+    "full_name": "Vijay Chauhan",
+    "phone": "993254843",
+    "email": "krishna.chauhan25@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1075",
+    "full_name": "Jignesh Vora",
+    "phone": "997266283",
+    "email": "sai.vora17@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1076",
+    "full_name": "Paresh Shah",
+    "phone": "970905890",
+    "email": "dev.shah35@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1077",
+    "full_name": "Rajesh Sanghani",
+    "phone": "979108698",
+    "email": "ananya.sanghani77@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1078",
+    "full_name": "Kirit Jadeja",
+    "phone": "979848616",
+    "email": "arjun.jadeja50@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1079",
+    "full_name": "Bharat Shah",
+    "phone": "980996543",
+    "email": "arjun.shah95@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1080",
+    "full_name": "Kirit Patel",
+    "phone": "994059202",
+    "email": "atharv.patel44@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1081",
+    "full_name": "Hitesh Amin",
+    "phone": "990557461",
+    "email": "reyansh.amin68@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1082",
+    "full_name": "Bharat Solanki",
+    "phone": "973311684",
+    "email": "aarav.solanki91@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1083",
+    "full_name": "Mahesh Parmar",
+    "phone": "982499110",
+    "email": "adhira.parmar27@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1084",
+    "full_name": "Paresh Thakkar",
+    "phone": "981828024",
+    "email": "vivaan.thakkar85@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1085",
+    "full_name": "Ramesh Shah",
+    "phone": "991044432",
+    "email": "meera.shah33@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1086",
+    "full_name": "Hitesh Modi",
+    "phone": "990418471",
+    "email": "vihaan.modi66@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1087",
+    "full_name": "Rajesh Trivedi",
+    "phone": "994913820",
+    "email": "aadhya.trivedi48@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1088",
+    "full_name": "Ajay Parmar",
+    "phone": "986573498",
+    "email": "meera.parmar38@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1089",
+    "full_name": "Ramesh Dave",
+    "phone": "988989212",
+    "email": "krishna.dave87@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1090",
+    "full_name": "Mahesh Shah",
+    "phone": "980780365",
+    "email": "diya.shah77@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1091",
+    "full_name": "Haresh Jadeja",
+    "phone": "989060096",
+    "email": "riya.jadeja12@gmail.com",
+    "address": "Near City Center, Ahmedabad",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1092",
+    "full_name": "Rajesh Dave",
+    "phone": "985555036",
+    "email": "reyansh.dave55@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1093",
+    "full_name": "Manish Trivedi",
+    "phone": "989151883",
+    "email": "arjun.trivedi46@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1094",
+    "full_name": "Ashok Modi",
+    "phone": "988389459",
+    "email": "krishna.modi93@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1095",
+    "full_name": "Sanjay Parmar",
+    "phone": "990501700",
+    "email": "aadhya.parmar60@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1096",
+    "full_name": "Rajesh Parmar",
+    "phone": "986992562",
+    "email": "krishna.parmar35@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1097",
+    "full_name": "Jatin Patel",
+    "phone": "980682809",
+    "email": "diya.patel93@gmail.com",
+    "address": "Near City Center, Gandhinager",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1098",
+    "full_name": "Ashok Thakkar",
+    "phone": "981907376",
+    "email": "yash.thakkar52@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1099",
+    "full_name": "Mukesh Solanki",
+    "phone": "999494283",
+    "email": "aditya.solanki62@gmail.com",
+    "address": "Near City Center, Rajkot",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_ST1100",
+    "full_name": "Alpesh Patel",
+    "phone": "995012740",
+    "email": "adhira.patel90@gmail.com",
+    "address": "Near City Center, Junagadh",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
+  }
+];
+
+export const CANONICAL_PARENT_STUDENTS = [
+  {
+    "id": "PS_ST1001",
+    "parent_id": "P_ST1001",
+    "student_id": "ST1001",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1002",
+    "parent_id": "P_ST1002",
+    "student_id": "ST1002",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1003",
+    "parent_id": "P_ST1003",
+    "student_id": "ST1003",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1004",
+    "parent_id": "P_ST1004",
+    "student_id": "ST1004",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1005",
+    "parent_id": "P_ST1005",
+    "student_id": "ST1005",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1006",
+    "parent_id": "P_ST1006",
+    "student_id": "ST1006",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1007",
+    "parent_id": "P_ST1007",
+    "student_id": "ST1007",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1008",
+    "parent_id": "P_ST1008",
+    "student_id": "ST1008",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1009",
+    "parent_id": "P_ST1009",
+    "student_id": "ST1009",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1010",
+    "parent_id": "P_ST1010",
+    "student_id": "ST1010",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1011",
+    "parent_id": "P_ST1011",
+    "student_id": "ST1011",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1012",
+    "parent_id": "P_ST1012",
+    "student_id": "ST1012",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1013",
+    "parent_id": "P_ST1013",
+    "student_id": "ST1013",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1014",
+    "parent_id": "P_ST1014",
+    "student_id": "ST1014",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1015",
+    "parent_id": "P_ST1015",
+    "student_id": "ST1015",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1016",
+    "parent_id": "P_ST1016",
+    "student_id": "ST1016",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1017",
+    "parent_id": "P_ST1017",
+    "student_id": "ST1017",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1018",
+    "parent_id": "P_ST1018",
+    "student_id": "ST1018",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1019",
+    "parent_id": "P_ST1019",
+    "student_id": "ST1019",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1020",
+    "parent_id": "P_ST1020",
+    "student_id": "ST1020",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1021",
+    "parent_id": "P_ST1021",
+    "student_id": "ST1021",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1022",
+    "parent_id": "P_ST1022",
+    "student_id": "ST1022",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1023",
+    "parent_id": "P_ST1023",
+    "student_id": "ST1023",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1024",
+    "parent_id": "P_ST1024",
+    "student_id": "ST1024",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1025",
+    "parent_id": "P_ST1025",
+    "student_id": "ST1025",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1026",
+    "parent_id": "P_ST1026",
+    "student_id": "ST1026",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1027",
+    "parent_id": "P_ST1027",
+    "student_id": "ST1027",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1028",
+    "parent_id": "P_ST1028",
+    "student_id": "ST1028",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1029",
+    "parent_id": "P_ST1029",
+    "student_id": "ST1029",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1030",
+    "parent_id": "P_ST1030",
+    "student_id": "ST1030",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1031",
+    "parent_id": "P_ST1031",
+    "student_id": "ST1031",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1032",
+    "parent_id": "P_ST1032",
+    "student_id": "ST1032",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1033",
+    "parent_id": "P_ST1033",
+    "student_id": "ST1033",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1034",
+    "parent_id": "P_ST1034",
+    "student_id": "ST1034",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1035",
+    "parent_id": "P_ST1035",
+    "student_id": "ST1035",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1036",
+    "parent_id": "P_ST1036",
+    "student_id": "ST1036",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1037",
+    "parent_id": "P_ST1037",
+    "student_id": "ST1037",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1038",
+    "parent_id": "P_ST1038",
+    "student_id": "ST1038",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1039",
+    "parent_id": "P_ST1039",
+    "student_id": "ST1039",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1040",
+    "parent_id": "P_ST1040",
+    "student_id": "ST1040",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1041",
+    "parent_id": "P_ST1041",
+    "student_id": "ST1041",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1042",
+    "parent_id": "P_ST1042",
+    "student_id": "ST1042",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1043",
+    "parent_id": "P_ST1043",
+    "student_id": "ST1043",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1044",
+    "parent_id": "P_ST1044",
+    "student_id": "ST1044",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1045",
+    "parent_id": "P_ST1045",
+    "student_id": "ST1045",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1046",
+    "parent_id": "P_ST1046",
+    "student_id": "ST1046",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1047",
+    "parent_id": "P_ST1047",
+    "student_id": "ST1047",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1048",
+    "parent_id": "P_ST1048",
+    "student_id": "ST1048",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1049",
+    "parent_id": "P_ST1049",
+    "student_id": "ST1049",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1050",
+    "parent_id": "P_ST1050",
+    "student_id": "ST1050",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1051",
+    "parent_id": "P_ST1051",
+    "student_id": "ST1051",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1052",
+    "parent_id": "P_ST1052",
+    "student_id": "ST1052",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1053",
+    "parent_id": "P_ST1053",
+    "student_id": "ST1053",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1054",
+    "parent_id": "P_ST1054",
+    "student_id": "ST1054",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1055",
+    "parent_id": "P_ST1055",
+    "student_id": "ST1055",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1056",
+    "parent_id": "P_ST1056",
+    "student_id": "ST1056",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1057",
+    "parent_id": "P_ST1057",
+    "student_id": "ST1057",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1058",
+    "parent_id": "P_ST1058",
+    "student_id": "ST1058",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1059",
+    "parent_id": "P_ST1059",
+    "student_id": "ST1059",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1060",
+    "parent_id": "P_ST1060",
+    "student_id": "ST1060",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1061",
+    "parent_id": "P_ST1061",
+    "student_id": "ST1061",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1062",
+    "parent_id": "P_ST1062",
+    "student_id": "ST1062",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1063",
+    "parent_id": "P_ST1063",
+    "student_id": "ST1063",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1064",
+    "parent_id": "P_ST1064",
+    "student_id": "ST1064",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1065",
+    "parent_id": "P_ST1065",
+    "student_id": "ST1065",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1066",
+    "parent_id": "P_ST1066",
+    "student_id": "ST1066",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1067",
+    "parent_id": "P_ST1067",
+    "student_id": "ST1067",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1068",
+    "parent_id": "P_ST1068",
+    "student_id": "ST1068",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1069",
+    "parent_id": "P_ST1069",
+    "student_id": "ST1069",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1070",
+    "parent_id": "P_ST1070",
+    "student_id": "ST1070",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1071",
+    "parent_id": "P_ST1071",
+    "student_id": "ST1071",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1072",
+    "parent_id": "P_ST1072",
+    "student_id": "ST1072",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1073",
+    "parent_id": "P_ST1073",
+    "student_id": "ST1073",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1074",
+    "parent_id": "P_ST1074",
+    "student_id": "ST1074",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1075",
+    "parent_id": "P_ST1075",
+    "student_id": "ST1075",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1076",
+    "parent_id": "P_ST1076",
+    "student_id": "ST1076",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1077",
+    "parent_id": "P_ST1077",
+    "student_id": "ST1077",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1078",
+    "parent_id": "P_ST1078",
+    "student_id": "ST1078",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1079",
+    "parent_id": "P_ST1079",
+    "student_id": "ST1079",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1080",
+    "parent_id": "P_ST1080",
+    "student_id": "ST1080",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1081",
+    "parent_id": "P_ST1081",
+    "student_id": "ST1081",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1082",
+    "parent_id": "P_ST1082",
+    "student_id": "ST1082",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1083",
+    "parent_id": "P_ST1083",
+    "student_id": "ST1083",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1084",
+    "parent_id": "P_ST1084",
+    "student_id": "ST1084",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1085",
+    "parent_id": "P_ST1085",
+    "student_id": "ST1085",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1086",
+    "parent_id": "P_ST1086",
+    "student_id": "ST1086",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1087",
+    "parent_id": "P_ST1087",
+    "student_id": "ST1087",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1088",
+    "parent_id": "P_ST1088",
+    "student_id": "ST1088",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1089",
+    "parent_id": "P_ST1089",
+    "student_id": "ST1089",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1090",
+    "parent_id": "P_ST1090",
+    "student_id": "ST1090",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1091",
+    "parent_id": "P_ST1091",
+    "student_id": "ST1091",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1092",
+    "parent_id": "P_ST1092",
+    "student_id": "ST1092",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1093",
+    "parent_id": "P_ST1093",
+    "student_id": "ST1093",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1094",
+    "parent_id": "P_ST1094",
+    "student_id": "ST1094",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1095",
+    "parent_id": "P_ST1095",
+    "student_id": "ST1095",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1096",
+    "parent_id": "P_ST1096",
+    "student_id": "ST1096",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1097",
+    "parent_id": "P_ST1097",
+    "student_id": "ST1097",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1098",
+    "parent_id": "P_ST1098",
+    "student_id": "ST1098",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1099",
+    "parent_id": "P_ST1099",
+    "student_id": "ST1099",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_ST1100",
+    "parent_id": "P_ST1100",
+    "student_id": "ST1100",
+    "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  }
+];
+
+/**
+ * Helper to fetch canonical students by batch ID or code
+ */
+export function getBatchStudents(batchIdentifier) {
+  if (!batchIdentifier) return [];
+  const cleanId = String(batchIdentifier).trim().toUpperCase();
+  
+  return CANONICAL_STUDENTS.filter((s) => {
+    const bId = String(s.batch_id).trim().toUpperCase();
+    const bName = String(s.batch_name).trim().toUpperCase();
+    const bCode = String(s.batch_code || '').trim().toUpperCase();
+    return bId === cleanId || bName === cleanId || bCode === cleanId;
+  });
 }
 
-export function getBatchById(batchId) {
-  if (!batchId) return null;
-  const clean = String(batchId).trim().toUpperCase();
+/**
+ * Helper to get batch details by ID or code
+ */
+export function getBatchById(batchIdentifier) {
+  if (!batchIdentifier) return null;
+  const clean = String(batchIdentifier).trim().toUpperCase();
   return (
     CANONICAL_BATCHES.find(
       (b) =>
         b.id.toUpperCase() === clean ||
         b.code.toUpperCase() === clean ||
-        b.name.toUpperCase() === clean ||
-        clean.includes(b.code.toUpperCase())
+        b.name.toUpperCase() === clean
     ) || null
   );
 }

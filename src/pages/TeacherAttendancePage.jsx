@@ -16,18 +16,30 @@ import {
   X,
   WifiOff,
   QrCode,
+  Lock,
+  ShieldCheck,
+  Smartphone,
+  Users,
 } from 'lucide-react';
 import { App } from '@capacitor/app';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
   getStoredHubUrl,
   setStoredHubUrl,
+  getStoredHubToken,
+  setStoredHubToken,
   checkHubConnection,
   fetchBatchesFromHub,
   fetchStudentsFromHub,
   fetchExistingAttendanceFromHub,
   submitAttendanceToHub,
+  getOfflineQueue,
+  flushOfflineQueue,
   DEFAULT_SCHOOL_PC_URL,
+  pairDeviceWithHub,
+  checkDeviceRegistration,
+  isDevicePairedLocally,
+  setDevicePairedLocally,
 } from '../lib/localWifiHubService';
 import { useAcademySettings } from '../lib/academySettings';
 import { CANONICAL_BATCHES } from '../data/canonicalSchoolData';
@@ -35,6 +47,12 @@ import { CANONICAL_BATCHES } from '../data/canonicalSchoolData';
 export default function TeacherAttendancePage() {
   const academySettings = useAcademySettings();
   const [hubUrl, setHubUrl] = useState(getStoredHubUrl());
+  const [isDevicePaired, setIsDevicePaired] = useState(() => isDevicePairedLocally());
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpInput, setOtpInput] = useState('');
+  const [otpError, setOtpError] = useState('');
+  const [isPairing, setIsPairing] = useState(false);
+
   const [connectionStatus, setConnectionStatus] = useState({
     ok: false,
     state: 'checking', // 'checking' | 'connected' | 'wifi_disconnected' | 'pc_unreachable'
@@ -64,6 +82,8 @@ export default function TeacherAttendancePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [offlineQueue, setOfflineQueue] = useState(() => getOfflineQueue());
+  const [isFlushingQueue, setIsFlushingQueue] = useState(false);
 
   const qrScannerRef = useRef(null);
 
@@ -73,27 +93,64 @@ export default function TeacherAttendancePage() {
   };
 
   // =========================================================================
-  // ANDROID HARDWARE / GESTURE BACK BUTTON INTERCEPTION
+  // ANDROID HARDWARE / GESTURE BACK BUTTON INTERCEPTION (100% RELIABLE)
   // =========================================================================
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+  const showCameraScannerRef = useRef(showCameraScanner);
+  showCameraScannerRef.current = showCameraScanner;
+  const showSettingsModalRef = useRef(showSettingsModal);
+  showSettingsModalRef.current = showSettingsModal;
+  const showOtpModalRef = useRef(showOtpModal);
+  showOtpModalRef.current = showOtpModal;
+  const showSuccessModalRef = useRef(showSuccessModal);
+  showSuccessModalRef.current = showSuccessModal;
+  const lastBackPressTimeRef = useRef(0);
+
   useEffect(() => {
     let listenerHandle = null;
 
-    try {
-      App.addListener('backButton', () => {
-        if (showCameraScanner) {
-          setShowCameraScanner(false);
-        } else if (showSettingsModal) {
-          setShowSettingsModal(false);
-        } else if (showSuccessModal) {
-          setShowSuccessModal(false);
-        } else if (viewMode === 'rollcall') {
-          // Go back to the batches list instead of closing the app!
-          setViewMode('batches');
-        } else {
-          // On batches home screen, let Android minimize/exit
+    const handleBackAction = () => {
+      // 1. Close open camera scanner modal
+      if (showCameraScannerRef.current) {
+        setShowCameraScanner(false);
+        return;
+      }
+      // 2. Close settings modal
+      if (showSettingsModalRef.current) {
+        setShowSettingsModal(false);
+        return;
+      }
+      // 3. Close OTP modal
+      if (showOtpModalRef.current) {
+        setShowOtpModal(false);
+        return;
+      }
+      // 4. Close success modal
+      if (showSuccessModalRef.current) {
+        setShowSuccessModal(false);
+        return;
+      }
+      // 5. If in student roll call, RETURN TO BATCH CARDS! NEVER EXIT APP!
+      if (viewModeRef.current === 'rollcall') {
+        setViewMode('batches');
+        return;
+      }
+
+      // 5. On batches root screen: require double back-tap within 2.0s before exit
+      const now = Date.now();
+      if (now - lastBackPressTimeRef.current < 2000) {
+        try {
           App.exitApp();
-        }
-      })
+        } catch {}
+      } else {
+        lastBackPressTimeRef.current = now;
+        showToast('Press back once more to exit application');
+      }
+    };
+
+    try {
+      App.addListener('backButton', handleBackAction)
         .then((handle) => {
           listenerHandle = handle;
         })
@@ -101,8 +158,9 @@ export default function TeacherAttendancePage() {
     } catch {}
 
     // Web / browser popstate support
-    const handlePopState = () => {
-      if (viewMode === 'rollcall') {
+    const handlePopState = (e) => {
+      if (viewModeRef.current === 'rollcall') {
+        e?.preventDefault?.();
         setViewMode('batches');
       }
     };
@@ -114,13 +172,13 @@ export default function TeacherAttendancePage() {
       }
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [viewMode, showCameraScanner, showSettingsModal, showSuccessModal]);
+  }, []);
 
   // 1. Load Batches
   const loadBatches = useCallback(async (targetUrl = hubUrl) => {
     setIsLoading(true);
     const list = await fetchBatchesFromHub(targetUrl);
-    setBatches(list && list.length > 0 ? list : CANONICAL_BATCHES);
+    setBatches(Array.isArray(list) ? list : []);
     setIsLoading(false);
   }, [hubUrl]);
 
@@ -165,7 +223,10 @@ export default function TeacherAttendancePage() {
       window.history.pushState({ view: 'rollcall' }, '');
     } catch {}
 
-    const studentList = await fetchStudentsFromHub(batchId, hubUrl);
+    let studentList = await fetchStudentsFromHub(batchId, hubUrl);
+    if (!Array.isArray(studentList)) {
+      studentList = [];
+    }
     setStudents(studentList);
 
     // Fetch any attendance previously marked today on PC or phone
@@ -282,14 +343,21 @@ export default function TeacherAttendancePage() {
     const term = searchTerm.toLowerCase();
     return students.filter(
       (s) =>
-        s.full_name?.toLowerCase().includes(term) ||
+        (s.full_name || s.name || '')?.toLowerCase().includes(term) ||
         String(s.roll_no || '').includes(term) ||
         s.admission_no?.toLowerCase().includes(term)
     );
   }, [students, searchTerm]);
 
   // Active Batch Object
-  const activeBatch = uniqueBatches.find((b) => b.id === selectedBatchId || b.code === selectedBatchId) || uniqueBatches[0] || {};
+  const activeBatch = uniqueBatches.find(
+    (b) =>
+      b.id === selectedBatchId ||
+      b.code === selectedBatchId ||
+      b.name === selectedBatchId ||
+      b.name?.toLowerCase() === selectedBatchId?.toLowerCase() ||
+      b.code?.toLowerCase() === selectedBatchId?.toLowerCase()
+  ) || uniqueBatches[0] || {};
 
   // Submit attendance ("DONE" Action)
   const handleSubmit = async () => {
@@ -300,7 +368,7 @@ export default function TeacherAttendancePage() {
       student_id: s.id,
       admission_no: s.admission_no || s.id,
       roll_no: s.roll_no,
-      full_name: s.full_name,
+      full_name: s.full_name || s.name || '',
       status: attendanceMap[s.id] || 'Present',
       remarks: '',
       time_in: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
@@ -328,10 +396,27 @@ export default function TeacherAttendancePage() {
         absent: absentCount,
       });
       setShowSuccessModal(true);
+      setOfflineQueue(getOfflineQueue());
     } else if (res.queued) {
+      setOfflineQueue(getOfflineQueue());
       showToast('⚠️ Saved to phone storage (will sync when School Wi-Fi connects).');
+    } else if (res.unauthorized) {
+      alert(res.error || 'Pairing token expired. Please scan the QR code on the School PC.');
+      setShowCameraScanner(true);
     } else {
       alert('Error saving attendance: ' + (res.error || 'Connection failed'));
+    }
+  };
+
+  const handleFlushQueue = async () => {
+    setIsFlushingQueue(true);
+    const res = await flushOfflineQueue(hubUrl);
+    setIsFlushingQueue(false);
+    setOfflineQueue(getOfflineQueue());
+    if (res.ok && res.flushedCount > 0) {
+      showToast(`✓ Successfully synced ${res.flushedCount} pending roll call(s) to School PC!`);
+    } else if (res.remainingCount > 0) {
+      showToast(`⚠️ Could not reach School PC. ${res.remainingCount} roll call(s) still in phone queue.`);
     }
   };
 
@@ -339,23 +424,67 @@ export default function TeacherAttendancePage() {
     (rawText) => {
       try {
         let target = rawText.trim();
+        let token = '';
+        let otp = '';
         if (target.startsWith('http://') || target.startsWith('https://')) {
           const parsed = new URL(target);
+          token = parsed.searchParams.get('token') || '';
+          otp = parsed.searchParams.get('otp') || '';
           target = `${parsed.protocol}//${parsed.host}`;
         } else if (!target.startsWith('http')) {
           target = `http://${target}`;
         }
         setStoredHubUrl(target);
+        if (token) {
+          setStoredHubToken(token);
+        }
         setHubUrl(target);
         setUrlInput(target);
         showToast(`✓ Scanned & Connected: ${target.replace(/^https?:\/\//, '')}`);
         verifyConnection(target);
+
+        // Auto-pair device if OTP was included in the scanned QR code
+        if (otp) {
+          pairDeviceWithHub(target, otp).then((pRes) => {
+            if (pRes && pRes.ok) {
+              setIsDevicePaired(true);
+              showToast('✓ Device Registered & Paired with School PC!');
+            }
+          });
+        }
+
+        // Automatically flush pending queue if connected
+        flushOfflineQueue(target).then((r) => {
+          if (r.flushedCount > 0) {
+            showToast(`✓ Synced ${r.flushedCount} pending roll call(s) to School PC!`);
+            setOfflineQueue(getOfflineQueue());
+          }
+        });
       } catch {
         showToast('Scanned code: ' + rawText);
       }
     },
     [verifyConnection]
   );
+
+  const handlePairDevice = async () => {
+    if (!otpInput.trim()) {
+      setOtpError('Please enter the 6-digit OTP from PC screen');
+      return;
+    }
+    setIsPairing(true);
+    setOtpError('');
+    const res = await pairDeviceWithHub(hubUrl, otpInput.trim());
+    setIsPairing(false);
+    if (res.ok) {
+      setIsDevicePaired(true);
+      setShowOtpModal(false);
+      setOtpInput('');
+      showToast('✓ Phone successfully paired with School PC!');
+    } else {
+      setOtpError(res.error || 'Invalid OTP code. Please check your PC screen.');
+    }
+  };
 
   // Camera QR Scanner Handler
   useEffect(() => {
@@ -407,6 +536,10 @@ export default function TeacherAttendancePage() {
     }
   }, [showCameraScanner, handleScannedResult]);
 
+  const schoolTotalStudents = useMemo(() => {
+    return uniqueBatches.reduce((acc, b) => acc + (b.student_count || b.enrolled || 20), 0) || 100;
+  }, [uniqueBatches]);
+
   return (
     <div
       style={{
@@ -414,7 +547,7 @@ export default function TeacherAttendancePage() {
         backgroundColor: '#f8fafc',
         color: '#0f172a',
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-        paddingBottom: viewMode === 'rollcall' ? '120px' : '30px',
+        paddingBottom: viewMode === 'rollcall' ? '180px' : '90px',
       }}
     >
       {/* Toast Notification */}
@@ -485,65 +618,51 @@ export default function TeacherAttendancePage() {
             </div>
           </div>
 
-          {/* Action Buttons: Camera QR Scanner + Refresh + Settings */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <button
-              onClick={() => setShowCameraScanner(true)}
-              style={{
-                background: '#111d33',
-                border: '1px solid #c5a880',
-                color: '#c5a880',
-                padding: '6px 10px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                fontSize: '11px',
-                fontWeight: 700,
-                boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
-              }}
-              title="Scan QR Code with Camera"
-            >
-              <Camera size={14} />
-              <span>Scan QR</span>
-            </button>
-
-            <button
-              onClick={() => verifyConnection(hubUrl)}
-              style={{
-                background: '#1e293b',
-                border: '1px solid #334155',
-                color: '#cbd5e1',
-                padding: '7px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              title="Refresh Connection"
-            >
-              <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-            </button>
-
-            <button
-              onClick={() => setShowSettingsModal(true)}
-              style={{
-                background: '#1e293b',
-                border: '1px solid #334155',
-                color: '#cbd5e1',
-                padding: '7px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              title="Wi-Fi Connection Settings"
-            >
-              <Settings size={14} />
-            </button>
+          {/* Right Status / Pairing Indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {isDevicePaired ? (
+              <span
+                onClick={() => setShowOtpModal(true)}
+                style={{
+                  backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  color: '#10b981',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  cursor: 'pointer',
+                }}
+                title="Device is permanently paired with School PC"
+              >
+                <ShieldCheck size={13} color="#10b981" />
+                <span>Paired</span>
+              </span>
+            ) : (
+              <button
+                onClick={() => setShowOtpModal(true)}
+                style={{
+                  background: 'rgba(245, 158, 11, 0.15)',
+                  border: '1px solid rgba(245, 158, 11, 0.4)',
+                  color: '#fbbf24',
+                  padding: '4px 9px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  cursor: 'pointer',
+                }}
+                title="Tap to enter 6-digit PC pairing code"
+              >
+                <Lock size={12} color="#fbbf24" />
+                <span>Enter OTP</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -597,6 +716,46 @@ export default function TeacherAttendancePage() {
       {/* ========================================================================= */}
       {viewMode === 'batches' && (
         <main style={{ padding: '16px', maxWidth: '640px', margin: '0 auto' }}>
+          {/* OFFLINE PENDING QUEUE BANNER */}
+          {offlineQueue && offlineQueue.length > 0 && (
+            <div
+              style={{
+                backgroundColor: '#fffbeb',
+                border: '1px solid #f59e0b',
+                borderRadius: '12px',
+                padding: '12px 16px',
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '10px',
+                boxShadow: '0 2px 8px rgba(245, 158, 11, 0.15)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Clock size={18} color="#d97706" />
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#92400e' }}>
+                  {offlineQueue.length} offline roll call{offlineQueue.length > 1 ? 's' : ''} stored on phone.
+                </span>
+              </div>
+              <button
+                onClick={handleFlushQueue}
+                disabled={isFlushingQueue}
+                style={{
+                  backgroundColor: '#d97706',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '6px 12px',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                {isFlushingQueue ? 'Syncing...' : 'Sync to PC Now'}
+              </button>
+            </div>
+          )}
           {/* STATE 1: Wi-Fi Disconnected Warning Banner */}
           {connectionStatus.state === 'wifi_disconnected' && (
             <div
@@ -759,6 +918,96 @@ export default function TeacherAttendancePage() {
             </div>
           )}
 
+          {/* TOP STUDENT SUMMARY METRICS BAR (Total Students, Present, Absent, Batches) */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '8px',
+              marginBottom: '16px',
+            }}
+          >
+            {/* Total Students */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderTop: '3px solid #3b82f6',
+                borderRadius: '10px',
+                padding: '10px 4px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>
+                Total Students
+              </div>
+              <div style={{ fontSize: '19px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
+                {schoolTotalStudents}
+              </div>
+            </div>
+
+            {/* Present Today */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderTop: '3px solid #10b981',
+                borderRadius: '10px',
+                padding: '10px 4px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: '9px', color: '#10b981', textTransform: 'uppercase', fontWeight: 700 }}>
+                Present
+              </div>
+              <div style={{ fontSize: '19px', fontWeight: 800, color: '#10b981', marginTop: '2px' }}>
+                {savedSummary ? savedSummary.present : '--'}
+              </div>
+            </div>
+
+            {/* Absent Today */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderTop: '3px solid #ef4444',
+                borderRadius: '10px',
+                padding: '10px 4px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: '9px', color: '#ef4444', textTransform: 'uppercase', fontWeight: 700 }}>
+                Absent
+              </div>
+              <div style={{ fontSize: '19px', fontWeight: 800, color: '#ef4444', marginTop: '2px' }}>
+                {savedSummary ? savedSummary.absent : '--'}
+              </div>
+            </div>
+
+            {/* Batches / Cohorts */}
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderTop: '3px solid #8b5cf6',
+                borderRadius: '10px',
+                padding: '10px 4px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: '9px', color: '#8b5cf6', textTransform: 'uppercase', fontWeight: 700 }}>
+                Batches
+              </div>
+              <div style={{ fontSize: '19px', fontWeight: 800, color: '#8b5cf6', marginTop: '2px' }}>
+                {uniqueBatches.length}
+              </div>
+            </div>
+          </div>
+
           {/* Section Heading */}
           <div
             style={{
@@ -887,7 +1136,7 @@ export default function TeacherAttendancePage() {
                           fontWeight: 700,
                         }}
                       >
-                        20 Students
+                        {batch.student_count !== undefined ? `${batch.student_count} Students` : 'Batch Class'}
                       </span>
                     </div>
 
@@ -943,7 +1192,7 @@ export default function TeacherAttendancePage() {
       {/* SCREEN 2: STUDENT ROLL CALL SCREEN (MOBILE-FRIENDLY 2-TIER CARDS)         */}
       {/* ========================================================================= */}
       {viewMode === 'rollcall' && (
-        <main style={{ padding: '16px', maxWidth: '640px', margin: '0 auto' }}>
+        <main style={{ padding: '16px 16px 120px 16px', maxWidth: '640px', margin: '0 auto', minHeight: '100vh', boxSizing: 'border-box' }}>
           {/* Header: Back Navigation + Date Selector */}
           <div
             style={{
@@ -959,19 +1208,19 @@ export default function TeacherAttendancePage() {
                 background: '#ffffff',
                 border: '1px solid #cbd5e1',
                 color: '#0f172a',
-                padding: '7px 12px',
+                padding: '8px 14px',
                 borderRadius: '8px',
-                fontSize: '12px',
+                fontSize: '13px',
                 fontWeight: 700,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px',
+                gap: '6px',
                 boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
               }}
             >
-              <ArrowLeft size={14} />
-              Back to Batches
+              <ArrowLeft size={16} />
+              <span>← Batches</span>
             </button>
 
             <input
@@ -1231,7 +1480,7 @@ export default function TeacherAttendancePage() {
                             wordBreak: 'break-word',
                           }}
                         >
-                          {student.full_name}
+                          {student.full_name || student.name || student['Student Name'] || `Student ${student.roll_no || student.admission_no}`}
                         </div>
                         <div
                           style={{
@@ -1354,16 +1603,16 @@ export default function TeacherAttendancePage() {
             })}
           </div>
 
-          {/* Sticky Bottom "DONE — Save to School PC" Action Bar */}
+          {/* Sticky Bottom "DONE — Save to School PC" Action Bar (Positioned above Bottom Nav) */}
           <div
             style={{
               position: 'fixed',
-              bottom: 0,
+              bottom: '64px',
               left: 0,
               right: 0,
               backgroundColor: '#ffffff',
               borderTop: '1px solid #cbd5e1',
-              padding: '12px 16px',
+              padding: '10px 16px',
               zIndex: 40,
               boxShadow: '0 -4px 15px rgba(0,0,0,0.06)',
             }}
@@ -1587,6 +1836,7 @@ export default function TeacherAttendancePage() {
               onClick={() => {
                 setShowSuccessModal(false);
                 setViewMode('batches');
+                loadBatches(hubUrl);
               }}
               style={{
                 marginTop: '18px',
@@ -1729,6 +1979,283 @@ export default function TeacherAttendancePage() {
           </div>
         </div>
       )}
+
+      {/* One-Time Device OTP Pairing Modal */}
+      {showOtpModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            backgroundColor: 'rgba(0,0,0,0.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '16px',
+              padding: '22px',
+              width: '100%',
+              maxWidth: '380px',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldCheck size={22} color="#10b981" />
+                <span style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
+                  Device Pairing & OTP
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setShowOtpModal(false);
+                  setOtpError('');
+                }}
+                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '14px', lineHeight: 1.4 }}>
+              Enter the <strong>6-digit OTP code</strong> displayed on your School PC screen to securely authorize this phone. Once verified, this phone is registered permanently.
+            </div>
+
+            {isDevicePaired && (
+              <div
+                style={{
+                  backgroundColor: '#dcfce7',
+                  border: '1px solid #86efac',
+                  borderRadius: '10px',
+                  padding: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  marginBottom: '16px',
+                }}
+              >
+                <CheckCircle2 size={20} color="#15803d" />
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#15803d' }}>
+                    Phone Is Registered & Paired
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#166534', marginTop: '2px' }}>
+                    This device is authorized to sync attendance with the School PC.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
+                6-DIGIT PC PAIRING CODE:
+              </label>
+              <input
+                type="text"
+                maxLength={6}
+                value={otpInput}
+                onChange={(e) => {
+                  setOtpInput(e.target.value.replace(/\D/g, ''));
+                  setOtpError('');
+                }}
+                placeholder="e.g. 729415"
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  fontSize: '22px',
+                  fontWeight: 800,
+                  letterSpacing: '8px',
+                  textAlign: 'center',
+                  borderRadius: '10px',
+                  border: otpError ? '2px solid #ef4444' : '2px solid #cbd5e1',
+                  outline: 'none',
+                  fontFamily: 'monospace',
+                  boxSizing: 'border-box',
+                }}
+              />
+              {otpError && (
+                <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '6px', fontWeight: 600 }}>
+                  {otpError}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => {
+                  setShowOtpModal(false);
+                  setOtpError('');
+                }}
+                style={{
+                  flex: 1,
+                  backgroundColor: '#f1f5f9',
+                  border: 'none',
+                  color: '#475569',
+                  padding: '11px',
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Close
+              </button>
+              <button
+                onClick={handlePairDevice}
+                disabled={isPairing || otpInput.trim().length !== 6}
+                style={{
+                  flex: 1,
+                  backgroundColor: isPairing || otpInput.trim().length !== 6 ? '#94a3b8' : '#0a1122',
+                  border: '1px solid #c5a880',
+                  color: '#ffffff',
+                  padding: '11px',
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: isPairing || otpInput.trim().length !== 6 ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                }}
+              >
+                {isPairing ? <RefreshCw size={14} className="animate-spin" /> : <ShieldCheck size={16} color="#c5a880" />}
+                Pair This Phone
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODERN FIXED MOBILE BOTTOM NAVIGATION BAR                                 */}
+      {/* ========================================================================= */}
+      <nav
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: '64px',
+          backgroundColor: '#0a1122',
+          borderTop: '1px solid #1e293b',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-around',
+          zIndex: 100,
+          boxShadow: '0 -4px 16px rgba(0,0,0,0.25)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        }}
+      >
+        {/* 1. Batches Cohorts */}
+        <button
+          onClick={() => setViewMode('batches')}
+          style={{
+            background: 'none',
+            border: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '3px',
+            color: viewMode === 'batches' ? '#c5a880' : '#94a3b8',
+            cursor: 'pointer',
+            padding: '6px 12px',
+          }}
+        >
+          <School size={20} color={viewMode === 'batches' ? '#c5a880' : '#94a3b8'} />
+          <span style={{ fontSize: '10px', fontWeight: viewMode === 'batches' ? 800 : 500 }}>Batches</span>
+        </button>
+
+        {/* 2. Camera QR Scanner */}
+        <button
+          onClick={() => setShowCameraScanner(true)}
+          style={{
+            background: 'none',
+            border: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '3px',
+            color: '#94a3b8',
+            cursor: 'pointer',
+            padding: '6px 12px',
+          }}
+        >
+          <Camera size={20} color="#94a3b8" />
+          <span style={{ fontSize: '10px', fontWeight: 500 }}>Scan QR</span>
+        </button>
+
+        {/* 3. Sync PC */}
+        <button
+          onClick={() => {
+            verifyConnection(hubUrl);
+            if (offlineQueue.length > 0) handleFlushQueue();
+          }}
+          style={{
+            background: 'none',
+            border: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '3px',
+            color: '#94a3b8',
+            cursor: 'pointer',
+            padding: '6px 12px',
+          }}
+        >
+          <RefreshCw size={20} color="#94a3b8" className={isLoading || isFlushingQueue ? 'animate-spin' : ''} />
+          <span style={{ fontSize: '10px', fontWeight: 500 }}>Sync PC</span>
+        </button>
+
+        {/* 4. Pairing & OTP */}
+        <button
+          onClick={() => setShowOtpModal(true)}
+          style={{
+            background: 'none',
+            border: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '3px',
+            color: isDevicePaired ? '#10b981' : '#f59e0b',
+            cursor: 'pointer',
+            padding: '6px 12px',
+          }}
+        >
+          {isDevicePaired ? (
+            <ShieldCheck size={20} color="#10b981" />
+          ) : (
+            <Lock size={20} color="#f59e0b" />
+          )}
+          <span style={{ fontSize: '10px', fontWeight: 700 }}>
+            {isDevicePaired ? 'Paired' : 'Pair OTP'}
+          </span>
+        </button>
+
+        {/* 5. Settings */}
+        <button
+          onClick={() => setShowSettingsModal(true)}
+          style={{
+            background: 'none',
+            border: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '3px',
+            color: '#94a3b8',
+            cursor: 'pointer',
+            padding: '6px 12px',
+          }}
+        >
+          <Settings size={20} color="#94a3b8" />
+          <span style={{ fontSize: '10px', fontWeight: 500 }}>Settings</span>
+        </button>
+      </nav>
     </div>
   );
 }

@@ -22,6 +22,7 @@ import ParentPortalPage from './pages/ParentPortalPage';
 import TeacherAttendancePage from './pages/TeacherAttendancePage';
 import { RefreshCw, GraduationCap } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
+import { useSchoolDatabaseSync } from './lib/useSchoolDatabaseSync';
 
 /**
  * SMS — Student Management System Root Application Component
@@ -30,6 +31,9 @@ import { Capacitor } from '@capacitor/core';
  * Desktop Packaging, and Multi-School Licensing with 30-Day Server Trial.
  */
 export default function App() {
+  // Continuous Two-Way Wi-Fi Database Synchronization for Desktop & Phone
+  useSchoolDatabaseSync();
+
   // Supabase Auth Session State
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);

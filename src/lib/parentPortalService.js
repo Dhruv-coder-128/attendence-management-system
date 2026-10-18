@@ -614,7 +614,23 @@ export function getDailyClassDiary(batchId) {
  * Builds a direct 1-click WhatsApp or Web Portal link for a student/parent
  */
 export function buildParentPortalLink(parent, student) {
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://attendence-management-system-lovat.vercel.app';
+  let origin = 'https://attendence-management-system-lovat.vercel.app';
+  if (typeof window !== 'undefined') {
+    const custom = localStorage.getItem('sms_parent_portal_url');
+    if (custom && custom.startsWith('http')) {
+      origin = custom.replace(/\/$/, '');
+    } else if (
+      window.location &&
+      window.location.origin &&
+      !window.location.origin.includes('tauri.localhost') &&
+      !window.location.origin.includes('tauri://') &&
+      !window.location.origin.includes('localhost') &&
+      !window.location.origin.includes('127.0.0.1') &&
+      !window.location.origin.includes('file://')
+    ) {
+      origin = window.location.origin;
+    }
+  }
   const phone = cleanPhone(parent?.phone);
   const adm = encodeURIComponent(student?.admission_no || student?.roll_no || '');
   return `${origin}/?portal=parent&phone=${phone}&adm=${adm}`;

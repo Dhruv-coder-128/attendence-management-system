@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Calendar,
   CheckCircle,
@@ -35,6 +35,8 @@ import Pagination from '../components/common/Pagination';
 import TeacherAppConnectModal from '../components/attendance/TeacherAppConnectModal';
 import { exportDailyRegisterToExcel } from '../lib/attendanceExporter';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { getActiveHubBaseUrl } from '../lib/useSchoolDatabaseSync';
+import { CANONICAL_BATCHES, getBatchStudents } from '../data/canonicalSchoolData.js';
 import {
   ensureDhruvShahTestStudent,
   TEST_STUDENT_NAME,
@@ -128,7 +130,7 @@ export default function AttendancePage({ onRefreshCounts }) {
 
       if (err) throw err;
 
-      const batchList = data || [];
+      const batchList = (data && data.length > 0) ? data : CANONICAL_BATCHES;
       setBatches(batchList);
 
       if (batchList.length > 0) {
@@ -144,8 +146,9 @@ export default function AttendancePage({ onRefreshCounts }) {
         setLoading(false);
       }
     } catch (err) {
-      console.error('Error fetching batches for attendance:', err);
-      setError(err.message || 'Failed to load batches from Supabase.');
+      console.error('Error fetching batches for attendance, using canonical cohorts:', err);
+      setBatches(CANONICAL_BATCHES);
+      setSelectedBatchId((prev) => prev || CANONICAL_BATCHES[0].id);
       setLoading(false);
     }
   };
@@ -197,20 +200,26 @@ export default function AttendancePage({ onRefreshCounts }) {
         .eq('batch_id', selectedBatchId)
         .order('admission_no');
 
-      if (studentsErr) throw studentsErr;
+      let resolvedStudents = (studentsData && studentsData.length > 0) ? studentsData : [];
+      if (resolvedStudents.length === 0) {
+        // Fall back to canonical students so Mobile and Desktop rosters match 100%
+        const canonical = getBatchStudents(selectedBatchId);
+        if (canonical && canonical.length > 0) {
+          resolvedStudents = canonical;
+        }
+      }
 
-      // Fetch attendance records for this batch and date
+      // Fetch attendance records for this batch and date from Supabase / IndexedDB
       const { data: attendanceData, error: attendanceErr } = await supabase
         .from('attendance')
         .select('*')
         .eq('batch_id', selectedBatchId)
         .eq('date', selectedDate);
 
-      if (attendanceErr) throw attendanceErr;
-
       // Map attendance by student_id (keep newest if duplicates exist)
       const map = {};
       (attendanceData || []).forEach((att) => {
+        if (!att || !att.student_id) return;
         const existing = map[att.student_id];
         if (!existing) {
           map[att.student_id] = att;
@@ -223,16 +232,61 @@ export default function AttendancePage({ onRefreshCounts }) {
         }
       });
 
-      setStudents(studentsData || []);
+      // Also merge from Local Wi-Fi Hub so mobile roll calls appear immediately
+      try {
+        const hubBase = getHubBaseUrl();
+        const currentBatch = batches.find((b) => b.id === selectedBatchId || b.code === selectedBatchId);
+        const batchCode = currentBatch?.code || selectedBatchId || '';
+        const batchName = currentBatch?.name || '';
+        const hubRes = await fetch(
+          `${hubBase}/api/local-hub?action=attendance&batch_id=${encodeURIComponent(selectedBatchId)}&batch_code=${encodeURIComponent(batchCode)}&batch_name=${encodeURIComponent(batchName)}&date=${encodeURIComponent(selectedDate)}`
+        );
+        if (hubRes.ok) {
+          const hubData = await hubRes.json();
+          if (Array.isArray(hubData.records) && hubData.records.length > 0) {
+            hubData.records.forEach((hr) => {
+              const hrAdm = String(hr.admission_no || hr.student_id || '').trim().toUpperCase();
+              const matchedStudent = resolvedStudents.find((s) => {
+                const sAdm = String(s.admission_no || s.id || '').trim().toUpperCase();
+                const sId = String(s.id || '').trim().toUpperCase();
+                if (hrAdm && (sAdm === hrAdm || sId === hrAdm)) return true;
+                if (hr.full_name && s.full_name && s.full_name.trim().toLowerCase() === hr.full_name.trim().toLowerCase()) return true;
+                return false;
+              });
+
+              if (matchedStudent) {
+                map[matchedStudent.id] = {
+                  ...(map[matchedStudent.id] || {}),
+                  student_id: matchedStudent.id,
+                  admission_no: matchedStudent.admission_no,
+                  batch_id: selectedBatchId,
+                  date: selectedDate,
+                  session_name: 'Regular',
+                  status: hr.status,
+                  time_in: hr.time_in || '11:00',
+                  updated_at: hr.updated_at || new Date().toISOString(),
+                };
+              }
+            });
+          }
+        }
+      } catch {}
+
+      setStudents(resolvedStudents);
       setAttendanceMap(map);
     } catch (err) {
-      console.error('Error fetching attendance:', err);
-      setError(err.message || 'Failed to load roll call data from Supabase.');
+      console.error('Error fetching attendance, using canonical roster:', err);
+      const canonical = getBatchStudents(selectedBatchId);
+      setStudents(canonical && canonical.length > 0 ? canonical : []);
     } finally {
       // Ensure loading spinner ALWAYS terminates
       setLoading(false);
     }
   };
+
+  const getHubBaseUrl = useCallback(() => {
+    return getActiveHubBaseUrl();
+  }, []);
 
   useEffect(() => {
     if (selectedBatchId) {
@@ -245,11 +299,11 @@ export default function AttendancePage({ onRefreshCounts }) {
     if (!selectedBatchId) return;
 
     let isMounted = true;
-    const currentBatch = batches.find((b) => b.id === selectedBatchId);
-    const batchCode = currentBatch?.code || '';
+    const currentBatch = batches.find((b) => b.id === selectedBatchId || b.code === selectedBatchId);
+    const batchCode = currentBatch?.code || selectedBatchId || '';
     const batchName = currentBatch?.name || '';
 
-    // Periodically poll local hub updates every 2.0 seconds
+    // Periodically poll local hub updates every 1 second for instant PC screen update
     const interval = setInterval(async () => {
       try {
         const queryParams = new URLSearchParams({
@@ -260,7 +314,8 @@ export default function AttendancePage({ onRefreshCounts }) {
           batch_name: batchName,
         });
 
-        const res = await fetch(`/api/local-hub?${queryParams.toString()}`);
+        const hubBase = getHubBaseUrl();
+        const res = await fetch(`${hubBase}/api/local-hub?${queryParams.toString()}`);
         if (res.ok) {
           const data = await res.json();
           const incomingRecords = data?.records || data?.allRecords || [];
@@ -274,14 +329,17 @@ export default function AttendancePage({ onRefreshCounts }) {
               const toPersist = [];
 
               incomingRecords.forEach((r) => {
-                // Find matching student by admission_no, id, or roll_no
-                const matchedStudent = students.find(
-                  (s) =>
-                    s.admission_no === r.admission_no ||
-                    s.admission_no === r.student_id ||
-                    s.id === r.student_id ||
-                    (r.roll_no && Number(s.roll_no) === Number(r.roll_no))
-                );
+                const targetAdm = String(r.admission_no || r.student_id || '').trim().toUpperCase();
+
+                // Find matching student strictly by admission_no or ID or unique full_name
+                const matchedStudent = students.find((s) => {
+                  const sAdm = String(s.admission_no || s.id || '').trim().toUpperCase();
+                  const sId = String(s.id || '').trim().toUpperCase();
+                  if (targetAdm && (sAdm === targetAdm || sId === targetAdm)) return true;
+                  if (r.student_id && (sId === String(r.student_id).trim().toUpperCase() || sAdm === String(r.student_id).trim().toUpperCase())) return true;
+                  if (r.full_name && s.full_name && s.full_name.trim().toLowerCase() === r.full_name.trim().toLowerCase()) return true;
+                  return false;
+                });
 
                 if (matchedStudent) {
                   const targetKey = matchedStudent.id;
@@ -292,6 +350,7 @@ export default function AttendancePage({ onRefreshCounts }) {
                       ...(currentRec || {}),
                       id: currentRec?.id || r.id,
                       student_id: matchedStudent.id,
+                      admission_no: matchedStudent.admission_no,
                       batch_id: selectedBatchId,
                       date: selectedDate,
                       session_name: 'Regular',
@@ -313,11 +372,16 @@ export default function AttendancePage({ onRefreshCounts }) {
 
               // Persist synchronized records to PC's local IndexedDB
               if (toPersist.length > 0 && supabase) {
-                supabase
-                  .from('attendance')
-                  .upsert(toPersist, { onConflict: 'student_id,batch_id,date,session_name' })
-                  .then(() => {})
-                  .catch(() => {});
+                try {
+                  const p = supabase
+                    .from('attendance')
+                    .upsert(toPersist, { onConflict: 'student_id,batch_id,date,session_name' });
+                  if (p && typeof p.then === 'function') {
+                    p.then(() => {}, (e) => console.warn('Attendance local upsert error:', e));
+                  }
+                } catch (err) {
+                  console.warn('Attendance local upsert ignored:', err);
+                }
               }
 
               return changed ? next : prev;
@@ -325,13 +389,13 @@ export default function AttendancePage({ onRefreshCounts }) {
           }
         }
       } catch {}
-    }, 2000);
+    }, 1000);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [selectedBatchId, selectedDate, batches, students]);
+  }, [selectedBatchId, selectedDate, batches, students, getHubBaseUrl]);
 
   const activeBatch = batches.find((b) => b.id === selectedBatchId);
 
@@ -377,7 +441,8 @@ export default function AttendancePage({ onRefreshCounts }) {
 
       // Broadcast to local Wi-Fi hub so mobile app syncs immediately
       try {
-        fetch('/api/local-hub?action=attendance', {
+        const hubBase = getHubBaseUrl();
+        fetch(`${hubBase}/api/local-hub?action=attendance`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -427,6 +492,20 @@ export default function AttendancePage({ onRefreshCounts }) {
         newMap[att.student_id] = att;
       });
       setAttendanceMap((prev) => ({ ...prev, ...newMap }));
+
+      // Broadcast bulk roll call to Local Wi-Fi Hub
+      try {
+        const hubBase = getHubBaseUrl();
+        fetch(`${hubBase}/api/local-hub?action=attendance`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            batch_id: selectedBatchId,
+            date: selectedDate,
+            records: payloads.map((p) => ({ student_id: p.student_id, status: 'Present' })),
+          }),
+        }).catch(() => {});
+      } catch {}
 
       showToast(`Marked ${students.length} students as Present in Supabase!`);
     } catch (err) {

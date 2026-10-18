@@ -23,9 +23,9 @@ export default function FeeReceiptModal({
   student,
   paymentRecord = null,
 }) {
-  if (!isOpen || !student) return null;
-
   const branding = useAcademySettings();
+
+  if (!isOpen || !student) return null;
 
   const handlePrint = () => {
     window.print();

@@ -4,6 +4,9 @@
  * 
  * Provides high-speed, zero-cloud REST API for Teacher Android phones
  * connecting to the School PC over local Wi-Fi.
+ * 
+ * Synchronizes with the persistent School Database (school_database.json)
+ * so PC Desktop EXE and Mobile APK always share 100% identical data.
  */
 
 import os from 'os';
@@ -20,9 +23,59 @@ import {
 // Cache for in-memory / local session attendance store when completely offline
 const memoryAttendanceStore = new Map();
 let lastSyncTimestamp = new Date().toISOString();
+const hubSessionToken = 'sms-hub-session-token';
 
-// Persistent file-backed attendance store on the School PC
+// Persistent file paths on the School PC
 const PERSISTENT_ATTENDANCE_FILE = path.resolve(process.cwd(), 'src/data/attendance_sync.json');
+const SCHOOL_DATABASE_FILE = path.resolve(process.cwd(), 'src/data/school_database.json');
+
+// Live in-memory cache of the school database
+let liveSchoolDb = {
+  batches: CANONICAL_BATCHES,
+  students: CANONICAL_STUDENTS,
+  courses: [],
+  attendance: {},
+  lastModified: new Date().toISOString(),
+};
+
+function loadSchoolDatabase() {
+  try {
+    if (fs.existsSync(SCHOOL_DATABASE_FILE)) {
+      const raw = fs.readFileSync(SCHOOL_DATABASE_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.batches) && Array.isArray(parsed.students)) {
+        liveSchoolDb = {
+          ...parsed,
+          batches: parsed.batches.length > 0 ? parsed.batches : CANONICAL_BATCHES,
+          students: parsed.students.length > 0 ? parsed.students : CANONICAL_STUDENTS,
+        };
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn('Warning reading school_database.json:', err.message);
+  }
+
+  // Default fallback if file does not exist yet
+  liveSchoolDb = {
+    batches: CANONICAL_BATCHES,
+    students: CANONICAL_STUDENTS,
+    courses: [],
+    attendance: {},
+    lastModified: new Date().toISOString(),
+  };
+}
+
+function saveSchoolDatabase() {
+  try {
+    const dir = path.dirname(SCHOOL_DATABASE_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    liveSchoolDb.lastModified = new Date().toISOString();
+    fs.writeFileSync(SCHOOL_DATABASE_FILE, JSON.stringify(liveSchoolDb, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Failed to persist school_database.json:', err.message);
+  }
+}
 
 function loadPersistentAttendance() {
   try {
@@ -50,8 +103,12 @@ function savePersistentAttendance() {
   } catch {}
 }
 
-// Initial load
+// Initial load on server start
+loadSchoolDatabase();
 loadPersistentAttendance();
+
+let localHubOtp = '482910';
+const registeredDevicesSet = new Set();
 
 /**
  * Resolves current machine's primary IPv4 Wi-Fi / LAN address
@@ -60,27 +117,69 @@ export function getLocalNetworkIp() {
   const nets = os.networkInterfaces();
   let candidate = '127.0.0.1';
 
+  const isVirtual = (name) => {
+    const lower = name.toLowerCase();
+    return (
+      lower.includes('vgate') ||
+      lower.includes('vethernet') ||
+      lower.includes('vmware') ||
+      lower.includes('virtual') ||
+      lower.includes('hyper-v') ||
+      lower.includes('tailscale') ||
+      lower.includes('bluetooth') ||
+      lower.includes('loopback')
+    );
+  };
+
+  // Priority 1: Wi-Fi or WLAN
   for (const name of Object.keys(nets)) {
+    if (isVirtual(name)) continue;
     for (const net of nets[name]) {
-      if (net.family === 'IPv4' && !net.internal) {
-        // Prioritize Wi-Fi or local ethernet
-        if (name.toLowerCase().includes('wi-fi') || name.toLowerCase().includes('wlan')) {
+      if (net.family === 'IPv4' && !net.internal && !net.address.startsWith('169.254.') && !net.address.startsWith('172.30.')) {
+        if (name.toLowerCase().includes('wi-fi') || name.toLowerCase().includes('wlan') || name.toLowerCase().includes('wireless')) {
           return net.address;
-        }
-        if (!candidate || candidate === '127.0.0.1') {
-          candidate = net.address;
         }
       }
     }
   }
+
+  // Priority 2: Any non-virtual adapter
+  for (const name of Object.keys(nets)) {
+    if (isVirtual(name)) continue;
+    for (const net of nets[name]) {
+      if (net.family === 'IPv4' && !net.internal && !net.address.startsWith('169.254.') && !net.address.startsWith('172.30.')) {
+        return net.address;
+      }
+    }
+  }
+
   return candidate;
+}
+
+/**
+ * Normalizes batch query (ID, code, or name) against active school batches
+ */
+function resolveBatchInfo(batchId, batches) {
+  if (!batchId) return null;
+  const clean = String(batchId).trim().toUpperCase();
+  const list = Array.isArray(batches) && batches.length > 0 ? batches : CANONICAL_BATCHES;
+  return (
+    list.find(
+      (b) =>
+        b.id?.toUpperCase() === clean ||
+        b.code?.toUpperCase() === clean ||
+        b.name?.toUpperCase() === clean ||
+        clean.includes(b.code?.toUpperCase() || '') ||
+        clean.includes(b.name?.toUpperCase() || '')
+    ) || null
+  );
 }
 
 export default async function handler(req, res) {
   // CORS & Security headers for Local Wi-Fi network requests
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-school-key');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-school-key, X-Hub-Token, X-School-Token');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -89,6 +188,9 @@ export default async function handler(req, res) {
   const query = req.query || {};
   const action = (query.action || req.body?.action || 'status').toLowerCase();
   const localIp = getLocalNetworkIp();
+
+  // Re-read school database if updated on disk
+  loadSchoolDatabase();
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -105,64 +207,168 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       service: 'SMS Local Wi-Fi Attendance Hub',
+      ip: localIp,
       localIp,
       port: 5173,
+      token: hubSessionToken,
+      otp: localHubOtp,
+      registeredDevicesCount: registeredDevicesSet.size,
       connectUrl: `http://${localIp}:5173`,
       academyName: 'SMS International Academy',
       timestamp: new Date().toISOString(),
       lastSyncTimestamp,
+      lastDatabaseModified: liveSchoolDb.lastModified,
       status: 'active',
-      batchCount: CANONICAL_BATCHES.length,
-      studentCount: CANONICAL_STUDENTS.length,
+      batchCount: liveSchoolDb.batches.length,
+      studentCount: liveSchoolDb.students.length,
     });
   }
 
-  // 2. BATCHES: Returns the exact 5 academic cohorts from desktop application
-  if (action === 'batches') {
-    if (db) {
-      try {
-        const { data, error } = await db
-          .from('batches')
-          .select('id, name, code, timing, classroom, is_active')
-          .order('name');
-        if (!error && Array.isArray(data) && data.length >= 5) {
-          return res.status(200).json({ ok: true, batches: data });
-        }
-      } catch {}
+  // 1.1 PAIR DEVICE: Registers teacher mobile phone using 6-digit OTP
+  if (action === 'pair_device') {
+    const { device_id, otp } = req.body || {};
+    if (!device_id) return res.status(400).json({ ok: false, error: 'Missing device_id' });
+    if (!otp || String(otp).trim() !== String(localHubOtp).trim()) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid 6-digit OTP pairing code. Please enter the code shown on the School PC screen.',
+      });
     }
-    return res.status(200).json({ ok: true, batches: CANONICAL_BATCHES });
+    registeredDevicesSet.add(device_id);
+    return res.status(200).json({
+      ok: true,
+      registered: true,
+      device_id,
+      token: hubSessionToken,
+      message: 'Device paired and registered successfully',
+    });
   }
 
-  // 3. STUDENTS: Returns student roster for a specific batch (exactly 20 students per batch)
+  // 1.2 CHECK DEVICE: Check if mobile device is already registered
+  if (action === 'check_device') {
+    const devId = query.device_id || req.body?.device_id;
+    return res.status(200).json({ ok: true, registered: registeredDevicesSet.has(devId), device_id: devId });
+  }
+
+  // 1.3 REGENERATE OTP
+  if (action === 'regenerate_otp') {
+    localHubOtp = String(Math.floor(100000 + Math.random() * 900000));
+    return res.status(200).json({ ok: true, otp: localHubOtp });
+  }
+
+  // 2. BATCHES: Returns academic cohorts from the live synchronized school database
+  if (action === 'batches') {
+    const rawBatches = liveSchoolDb.batches && liveSchoolDb.batches.length > 0
+      ? liveSchoolDb.batches
+      : CANONICAL_BATCHES;
+
+    const batches = rawBatches.map((b) => {
+      const bId = String(b.id || '').toUpperCase();
+      const bCode = String(b.code || '').toUpperCase();
+      const count = (liveSchoolDb.students || []).filter((s) => {
+        const sBId = String(s.batch_id || '').toUpperCase();
+        return (bId && sBId === bId) || (bCode && sBId === bCode);
+      }).length;
+      return { ...b, student_count: count };
+    });
+
+    return res.status(200).json({ ok: true, batches });
+  }
+
+  // 3. STUDENTS: Returns student roster for a specific batch directly from the live synchronized school database
   if (action === 'students') {
-    const batchId = query.batch_id || req.body?.batch_id;
-    if (!batchId) {
+    const rawBatchId = query.batch_id || req.body?.batch_id;
+    if (!rawBatchId) {
       return res.status(400).json({ ok: false, error: 'batch_id parameter is required.' });
     }
 
-    if (db) {
-      try {
-        const { data, error } = await db
-          .from('students')
-          .select('id, full_name, roll_no, admission_no, gender, status, batch_id')
-          .eq('batch_id', batchId)
-          .order('roll_no');
+    const matchedBatch = resolveBatchInfo(rawBatchId, liveSchoolDb.batches);
+    const targetCode = matchedBatch?.code?.toUpperCase() || '';
+    const targetName = matchedBatch?.name?.toUpperCase() || '';
+    const targetId = matchedBatch?.id?.toUpperCase() || String(rawBatchId).trim().toUpperCase();
+    const cleanRaw = String(rawBatchId).trim().toUpperCase();
 
-        if (!error && Array.isArray(data) && data.length > 0) {
-          return res.status(200).json({ ok: true, batch_id: batchId, students: data });
-        }
-      } catch {}
-    }
+    // Filter students from the live synchronized database
+    const students = (liveSchoolDb.students || []).filter((s) => {
+      const sBatchId = String(s.batch_id || '').toUpperCase();
+      const sBatchName = String(s.batch_name || '').toUpperCase();
+      const sBatchCode = String(s.batch_code || s.code || '').toUpperCase();
 
-    const students = getBatchStudents(batchId);
+      if (sBatchId && (sBatchId === targetId || sBatchId === cleanRaw)) return true;
+      if (targetCode && (sBatchId === targetCode || sBatchCode === targetCode)) return true;
+      if (sBatchCode && (sBatchCode === targetId || sBatchCode === cleanRaw)) return true;
+      if (sBatchName && targetName && (sBatchName === targetName || sBatchName.includes(targetName) || targetName.includes(sBatchName))) {
+        return true;
+      }
+      return false;
+    });
+
+    const finalStudents = students;
+
     return res.status(200).json({
       ok: true,
-      batch_id: batchId,
-      students: students.length > 0 ? students : CANONICAL_STUDENTS.slice(0, 20),
+      batch_id: rawBatchId,
+      resolved_batch: matchedBatch || null,
+      students: finalStudents,
+      total: finalStudents.length,
     });
   }
 
-  // 4. ATTENDANCE (GET): Retrieves existing attendance records for a batch and date
+  // 4. SYNC_SCHOOL_DATA: Pushes changes from PC Desktop EXE to Wi-Fi Hub
+  if (action === 'sync_school_data') {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ ok: false, error: 'POST required for sync_school_data' });
+    }
+
+    const { batches, students, courses, attendance: syncAttendance } = req.body || {};
+    let updated = false;
+
+    if (Array.isArray(batches) && batches.length > 0) {
+      liveSchoolDb.batches = batches;
+      updated = true;
+    }
+
+    if (Array.isArray(students) && students.length > 0) {
+      liveSchoolDb.students = students;
+      updated = true;
+    }
+
+    if (Array.isArray(courses)) {
+      liveSchoolDb.courses = courses;
+      updated = true;
+    }
+
+    if (syncAttendance && typeof syncAttendance === 'object') {
+      liveSchoolDb.attendance = { ...(liveSchoolDb.attendance || {}), ...syncAttendance };
+      updated = true;
+    }
+
+    if (updated) {
+      saveSchoolDatabase();
+      lastSyncTimestamp = new Date().toISOString();
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: 'School database successfully synchronized to Local Wi-Fi Hub on PC!',
+      batchCount: liveSchoolDb.batches.length,
+      studentCount: liveSchoolDb.students.length,
+      lastModified: liveSchoolDb.lastModified,
+    });
+  }
+
+  // 5. EXPORT_SCHOOL_DATA: Exports full synchronized database for desktop or phone client hydration
+  if (action === 'export_school_data') {
+    return res.status(200).json({
+      ok: true,
+      batches: liveSchoolDb.batches,
+      students: liveSchoolDb.students,
+      courses: liveSchoolDb.courses,
+      lastModified: liveSchoolDb.lastModified,
+    });
+  }
+
+  // 6. ATTENDANCE (GET): Retrieves existing attendance records for a batch and date
   if (action === 'attendance' && req.method === 'GET') {
     const batchId = query.batch_id;
     const targetDate = query.date || new Date().toISOString().split('T')[0];
@@ -171,7 +377,18 @@ export default async function handler(req, res) {
     }
 
     const key = `${batchId}_${targetDate}`;
-    const cached = memoryAttendanceStore.get(key);
+    let cached = memoryAttendanceStore.get(key);
+
+    if (!cached) {
+      // Check alias keys
+      const matchedBatch = resolveBatchInfo(batchId, liveSchoolDb.batches);
+      if (matchedBatch) {
+        cached =
+          memoryAttendanceStore.get(`${matchedBatch.code}_${targetDate}`) ||
+          memoryAttendanceStore.get(`${matchedBatch.id}_${targetDate}`) ||
+          memoryAttendanceStore.get(`${matchedBatch.name?.replace(/\s+/g, '').toUpperCase()}_${targetDate}`);
+      }
+    }
 
     return res.status(200).json({
       ok: true,
@@ -182,10 +399,17 @@ export default async function handler(req, res) {
     });
   }
 
-  // 5. ATTENDANCE (POST): Saves teacher roll call from phone into school PC database
+  // 7. ATTENDANCE (POST): Saves teacher roll call from phone or desktop into PC database
   if (action === 'attendance') {
     if (req.method !== 'POST') {
       return res.status(405).json({ ok: false, error: 'POST required for saving attendance.' });
+    }
+
+    // Optional token validation (Req 9)
+    const tokenHeader = req.headers?.['x-hub-token'] || req.headers?.['X-Hub-Token'];
+    const payloadToken = req.body?.token;
+    if (tokenHeader && tokenHeader !== hubSessionToken && payloadToken !== hubSessionToken) {
+      return res.status(401).json({ ok: false, error: 'Unauthorized: Invalid pairing token' });
     }
 
     const { batch_id, batch_code, batch_name, date, records } = req.body || {};
@@ -198,13 +422,14 @@ export default async function handler(req, res) {
 
     // Enrich records with admission_no and roll_no if missing
     const enrichedRecords = records.map((r) => {
-      const canonicalMatch = CANONICAL_STUDENTS.find(
+      const match = liveSchoolDb.students.find(
         (cs) => cs.id === r.student_id || cs.admission_no === r.student_id || cs.admission_no === r.admission_no
       );
       return {
         student_id: r.student_id,
-        admission_no: r.admission_no || canonicalMatch?.admission_no || r.student_id,
-        roll_no: r.roll_no || canonicalMatch?.roll_no || null,
+        admission_no: r.admission_no || match?.admission_no || r.student_id,
+        roll_no: r.roll_no || match?.roll_no || null,
+        full_name: r.full_name || match?.full_name || '',
         status: r.status || 'Present',
         remarks: r.remarks || '',
         time_in: r.time_in || new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
@@ -234,30 +459,10 @@ export default async function handler(req, res) {
 
     savePersistentAttendance();
 
-    // Try database persistence if available
-    let dbSuccess = false;
-    if (db) {
-      try {
-        const payload = enrichedRecords.map((r) => ({
-          student_id: r.student_id,
-          batch_id,
-          date: targetDate,
-          status: r.status,
-          remarks: r.remarks,
-          updated_at: lastSyncTimestamp,
-        }));
-
-        const { error } = await db
-          .from('attendance')
-          .upsert(payload, { onConflict: 'student_id,date' });
-
-        if (!error) {
-          dbSuccess = true;
-        }
-      } catch (err) {
-        console.warn('Database attendance persistence warning:', err);
-      }
-    }
+    // Also persist into liveSchoolDb
+    if (!liveSchoolDb.attendance) liveSchoolDb.attendance = {};
+    liveSchoolDb.attendance[`${batch_id}_${targetDate}`] = sessionData;
+    saveSchoolDatabase();
 
     let presentCount = 0;
     let absentCount = 0;
@@ -268,6 +473,29 @@ export default async function handler(req, res) {
       else if (r.status === 'Late') lateCount++;
     });
 
+    // Run database cloud persistence asynchronously in background if configured
+    if (db) {
+      (async () => {
+        try {
+          const payload = enrichedRecords.map((r) => ({
+            student_id: r.student_id,
+            batch_id,
+            date: targetDate,
+            session_name: 'Regular',
+            status: r.status,
+            remarks: r.remarks || 'Mobile roll call',
+            updated_at: lastSyncTimestamp,
+          }));
+
+          await db
+            .from('attendance')
+            .upsert(payload, { onConflict: 'student_id,batch_id,date,session_name' });
+        } catch (err) {
+          console.warn('Background Supabase attendance sync warning:', err.message);
+        }
+      })();
+    }
+
     return res.status(200).json({
       ok: true,
       batch_id,
@@ -276,13 +504,12 @@ export default async function handler(req, res) {
       presentCount,
       absentCount,
       lateCount,
-      dbSynchronized: dbSuccess,
       message: `Successfully saved attendance (${presentCount} Present, ${lateCount} Late, ${absentCount} Absent) to School PC!`,
       savedAt: lastSyncTimestamp,
     });
   }
 
-  // 6. UPDATES (GET): Polling endpoint for Desktop PC to receive live sync
+  // 8. UPDATES (GET): Polling endpoint for Desktop PC to receive live sync
   if (action === 'updates') {
     const targetDate = query.date || new Date().toISOString().split('T')[0];
     const batchId = query.batch_id;
@@ -322,6 +549,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       lastSyncTimestamp,
+      lastDatabaseModified: liveSchoolDb.lastModified,
       hasData: Boolean(matchedSession || allRecordsForDate.length > 0),
       records: matchedSession ? matchedSession.records : allRecordsForDate,
       allRecords: allRecordsForDate,

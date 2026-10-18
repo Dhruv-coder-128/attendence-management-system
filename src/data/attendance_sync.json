@@ -4,150 +4,2443 @@
     "batch_code": "B11",
     "batch_name": "",
     "date": "2026-10-17",
-    "savedAt": "2026-10-17T18:29:36.491Z",
+    "savedAt": "2026-10-18T09:03:53.690Z",
     "records": [
       {
         "student_id": "ST1001",
         "admission_no": "ST1001",
         "roll_no": 1,
+        "full_name": "Krishna Dave",
         "status": "Present",
         "remarks": "",
-        "time_in": "23:59",
-        "updated_at": "2026-10-17T18:29:36.491Z"
+        "time_in": "14:33",
+        "updated_at": "2026-10-18T09:03:53.690Z"
       },
       {
         "student_id": "ST1002",
         "admission_no": "ST1002",
         "roll_no": 2,
+        "full_name": "Ananya Zala",
         "status": "Late",
         "remarks": "",
-        "time_in": "23:59",
-        "updated_at": "2026-10-17T18:29:36.491Z"
+        "time_in": "14:33",
+        "updated_at": "2026-10-18T09:03:53.690Z"
       },
       {
         "student_id": "ST1003",
         "admission_no": "ST1003",
         "roll_no": 3,
+        "full_name": "Arjun Patel",
         "status": "Absent",
         "remarks": "",
-        "time_in": "23:59",
-        "updated_at": "2026-10-17T18:29:36.491Z"
+        "time_in": "14:33",
+        "updated_at": "2026-10-18T09:03:53.690Z"
       },
       {
         "student_id": "ST1004",
         "admission_no": "ST1004",
         "roll_no": 4,
+        "full_name": "Yash Vora",
         "status": "Present",
         "remarks": "",
-        "time_in": "23:59",
-        "updated_at": "2026-10-17T18:29:36.491Z"
+        "time_in": "14:33",
+        "updated_at": "2026-10-18T09:03:53.690Z"
       }
     ]
   },
   "BFY_2026-10-17": {
     "batch_id": "BFY",
+    "batch_code": "BFY",
+    "batch_name": "FY",
     "date": "2026-10-17",
-    "savedAt": "2026-10-17T18:12:42.512Z",
+    "savedAt": "2026-10-17T19:53:16.389Z",
     "records": [
       {
         "student_id": "ST1041",
+        "admission_no": "ST1041",
+        "roll_no": 1,
+        "full_name": "Neha Pandya",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1042",
+        "admission_no": "ST1042",
+        "roll_no": 2,
+        "full_name": "Pooja Patel",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1043",
+        "admission_no": "ST1043",
+        "roll_no": 3,
+        "full_name": "Yash Mehta",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1044",
+        "admission_no": "ST1044",
+        "roll_no": 4,
+        "full_name": "Sai Patel",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1045",
+        "admission_no": "ST1045",
+        "roll_no": 5,
+        "full_name": "Ishaan Pandya",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1046",
+        "admission_no": "ST1046",
+        "roll_no": 6,
+        "full_name": "Meera Jadeja",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1047",
+        "admission_no": "ST1047",
+        "roll_no": 7,
+        "full_name": "Krishna Vora",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1048",
+        "admission_no": "ST1048",
+        "roll_no": 8,
+        "full_name": "Advik Dave",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1049",
+        "admission_no": "ST1049",
+        "roll_no": 9,
+        "full_name": "Krishna Mehta",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1050",
+        "admission_no": "ST1050",
+        "roll_no": 10,
+        "full_name": "Tanvi Solanki",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1051",
+        "admission_no": "ST1051",
+        "roll_no": 11,
+        "full_name": "Riya Vora",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1052",
+        "admission_no": "ST1052",
+        "roll_no": 12,
+        "full_name": "Sai Thakkar",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1053",
+        "admission_no": "ST1053",
+        "roll_no": 13,
+        "full_name": "Adhira Mehta",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1054",
+        "admission_no": "ST1054",
+        "roll_no": 14,
+        "full_name": "Reyansh Bhatt",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1055",
+        "admission_no": "ST1055",
+        "roll_no": 15,
+        "full_name": "Aarav Thakkar",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1056",
+        "admission_no": "ST1056",
+        "roll_no": 16,
+        "full_name": "Pooja Joshi",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1057",
+        "admission_no": "ST1057",
+        "roll_no": 17,
+        "full_name": "Ishaan Sanghani",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1058",
+        "admission_no": "ST1058",
+        "roll_no": 18,
+        "full_name": "Atharv Pandya",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1059",
+        "admission_no": "ST1059",
+        "roll_no": 19,
+        "full_name": "Adhira Rathod",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
       },
       {
         "student_id": "ST1060",
+        "admission_no": "ST1060",
+        "roll_no": 20,
+        "full_name": "Saanvi Shah",
         "status": "Absent",
-        "remarks": ""
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      }
+    ]
+  },
+  "11THCOMMERCE_2026-10-17": {
+    "batch_id": "B11",
+    "batch_code": "B11",
+    "batch_name": "11th Commerce",
+    "date": "2026-10-17",
+    "savedAt": "2026-10-17T19:52:55.955Z",
+    "records": [
+      {
+        "student_id": "ST1001",
+        "admission_no": "ST1001",
+        "roll_no": 1,
+        "full_name": "Krishna Dave",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1002",
+        "admission_no": "ST1002",
+        "roll_no": 2,
+        "full_name": "Ananya Zala",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1003",
+        "admission_no": "ST1003",
+        "roll_no": 3,
+        "full_name": "Arjun Patel",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1004",
+        "admission_no": "ST1004",
+        "roll_no": 4,
+        "full_name": "Yash Vora",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1005",
+        "admission_no": "ST1005",
+        "roll_no": 5,
+        "full_name": "Diya Vora",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1006",
+        "admission_no": "ST1006",
+        "roll_no": 6,
+        "full_name": "Ananya Joshi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1007",
+        "admission_no": "ST1007",
+        "roll_no": 7,
+        "full_name": "Vihaan Jadeja",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1008",
+        "admission_no": "ST1008",
+        "roll_no": 8,
+        "full_name": "Karan Mehta",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1009",
+        "admission_no": "ST1009",
+        "roll_no": 9,
+        "full_name": "Pari Joshi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1010",
+        "admission_no": "ST1010",
+        "roll_no": 10,
+        "full_name": "Reyansh Vora",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1011",
+        "admission_no": "ST1011",
+        "roll_no": 11,
+        "full_name": "Meera Makwana",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1012",
+        "admission_no": "ST1012",
+        "roll_no": 12,
+        "full_name": "Meera Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1013",
+        "admission_no": "ST1013",
+        "roll_no": 13,
+        "full_name": "Saanvi Trivedi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1014",
+        "admission_no": "ST1014",
+        "roll_no": 14,
+        "full_name": "Dev Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1015",
+        "admission_no": "ST1015",
+        "roll_no": 15,
+        "full_name": "Ananya Makwana",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1016",
+        "admission_no": "ST1016",
+        "roll_no": 16,
+        "full_name": "Rohan Mehta",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1017",
+        "admission_no": "ST1017",
+        "roll_no": 17,
+        "full_name": "Riya Bhatt",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1018",
+        "admission_no": "ST1018",
+        "roll_no": 18,
+        "full_name": "Tanvi Trivedi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1019",
+        "admission_no": "ST1019",
+        "roll_no": 19,
+        "full_name": "Saanvi Amin",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      },
+      {
+        "student_id": "ST1061",
+        "admission_no": "ST1061",
+        "roll_no": 1,
+        "full_name": "Saanvi Vora",
+        "status": "Present",
+        "remarks": "",
+        "time_in": "01:22",
+        "updated_at": "2026-10-17T19:52:55.955Z"
+      }
+    ]
+  },
+  "B11_2026-10-18": {
+    "batch_id": "B11",
+    "batch_code": "B11",
+    "batch_name": "11th Commerce",
+    "date": "2026-10-18",
+    "savedAt": "2026-10-18T11:16:46.985Z",
+    "records": [
+      {
+        "student_id": "ST1061",
+        "admission_no": "ST1061",
+        "roll_no": 1,
+        "full_name": "Saanvi Vora",
+        "status": "Present",
+        "remarks": "",
+        "time_in": "16:46",
+        "updated_at": "2026-10-18T11:16:46.985Z"
+      },
+      {
+        "student_id": "ST1002",
+        "admission_no": "ST1002",
+        "roll_no": 2,
+        "full_name": "Ananya Zala",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "16:46",
+        "updated_at": "2026-10-18T11:16:46.985Z"
+      }
+    ]
+  },
+  "11THCOMMERCE_2026-10-18": {
+    "batch_id": "B11",
+    "batch_code": "B11",
+    "batch_name": "11th Commerce",
+    "date": "2026-10-18",
+    "savedAt": "2026-10-18T11:16:46.985Z",
+    "records": [
+      {
+        "student_id": "ST1061",
+        "admission_no": "ST1061",
+        "roll_no": 1,
+        "full_name": "Saanvi Vora",
+        "status": "Present",
+        "remarks": "",
+        "time_in": "16:46",
+        "updated_at": "2026-10-18T11:16:46.985Z"
+      },
+      {
+        "student_id": "ST1002",
+        "admission_no": "ST1002",
+        "roll_no": 2,
+        "full_name": "Ananya Zala",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "16:46",
+        "updated_at": "2026-10-18T11:16:46.985Z"
+      }
+    ]
+  },
+  "BSY_2026-10-17": {
+    "batch_id": "BSY",
+    "batch_code": "SY-BCA",
+    "batch_name": "SY",
+    "date": "2026-10-17",
+    "savedAt": "2026-10-17T20:29:27.274Z",
+    "records": [
+      {
+        "student_id": "ST1004",
+        "admission_no": "ST1004",
+        "roll_no": 4,
+        "full_name": "Yash Vora",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1009",
+        "admission_no": "ST1009",
+        "roll_no": 9,
+        "full_name": "Pari Joshi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1014",
+        "admission_no": "ST1014",
+        "roll_no": 14,
+        "full_name": "Dev Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1019",
+        "admission_no": "ST1019",
+        "roll_no": 19,
+        "full_name": "Dhruv Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1024",
+        "admission_no": "ST1024",
+        "roll_no": 4,
+        "full_name": "Neha Rathod",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1029",
+        "admission_no": "ST1029",
+        "roll_no": 9,
+        "full_name": "Meera Trivedi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1034",
+        "admission_no": "ST1034",
+        "roll_no": 14,
+        "full_name": "Atharv Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1039",
+        "admission_no": "ST1039",
+        "roll_no": 19,
+        "full_name": "Aadhya Zala",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1044",
+        "admission_no": "ST1044",
+        "roll_no": 4,
+        "full_name": "Sai Patel",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1049",
+        "admission_no": "ST1049",
+        "roll_no": 9,
+        "full_name": "Krishna Mehta",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1054",
+        "admission_no": "ST1054",
+        "roll_no": 14,
+        "full_name": "Reyansh Bhatt",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1059",
+        "admission_no": "ST1059",
+        "roll_no": 19,
+        "full_name": "Adhira Rathod",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1064",
+        "admission_no": "ST1064",
+        "roll_no": 4,
+        "full_name": "Adhira Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1069",
+        "admission_no": "ST1069",
+        "roll_no": 9,
+        "full_name": "Atharv Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1074",
+        "admission_no": "ST1074",
+        "roll_no": 14,
+        "full_name": "Krishna Chauhan",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1079",
+        "admission_no": "ST1079",
+        "roll_no": 19,
+        "full_name": "Arjun Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1084",
+        "admission_no": "ST1084",
+        "roll_no": 4,
+        "full_name": "Vivaan Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1089",
+        "admission_no": "ST1089",
+        "roll_no": 9,
+        "full_name": "Krishna Dave",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1094",
+        "admission_no": "ST1094",
+        "roll_no": 14,
+        "full_name": "Krishna Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1099",
+        "admission_no": "ST1099",
+        "roll_no": 19,
+        "full_name": "Aditya Solanki",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      }
+    ]
+  },
+  "SY_2026-10-17": {
+    "batch_id": "BSY",
+    "batch_code": "SY-BCA",
+    "batch_name": "SY",
+    "date": "2026-10-17",
+    "savedAt": "2026-10-17T20:29:27.274Z",
+    "records": [
+      {
+        "student_id": "ST1004",
+        "admission_no": "ST1004",
+        "roll_no": 4,
+        "full_name": "Yash Vora",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1009",
+        "admission_no": "ST1009",
+        "roll_no": 9,
+        "full_name": "Pari Joshi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1014",
+        "admission_no": "ST1014",
+        "roll_no": 14,
+        "full_name": "Dev Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1019",
+        "admission_no": "ST1019",
+        "roll_no": 19,
+        "full_name": "Dhruv Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1024",
+        "admission_no": "ST1024",
+        "roll_no": 4,
+        "full_name": "Neha Rathod",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1029",
+        "admission_no": "ST1029",
+        "roll_no": 9,
+        "full_name": "Meera Trivedi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1034",
+        "admission_no": "ST1034",
+        "roll_no": 14,
+        "full_name": "Atharv Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1039",
+        "admission_no": "ST1039",
+        "roll_no": 19,
+        "full_name": "Aadhya Zala",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1044",
+        "admission_no": "ST1044",
+        "roll_no": 4,
+        "full_name": "Sai Patel",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1049",
+        "admission_no": "ST1049",
+        "roll_no": 9,
+        "full_name": "Krishna Mehta",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1054",
+        "admission_no": "ST1054",
+        "roll_no": 14,
+        "full_name": "Reyansh Bhatt",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1059",
+        "admission_no": "ST1059",
+        "roll_no": 19,
+        "full_name": "Adhira Rathod",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1064",
+        "admission_no": "ST1064",
+        "roll_no": 4,
+        "full_name": "Adhira Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1069",
+        "admission_no": "ST1069",
+        "roll_no": 9,
+        "full_name": "Atharv Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1074",
+        "admission_no": "ST1074",
+        "roll_no": 14,
+        "full_name": "Krishna Chauhan",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1079",
+        "admission_no": "ST1079",
+        "roll_no": 19,
+        "full_name": "Arjun Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1084",
+        "admission_no": "ST1084",
+        "roll_no": 4,
+        "full_name": "Vivaan Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1089",
+        "admission_no": "ST1089",
+        "roll_no": 9,
+        "full_name": "Krishna Dave",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1094",
+        "admission_no": "ST1094",
+        "roll_no": 14,
+        "full_name": "Krishna Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1099",
+        "admission_no": "ST1099",
+        "roll_no": 19,
+        "full_name": "Aditya Solanki",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      }
+    ]
+  },
+  "FY_2026-10-17": {
+    "batch_id": "BFY",
+    "batch_code": "BFY",
+    "batch_name": "FY",
+    "date": "2026-10-17",
+    "savedAt": "2026-10-17T19:53:16.389Z",
+    "records": [
+      {
+        "student_id": "ST1041",
+        "admission_no": "ST1041",
+        "roll_no": 1,
+        "full_name": "Neha Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1042",
+        "admission_no": "ST1042",
+        "roll_no": 2,
+        "full_name": "Pooja Patel",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1043",
+        "admission_no": "ST1043",
+        "roll_no": 3,
+        "full_name": "Yash Mehta",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1044",
+        "admission_no": "ST1044",
+        "roll_no": 4,
+        "full_name": "Sai Patel",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1045",
+        "admission_no": "ST1045",
+        "roll_no": 5,
+        "full_name": "Ishaan Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1046",
+        "admission_no": "ST1046",
+        "roll_no": 6,
+        "full_name": "Meera Jadeja",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1047",
+        "admission_no": "ST1047",
+        "roll_no": 7,
+        "full_name": "Krishna Vora",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1048",
+        "admission_no": "ST1048",
+        "roll_no": 8,
+        "full_name": "Advik Dave",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1049",
+        "admission_no": "ST1049",
+        "roll_no": 9,
+        "full_name": "Krishna Mehta",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1050",
+        "admission_no": "ST1050",
+        "roll_no": 10,
+        "full_name": "Tanvi Solanki",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1051",
+        "admission_no": "ST1051",
+        "roll_no": 11,
+        "full_name": "Riya Vora",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1052",
+        "admission_no": "ST1052",
+        "roll_no": 12,
+        "full_name": "Sai Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1053",
+        "admission_no": "ST1053",
+        "roll_no": 13,
+        "full_name": "Adhira Mehta",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1054",
+        "admission_no": "ST1054",
+        "roll_no": 14,
+        "full_name": "Reyansh Bhatt",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1055",
+        "admission_no": "ST1055",
+        "roll_no": 15,
+        "full_name": "Aarav Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1056",
+        "admission_no": "ST1056",
+        "roll_no": 16,
+        "full_name": "Pooja Joshi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1057",
+        "admission_no": "ST1057",
+        "roll_no": 17,
+        "full_name": "Ishaan Sanghani",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1058",
+        "admission_no": "ST1058",
+        "roll_no": 18,
+        "full_name": "Atharv Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1059",
+        "admission_no": "ST1059",
+        "roll_no": 19,
+        "full_name": "Adhira Rathod",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      },
+      {
+        "student_id": "ST1060",
+        "admission_no": "ST1060",
+        "roll_no": 20,
+        "full_name": "Saanvi Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:16.389Z"
+      }
+    ]
+  },
+  "BTY_2026-10-17": {
+    "batch_id": "BTY",
+    "batch_code": "BTY",
+    "batch_name": "TY",
+    "date": "2026-10-17",
+    "savedAt": "2026-10-17T19:53:23.664Z",
+    "records": [
+      {
+        "student_id": "ST1081",
+        "admission_no": "ST1081",
+        "roll_no": 1,
+        "full_name": "Reyansh Amin",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1082",
+        "admission_no": "ST1082",
+        "roll_no": 2,
+        "full_name": "Aarav Solanki",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1083",
+        "admission_no": "ST1083",
+        "roll_no": 3,
+        "full_name": "Adhira Parmar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1084",
+        "admission_no": "ST1084",
+        "roll_no": 4,
+        "full_name": "Vivaan Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1085",
+        "admission_no": "ST1085",
+        "roll_no": 5,
+        "full_name": "Meera Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1086",
+        "admission_no": "ST1086",
+        "roll_no": 6,
+        "full_name": "Vihaan Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1087",
+        "admission_no": "ST1087",
+        "roll_no": 7,
+        "full_name": "Aadhya Trivedi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1088",
+        "admission_no": "ST1088",
+        "roll_no": 8,
+        "full_name": "Meera Parmar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1089",
+        "admission_no": "ST1089",
+        "roll_no": 9,
+        "full_name": "Krishna Dave",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1090",
+        "admission_no": "ST1090",
+        "roll_no": 10,
+        "full_name": "Diya Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1091",
+        "admission_no": "ST1091",
+        "roll_no": 11,
+        "full_name": "Riya Jadeja",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1092",
+        "admission_no": "ST1092",
+        "roll_no": 12,
+        "full_name": "Reyansh Dave",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1093",
+        "admission_no": "ST1093",
+        "roll_no": 13,
+        "full_name": "Arjun Trivedi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1094",
+        "admission_no": "ST1094",
+        "roll_no": 14,
+        "full_name": "Krishna Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1095",
+        "admission_no": "ST1095",
+        "roll_no": 15,
+        "full_name": "Aadhya Parmar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1096",
+        "admission_no": "ST1096",
+        "roll_no": 16,
+        "full_name": "Krishna Parmar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1097",
+        "admission_no": "ST1097",
+        "roll_no": 17,
+        "full_name": "Diya Patel",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1098",
+        "admission_no": "ST1098",
+        "roll_no": 18,
+        "full_name": "Yash Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1099",
+        "admission_no": "ST1099",
+        "roll_no": 19,
+        "full_name": "Aditya Solanki",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1100",
+        "admission_no": "ST1100",
+        "roll_no": 20,
+        "full_name": "Adhira Patel",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      }
+    ]
+  },
+  "TY_2026-10-17": {
+    "batch_id": "BTY",
+    "batch_code": "BTY",
+    "batch_name": "TY",
+    "date": "2026-10-17",
+    "savedAt": "2026-10-17T19:53:23.664Z",
+    "records": [
+      {
+        "student_id": "ST1081",
+        "admission_no": "ST1081",
+        "roll_no": 1,
+        "full_name": "Reyansh Amin",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1082",
+        "admission_no": "ST1082",
+        "roll_no": 2,
+        "full_name": "Aarav Solanki",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1083",
+        "admission_no": "ST1083",
+        "roll_no": 3,
+        "full_name": "Adhira Parmar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1084",
+        "admission_no": "ST1084",
+        "roll_no": 4,
+        "full_name": "Vivaan Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1085",
+        "admission_no": "ST1085",
+        "roll_no": 5,
+        "full_name": "Meera Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1086",
+        "admission_no": "ST1086",
+        "roll_no": 6,
+        "full_name": "Vihaan Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1087",
+        "admission_no": "ST1087",
+        "roll_no": 7,
+        "full_name": "Aadhya Trivedi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1088",
+        "admission_no": "ST1088",
+        "roll_no": 8,
+        "full_name": "Meera Parmar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1089",
+        "admission_no": "ST1089",
+        "roll_no": 9,
+        "full_name": "Krishna Dave",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1090",
+        "admission_no": "ST1090",
+        "roll_no": 10,
+        "full_name": "Diya Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1091",
+        "admission_no": "ST1091",
+        "roll_no": 11,
+        "full_name": "Riya Jadeja",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1092",
+        "admission_no": "ST1092",
+        "roll_no": 12,
+        "full_name": "Reyansh Dave",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1093",
+        "admission_no": "ST1093",
+        "roll_no": 13,
+        "full_name": "Arjun Trivedi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1094",
+        "admission_no": "ST1094",
+        "roll_no": 14,
+        "full_name": "Krishna Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1095",
+        "admission_no": "ST1095",
+        "roll_no": 15,
+        "full_name": "Aadhya Parmar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1096",
+        "admission_no": "ST1096",
+        "roll_no": 16,
+        "full_name": "Krishna Parmar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1097",
+        "admission_no": "ST1097",
+        "roll_no": 17,
+        "full_name": "Diya Patel",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1098",
+        "admission_no": "ST1098",
+        "roll_no": 18,
+        "full_name": "Yash Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1099",
+        "admission_no": "ST1099",
+        "roll_no": 19,
+        "full_name": "Aditya Solanki",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      },
+      {
+        "student_id": "ST1100",
+        "admission_no": "ST1100",
+        "roll_no": 20,
+        "full_name": "Adhira Patel",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:23",
+        "updated_at": "2026-10-17T19:53:23.664Z"
+      }
+    ]
+  },
+  "11-COM_2026-10-18": {
+    "batch_id": "B11",
+    "batch_code": "11-COM",
+    "batch_name": "11th Commerce",
+    "date": "2026-10-18",
+    "savedAt": "2026-10-17T20:19:00.847Z",
+    "records": [
+      {
+        "student_id": "ST1001",
+        "admission_no": "ST1001",
+        "roll_no": 1,
+        "full_name": "Krishna Dave",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:49",
+        "updated_at": "2026-10-17T20:19:00.847Z"
+      },
+      {
+        "student_id": "ST1006",
+        "admission_no": "ST1006",
+        "roll_no": 6,
+        "full_name": "Ananya Joshi",
+        "status": "Present",
+        "remarks": "",
+        "time_in": "01:49",
+        "updated_at": "2026-10-17T20:19:00.847Z"
+      },
+      {
+        "student_id": "ST1011",
+        "admission_no": "ST1011",
+        "roll_no": 11,
+        "full_name": "Meera Makwana",
+        "status": "Present",
+        "remarks": "",
+        "time_in": "01:49",
+        "updated_at": "2026-10-17T20:19:00.847Z"
+      }
+    ]
+  },
+  "SY-BCA_2026-10-17": {
+    "batch_id": "BSY",
+    "batch_code": "SY-BCA",
+    "batch_name": "SY",
+    "date": "2026-10-17",
+    "savedAt": "2026-10-17T20:29:27.274Z",
+    "records": [
+      {
+        "student_id": "ST1004",
+        "admission_no": "ST1004",
+        "roll_no": 4,
+        "full_name": "Yash Vora",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1009",
+        "admission_no": "ST1009",
+        "roll_no": 9,
+        "full_name": "Pari Joshi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1014",
+        "admission_no": "ST1014",
+        "roll_no": 14,
+        "full_name": "Dev Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1019",
+        "admission_no": "ST1019",
+        "roll_no": 19,
+        "full_name": "Dhruv Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1024",
+        "admission_no": "ST1024",
+        "roll_no": 4,
+        "full_name": "Neha Rathod",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1029",
+        "admission_no": "ST1029",
+        "roll_no": 9,
+        "full_name": "Meera Trivedi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1034",
+        "admission_no": "ST1034",
+        "roll_no": 14,
+        "full_name": "Atharv Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1039",
+        "admission_no": "ST1039",
+        "roll_no": 19,
+        "full_name": "Aadhya Zala",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1044",
+        "admission_no": "ST1044",
+        "roll_no": 4,
+        "full_name": "Sai Patel",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1049",
+        "admission_no": "ST1049",
+        "roll_no": 9,
+        "full_name": "Krishna Mehta",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1054",
+        "admission_no": "ST1054",
+        "roll_no": 14,
+        "full_name": "Reyansh Bhatt",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1059",
+        "admission_no": "ST1059",
+        "roll_no": 19,
+        "full_name": "Adhira Rathod",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1064",
+        "admission_no": "ST1064",
+        "roll_no": 4,
+        "full_name": "Adhira Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1069",
+        "admission_no": "ST1069",
+        "roll_no": 9,
+        "full_name": "Atharv Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1074",
+        "admission_no": "ST1074",
+        "roll_no": 14,
+        "full_name": "Krishna Chauhan",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1079",
+        "admission_no": "ST1079",
+        "roll_no": 19,
+        "full_name": "Arjun Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1084",
+        "admission_no": "ST1084",
+        "roll_no": 4,
+        "full_name": "Vivaan Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1089",
+        "admission_no": "ST1089",
+        "roll_no": 9,
+        "full_name": "Krishna Dave",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1094",
+        "admission_no": "ST1094",
+        "roll_no": 14,
+        "full_name": "Krishna Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      },
+      {
+        "student_id": "ST1099",
+        "admission_no": "ST1099",
+        "roll_no": 19,
+        "full_name": "Aditya Solanki",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "01:59",
+        "updated_at": "2026-10-17T20:29:27.274Z"
+      }
+    ]
+  },
+  "BSY_2026-10-18": {
+    "batch_id": "BSY",
+    "batch_code": "SY-BCA",
+    "batch_name": "SY",
+    "date": "2026-10-18",
+    "savedAt": "2026-10-17T20:30:37.448Z",
+    "records": [
+      {
+        "student_id": "ST1004",
+        "admission_no": "ST1004",
+        "roll_no": 4,
+        "full_name": "Yash Vora",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1009",
+        "admission_no": "ST1009",
+        "roll_no": 9,
+        "full_name": "Pari Joshi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1014",
+        "admission_no": "ST1014",
+        "roll_no": 14,
+        "full_name": "Dev Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1019",
+        "admission_no": "ST1019",
+        "roll_no": 19,
+        "full_name": "Dhruv Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1024",
+        "admission_no": "ST1024",
+        "roll_no": 4,
+        "full_name": "Neha Rathod",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1029",
+        "admission_no": "ST1029",
+        "roll_no": 9,
+        "full_name": "Meera Trivedi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1034",
+        "admission_no": "ST1034",
+        "roll_no": 14,
+        "full_name": "Atharv Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1039",
+        "admission_no": "ST1039",
+        "roll_no": 19,
+        "full_name": "Aadhya Zala",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1044",
+        "admission_no": "ST1044",
+        "roll_no": 4,
+        "full_name": "Sai Patel",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1049",
+        "admission_no": "ST1049",
+        "roll_no": 9,
+        "full_name": "Krishna Mehta",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1054",
+        "admission_no": "ST1054",
+        "roll_no": 14,
+        "full_name": "Reyansh Bhatt",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1059",
+        "admission_no": "ST1059",
+        "roll_no": 19,
+        "full_name": "Adhira Rathod",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1064",
+        "admission_no": "ST1064",
+        "roll_no": 4,
+        "full_name": "Adhira Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1069",
+        "admission_no": "ST1069",
+        "roll_no": 9,
+        "full_name": "Atharv Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1074",
+        "admission_no": "ST1074",
+        "roll_no": 14,
+        "full_name": "Krishna Chauhan",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1079",
+        "admission_no": "ST1079",
+        "roll_no": 19,
+        "full_name": "Arjun Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1084",
+        "admission_no": "ST1084",
+        "roll_no": 4,
+        "full_name": "Vivaan Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1089",
+        "admission_no": "ST1089",
+        "roll_no": 9,
+        "full_name": "Krishna Dave",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1094",
+        "admission_no": "ST1094",
+        "roll_no": 14,
+        "full_name": "Krishna Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1099",
+        "admission_no": "ST1099",
+        "roll_no": 19,
+        "full_name": "Aditya Solanki",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      }
+    ]
+  },
+  "SY-BCA_2026-10-18": {
+    "batch_id": "BSY",
+    "batch_code": "SY-BCA",
+    "batch_name": "SY",
+    "date": "2026-10-18",
+    "savedAt": "2026-10-17T20:30:37.448Z",
+    "records": [
+      {
+        "student_id": "ST1004",
+        "admission_no": "ST1004",
+        "roll_no": 4,
+        "full_name": "Yash Vora",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1009",
+        "admission_no": "ST1009",
+        "roll_no": 9,
+        "full_name": "Pari Joshi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1014",
+        "admission_no": "ST1014",
+        "roll_no": 14,
+        "full_name": "Dev Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1019",
+        "admission_no": "ST1019",
+        "roll_no": 19,
+        "full_name": "Dhruv Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1024",
+        "admission_no": "ST1024",
+        "roll_no": 4,
+        "full_name": "Neha Rathod",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1029",
+        "admission_no": "ST1029",
+        "roll_no": 9,
+        "full_name": "Meera Trivedi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1034",
+        "admission_no": "ST1034",
+        "roll_no": 14,
+        "full_name": "Atharv Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1039",
+        "admission_no": "ST1039",
+        "roll_no": 19,
+        "full_name": "Aadhya Zala",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1044",
+        "admission_no": "ST1044",
+        "roll_no": 4,
+        "full_name": "Sai Patel",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1049",
+        "admission_no": "ST1049",
+        "roll_no": 9,
+        "full_name": "Krishna Mehta",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1054",
+        "admission_no": "ST1054",
+        "roll_no": 14,
+        "full_name": "Reyansh Bhatt",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1059",
+        "admission_no": "ST1059",
+        "roll_no": 19,
+        "full_name": "Adhira Rathod",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1064",
+        "admission_no": "ST1064",
+        "roll_no": 4,
+        "full_name": "Adhira Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1069",
+        "admission_no": "ST1069",
+        "roll_no": 9,
+        "full_name": "Atharv Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1074",
+        "admission_no": "ST1074",
+        "roll_no": 14,
+        "full_name": "Krishna Chauhan",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1079",
+        "admission_no": "ST1079",
+        "roll_no": 19,
+        "full_name": "Arjun Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1084",
+        "admission_no": "ST1084",
+        "roll_no": 4,
+        "full_name": "Vivaan Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1089",
+        "admission_no": "ST1089",
+        "roll_no": 9,
+        "full_name": "Krishna Dave",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1094",
+        "admission_no": "ST1094",
+        "roll_no": 14,
+        "full_name": "Krishna Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1099",
+        "admission_no": "ST1099",
+        "roll_no": 19,
+        "full_name": "Aditya Solanki",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      }
+    ]
+  },
+  "SY_2026-10-18": {
+    "batch_id": "BSY",
+    "batch_code": "SY-BCA",
+    "batch_name": "SY",
+    "date": "2026-10-18",
+    "savedAt": "2026-10-17T20:30:37.448Z",
+    "records": [
+      {
+        "student_id": "ST1004",
+        "admission_no": "ST1004",
+        "roll_no": 4,
+        "full_name": "Yash Vora",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1009",
+        "admission_no": "ST1009",
+        "roll_no": 9,
+        "full_name": "Pari Joshi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1014",
+        "admission_no": "ST1014",
+        "roll_no": 14,
+        "full_name": "Dev Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1019",
+        "admission_no": "ST1019",
+        "roll_no": 19,
+        "full_name": "Dhruv Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1024",
+        "admission_no": "ST1024",
+        "roll_no": 4,
+        "full_name": "Neha Rathod",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1029",
+        "admission_no": "ST1029",
+        "roll_no": 9,
+        "full_name": "Meera Trivedi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1034",
+        "admission_no": "ST1034",
+        "roll_no": 14,
+        "full_name": "Atharv Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1039",
+        "admission_no": "ST1039",
+        "roll_no": 19,
+        "full_name": "Aadhya Zala",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1044",
+        "admission_no": "ST1044",
+        "roll_no": 4,
+        "full_name": "Sai Patel",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1049",
+        "admission_no": "ST1049",
+        "roll_no": 9,
+        "full_name": "Krishna Mehta",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1054",
+        "admission_no": "ST1054",
+        "roll_no": 14,
+        "full_name": "Reyansh Bhatt",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1059",
+        "admission_no": "ST1059",
+        "roll_no": 19,
+        "full_name": "Adhira Rathod",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1064",
+        "admission_no": "ST1064",
+        "roll_no": 4,
+        "full_name": "Adhira Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1069",
+        "admission_no": "ST1069",
+        "roll_no": 9,
+        "full_name": "Atharv Pandya",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1074",
+        "admission_no": "ST1074",
+        "roll_no": 14,
+        "full_name": "Krishna Chauhan",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1079",
+        "admission_no": "ST1079",
+        "roll_no": 19,
+        "full_name": "Arjun Shah",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1084",
+        "admission_no": "ST1084",
+        "roll_no": 4,
+        "full_name": "Vivaan Thakkar",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1089",
+        "admission_no": "ST1089",
+        "roll_no": 9,
+        "full_name": "Krishna Dave",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1094",
+        "admission_no": "ST1094",
+        "roll_no": 14,
+        "full_name": "Krishna Modi",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
+      },
+      {
+        "student_id": "ST1099",
+        "admission_no": "ST1099",
+        "roll_no": 19,
+        "full_name": "Aditya Solanki",
+        "status": "Absent",
+        "remarks": "",
+        "time_in": "02:00",
+        "updated_at": "2026-10-17T20:30:37.448Z"
       }
     ]
   }

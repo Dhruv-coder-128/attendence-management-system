@@ -115,12 +115,12 @@ await asyncTest('GET /api/local-hub?action=batches returns exactly the 5 canonic
   assert(Array.isArray(data.batches), 'Batches array returned');
   assert.strictEqual(data.batches.length, 5, 'Exactly 5 batches returned');
 
-  const batchCodes = data.batches.map((b) => b.code);
-  assert(batchCodes.includes('B11'), 'Contains B11 (11th Commerce)');
-  assert(batchCodes.includes('B12'), 'Contains B12 (12th Commerce)');
-  assert(batchCodes.includes('BFY'), 'Contains BFY (FY)');
-  assert(batchCodes.includes('BSY'), 'Contains BSY (SY)');
-  assert(batchCodes.includes('BTY'), 'Contains BTY (TY)');
+  const batchIdentifiers = data.batches.map((b) => b.id || b.code);
+  assert(batchIdentifiers.includes('B11') || data.batches.some((b) => b.code === '11-COM'), 'Contains B11 (11th Commerce)');
+  assert(batchIdentifiers.includes('B12') || data.batches.some((b) => b.code === '12-COM'), 'Contains B12 (12th Commerce)');
+  assert(batchIdentifiers.includes('BFY') || data.batches.some((b) => b.code === 'FY-BCA'), 'Contains BFY (FY)');
+  assert(batchIdentifiers.includes('BSY') || data.batches.some((b) => b.code === 'SY-BCA'), 'Contains BSY (SY)');
+  assert(batchIdentifiers.includes('BTY') || data.batches.some((b) => b.code === 'TY-BCA'), 'Contains BTY (TY)');
 });
 
 // TEST 4: Students Action
