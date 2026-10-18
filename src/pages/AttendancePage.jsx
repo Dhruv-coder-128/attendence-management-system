@@ -158,18 +158,20 @@ export default function AttendancePage({ onRefreshCounts }) {
   }, []);
 
   // 2. Fetch students in the selected batch and existing attendance for the date
-  const fetchBatchAttendance = async () => {
+  const fetchBatchAttendance = async (isSilent = false) => {
     if (!selectedBatchId) {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
       return;
     }
 
     if (!isSupabaseConfigured || !supabase) {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
       return;
     }
 
-    setLoading(true);
+    if (!isSilent) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -280,8 +282,9 @@ export default function AttendancePage({ onRefreshCounts }) {
       const canonical = getBatchStudents(selectedBatchId);
       setStudents(canonical && canonical.length > 0 ? canonical : []);
     } finally {
-      // Ensure loading spinner ALWAYS terminates
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -291,11 +294,12 @@ export default function AttendancePage({ onRefreshCounts }) {
 
   useEffect(() => {
     if (selectedBatchId) {
-      fetchBatchAttendance();
+      fetchBatchAttendance(false);
     }
   }, [selectedBatchId, selectedDate]);
 
-  // Live real-time reactivity: Refresh attendance register when phone attendance is ingested
+  // Live real-time reactivity: Refresh attendance register silently when phone attendance is ingested
+  const dbMutationTimerRef = useRef(null);
   useEffect(() => {
     const handleDbMutation = (e) => {
       if (
@@ -305,12 +309,18 @@ export default function AttendancePage({ onRefreshCounts }) {
         e?.detail?.tableName === 'batches'
       ) {
         if (selectedBatchId) {
-          fetchBatchAttendance();
+          if (dbMutationTimerRef.current) clearTimeout(dbMutationTimerRef.current);
+          dbMutationTimerRef.current = setTimeout(() => {
+            fetchBatchAttendance(true);
+          }, 400);
         }
       }
     };
     window.addEventListener('sms-db-mutation', handleDbMutation);
-    return () => window.removeEventListener('sms-db-mutation', handleDbMutation);
+    return () => {
+      if (dbMutationTimerRef.current) clearTimeout(dbMutationTimerRef.current);
+      window.removeEventListener('sms-db-mutation', handleDbMutation);
+    };
   }, [selectedBatchId, selectedDate]);
 
   // 2.1. Live Wi-Fi Hub Synchronization from Teacher Mobile App
@@ -408,7 +418,7 @@ export default function AttendancePage({ onRefreshCounts }) {
           }
         }
       } catch {}
-    }, 1000);
+    }, 2000);
 
     return () => {
       isMounted = false;

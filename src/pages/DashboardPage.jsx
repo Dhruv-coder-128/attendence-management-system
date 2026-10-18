@@ -61,14 +61,16 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
   });
 
   // Query live data directly from Supabase
-  const fetchDashboardData = useCallback(async () => {
+  const fetchDashboardData = useCallback(async (isSilent = false) => {
     if (!isSupabaseConfigured || !supabase) {
       setError('Supabase credentials are not configured in environment.');
       setLoading(false);
       return;
     }
 
-    setLoading(true);
+    if (!isSilent) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -146,21 +148,30 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
       console.error('Error querying dashboard data:', err);
       setError(err.message || 'Failed to load dashboard metrics.');
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   }, [todayIso]);
 
   useEffect(() => {
-    fetchDashboardData();
+    fetchDashboardData(false);
   }, [fetchDashboardData]);
 
-  // Live real-time reactivity: Refresh dashboard when phone attendance or records sync
+  // Live real-time reactivity: Refresh dashboard silently when phone attendance or records sync
+  const debounceTimerRef = React.useRef(null);
   useEffect(() => {
     const handleDbMutation = () => {
-      fetchDashboardData();
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        fetchDashboardData(true);
+      }, 400);
     };
     window.addEventListener('sms-db-mutation', handleDbMutation);
-    return () => window.removeEventListener('sms-db-mutation', handleDbMutation);
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      window.removeEventListener('sms-db-mutation', handleDbMutation);
+    };
   }, [fetchDashboardData]);
 
   return (
