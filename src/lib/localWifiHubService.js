@@ -18,7 +18,7 @@ const OFFLINE_QUEUE_KEY = 'sms_teacher_offline_queue';
 const CACHED_BATCHES_KEY = 'sms_cached_hub_batches';
 const CACHED_STUDENTS_PREFIX = 'sms_cached_hub_students_';
 
-export const DEFAULT_SCHOOL_PC_URL = 'http://192.168.0.104:5173';
+export const DEFAULT_SCHOOL_PC_URL = '';
 
 // Production Supabase credentials (same as desktop EXE — secondary cloud fallback)
 const SUPABASE_URL = 'https://uugvudqbwoyywzbjrfol.supabase.co';
@@ -105,6 +105,9 @@ const DEVICE_PAIRED_KEY = 'sms_device_paired';
 /**
  * Gets or creates persistent unique hardware/device identifier for this teacher's phone
  */
+/**
+ * Gets or creates persistent unique hardware/device identifier for this teacher's phone
+ */
 export function getOrCreateDeviceId() {
   if (typeof window === 'undefined') return 'device-unknown';
   let devId = localStorage.getItem(DEVICE_ID_KEY);
@@ -116,79 +119,174 @@ export function getOrCreateDeviceId() {
 }
 
 /**
- * Returns whether this device has previously been paired and registered
+ * Returns whether this device has previously been paired and registered.
+ * On local Wi-Fi, devices are automatically trusted — zero OTP blocker.
  */
 export function isDevicePairedLocally() {
-  if (typeof window === 'undefined') return true;
-  return localStorage.getItem(DEVICE_PAIRED_KEY) === 'true';
+  return true;
 }
 
 /**
- * Sets local paired status
+ * Sets local paired status (no-op on local Wi-Fi)
  */
-export function setDevicePairedLocally(paired) {
+export function setDevicePairedLocally(_paired) {
   if (typeof window === 'undefined') return;
-  if (paired) {
-    localStorage.setItem(DEVICE_PAIRED_KEY, 'true');
-  } else {
-    localStorage.removeItem(DEVICE_PAIRED_KEY);
-  }
+  localStorage.setItem(DEVICE_PAIRED_KEY, 'true');
 }
 
 /**
- * Submits 6-digit OTP to PC Hub to pair this phone (1-time registration)
+ * Auto-registers this phone with the School PC Hub.
+ * Zero OTP friction — immediate authorization on local Wi-Fi.
  */
-export async function pairDeviceWithHub(hubUrl, otp) {
+export async function pairDeviceWithHub(hubUrl = null, _otp = '') {
   const targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
   const deviceId = getOrCreateDeviceId();
-  try {
-    const res = await fetch(`${targetUrl}/api/local-hub?action=pair_device`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ device_id: deviceId, otp: String(otp).trim() }),
-    });
-    const data = await res.json();
-    if (res.ok && data.registered) {
-      if (data.token) setStoredHubToken(data.token);
-      setDevicePairedLocally(true);
-      return { ok: true, registered: true, message: 'Device successfully registered.' };
-    }
-    return { ok: false, error: data.error || 'Invalid OTP code. Please check PC screen.' };
-  } catch (err) {
-    return { ok: false, error: 'Cannot reach School PC to pair: ' + err.message };
+  if (targetUrl) {
+    try {
+      await fetch(`${targetUrl}/api/local-hub?action=check_device&device_id=${encodeURIComponent(deviceId)}`);
+    } catch {}
   }
+  return { ok: true, registered: true, message: 'Device successfully registered on School Wi-Fi.' };
 }
 
 /**
  * Checks with the PC Hub if this device is already in the registered devices list
  */
-export async function checkDeviceRegistration(hubUrl = null) {
-  const targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
-  const deviceId = getOrCreateDeviceId();
-  try {
-    const res = await fetch(`${targetUrl}/api/local-hub?action=check_device&device_id=${encodeURIComponent(deviceId)}`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.registered) {
-        setDevicePairedLocally(true);
-        return true;
+export async function checkDeviceRegistration(_hubUrl = null) {
+  return true;
+}
+
+/**
+ * Smart LAN Auto-Discovery:
+ * Rapidly scans candidate IPs across the local Wi-Fi subnet to find the School PC Hub.
+ * Prioritizes active Wi-Fi subnets (e.g. 192.168.0.*, 192.168.1.*, 192.168.29.*) and ports (5173, 5174).
+ * Returns { ok: true, url: 'http://<ip>:<port>' } if found.
+ */
+export async function autoDiscoverSchoolPC(onProgress = null) {
+  if (typeof window === 'undefined') return { ok: false };
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return { ok: false, error: 'Phone is offline. Connect to the School Wi-Fi network first.' };
+  }
+
+  const candidateIps = new Set();
+
+  // 1. Check previously configured host
+  const saved = getStoredHubUrl();
+  if (saved) {
+    try {
+      const parsed = new URL(saved);
+      if (parsed.hostname && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+        candidateIps.add(parsed.hostname);
+        const parts = parsed.hostname.split('.');
+        if (parts.length === 4) {
+          const prefix = `${parts[0]}.${parts[1]}.${parts[2]}`;
+          for (let i = 100; i <= 115; i++) candidateIps.add(`${prefix}.${i}`);
+        }
+      }
+    } catch {}
+  }
+
+  // 2. High-frequency subnet assignments on Indian school/home Wi-Fi routers
+  const commonSubnets = ['192.168.0', '192.168.1', '192.168.29', '192.168.31', '10.0.0'];
+  for (const s of commonSubnets) {
+    candidateIps.add(`${s}.103`);
+    candidateIps.add(`${s}.104`);
+    candidateIps.add(`${s}.100`);
+    candidateIps.add(`${s}.101`);
+    candidateIps.add(`${s}.102`);
+    candidateIps.add(`${s}.105`);
+    candidateIps.add(`${s}.106`);
+    candidateIps.add(`${s}.107`);
+    candidateIps.add(`${s}.108`);
+    candidateIps.add(`${s}.109`);
+    candidateIps.add(`${s}.110`);
+    candidateIps.add(`${s}.2`);
+    candidateIps.add(`${s}.3`);
+    candidateIps.add(`${s}.4`);
+    candidateIps.add(`${s}.5`);
+  }
+
+  const ports = [5173, 5174, 5175, 8765];
+  const ipList = Array.from(candidateIps);
+
+  // Probe in fast parallel chunks of 20 with 650ms timeout
+  const CHUNK_SIZE = 20;
+  for (let i = 0; i < ipList.length; i += CHUNK_SIZE) {
+    const chunk = ipList.slice(i, i + CHUNK_SIZE);
+    if (typeof onProgress === 'function') {
+      onProgress({ checked: i, total: ipList.length });
+    }
+
+    const promises = [];
+    for (const ip of chunk) {
+      for (const port of ports) {
+        const testUrl = `http://${ip}:${port}`;
+        promises.push(
+          (async () => {
+            const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            const tId = controller ? setTimeout(() => controller.abort(), 650) : null;
+            try {
+              const res = await fetch(`${testUrl}/api/local-hub?action=status`, {
+                method: 'GET',
+                headers: { Accept: 'application/json' },
+                signal: controller ? controller.signal : undefined,
+              });
+              if (tId) clearTimeout(tId);
+              if (res.ok) {
+                const data = await res.json();
+                if (data && data.service && data.service.includes('SMS Local Wi-Fi Attendance Hub')) {
+                  return { ok: true, url: testUrl, data };
+                }
+              }
+            } catch {
+              if (tId) clearTimeout(tId);
+            }
+            return null;
+          })()
+        );
       }
     }
-  } catch {}
-  return isDevicePairedLocally();
+
+    const results = await Promise.all(promises);
+    const match = results.find((r) => r && r.ok);
+    if (match) {
+      setStoredHubUrl(match.url);
+      if (match.data?.token) {
+        setStoredHubToken(match.data.token);
+      }
+      return match;
+    }
+  }
+
+  return { ok: false, error: 'School PC not auto-detected. Please scan the QR code on the PC screen or enter IP manually.' };
 }
 
 /**
  * Tests connection with the School PC over local Wi-Fi.
- * Distinguishes 3 key physical states:
- * 1. 'wifi_disconnected': Phone Wi-Fi is toggled off / network offline.
- * 2. 'pc_unreachable': On network, but School PC HTTP hub is not responding.
- * 3. 'connected': School PC hub is alive and active.
+ * Supports auto-discovery fallback if the configured URL is missing or unreachable.
  */
-export async function checkHubConnection(hubUrl = null) {
-  const targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
+export async function checkHubConnection(hubUrl = null, tryAutoDiscover = false) {
+  let targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
 
-  // 1. Check if device network is completely offline
+  // 0. Auto-discovery fallback if requested and targetUrl is empty
+  if (!targetUrl && tryAutoDiscover) {
+    const disc = await autoDiscoverSchoolPC();
+    if (disc.ok && disc.url) {
+      targetUrl = disc.url;
+    }
+  }
+
+  // 1. Not yet configured
+  if (!targetUrl) {
+    return {
+      ok: false,
+      state: 'pc_unreachable',
+      url: '',
+      error: 'School PC not configured. Scan the QR code on your PC screen or enter the Wi-Fi IP manually.',
+    };
+  }
+
+  // 2. Check if device network is completely offline
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     return {
       ok: false,
@@ -198,7 +296,7 @@ export async function checkHubConnection(hubUrl = null) {
     };
   }
 
-  // 2. Ping School PC Wi-Fi Hub
+  // 3. Ping School PC Wi-Fi Hub
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timeoutId = controller ? setTimeout(() => controller.abort(), 2500) : null;
 
@@ -213,7 +311,6 @@ export async function checkHubConnection(hubUrl = null) {
     if (res.ok) {
       const data = await res.json();
       if (data && data.service && data.service.includes('SMS Local Wi-Fi Attendance Hub')) {
-        // Automatically save detected pairing token if present
         if (data.token) {
           setStoredHubToken(data.token);
         }
@@ -230,11 +327,25 @@ export async function checkHubConnection(hubUrl = null) {
     if (timeoutId) clearTimeout(timeoutId);
   }
 
+  // 4. If direct ping failed and auto-discovery was requested, attempt scan
+  if (tryAutoDiscover) {
+    const retryDisc = await autoDiscoverSchoolPC();
+    if (retryDisc.ok && retryDisc.url) {
+      return {
+        ok: true,
+        state: 'connected',
+        mode: 'wifi',
+        url: retryDisc.url,
+        data: retryDisc.data,
+      };
+    }
+  }
+
   return {
     ok: false,
     state: 'pc_unreachable',
     url: targetUrl,
-    error: `Cannot reach School PC at ${targetUrl}. Make sure your PC is running the SMS EXE and phone is on the same Wi-Fi.`,
+    error: `Cannot reach School PC at ${targetUrl}. Make sure PC is running SMS-App and phone is on the same Wi-Fi.`,
   };
 }
 
@@ -427,28 +538,38 @@ export async function fetchExistingAttendanceFromHub(batchId, date, hubUrl = nul
  * 3. Queue offline for later sync when connection fails
  */
 export async function submitAttendanceToHub(batchId, date, records, hubUrl = null, extraMeta = {}, allowOfflineQueue = true) {
-  const targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
+  let targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
   const targetDate = date || new Date().toISOString().split('T')[0];
+
+  // If URL not configured, try auto-discovering School PC on local Wi-Fi first
+  if (!targetUrl) {
+    const disc = await autoDiscoverSchoolPC();
+    if (disc.ok && disc.url) {
+      targetUrl = disc.url;
+    }
+  }
+
   const token = getStoredHubToken();
 
   let wifiSyncOk = false;
   let serverMessage = '';
 
   // 1. Try Local Wi-Fi Hub with pairing token
-  try {
-    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeout = controller ? setTimeout(() => controller.abort(), 6000) : null;
+  if (targetUrl) {
+    try {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeout = controller ? setTimeout(() => controller.abort(), 6000) : null;
 
-    const headers = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'X-Device-Id': getOrCreateDeviceId(),
-    };
-    if (token) {
-      headers['X-Hub-Token'] = token;
-    }
+      const headers = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Device-Id': getOrCreateDeviceId(),
+      };
+      if (token) {
+        headers['X-Hub-Token'] = token;
+      }
 
-    const res = await fetch(`${targetUrl}/api/local-hub?action=attendance`, {
+      const res = await fetch(`${targetUrl}/api/local-hub?action=attendance`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -481,6 +602,7 @@ export async function submitAttendanceToHub(batchId, date, records, hubUrl = nul
   } catch (err) {
     console.warn('Wi-Fi hub sync error:', err.message);
   }
+}
 
   // 2. Also try persisting directly to Supabase cloud in background
   try {

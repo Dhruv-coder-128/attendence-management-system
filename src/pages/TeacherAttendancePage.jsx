@@ -29,6 +29,7 @@ import {
   getStoredHubToken,
   setStoredHubToken,
   checkHubConnection,
+  autoDiscoverSchoolPC,
   fetchBatchesFromHub,
   fetchStudentsFromHub,
   fetchExistingAttendanceFromHub,
@@ -47,11 +48,8 @@ import { CANONICAL_BATCHES } from '../data/canonicalSchoolData';
 export default function TeacherAttendancePage() {
   const academySettings = useAcademySettings();
   const [hubUrl, setHubUrl] = useState(getStoredHubUrl());
-  const [isDevicePaired, setIsDevicePaired] = useState(() => isDevicePairedLocally());
-  const [showOtpModal, setShowOtpModal] = useState(false);
-  const [otpInput, setOtpInput] = useState('');
-  const [otpError, setOtpError] = useState('');
-  const [isPairing, setIsPairing] = useState(false);
+  const [isDevicePaired] = useState(true);
+  const [isAutoDiscovering, setIsAutoDiscovering] = useState(false);
 
   const [connectionStatus, setConnectionStatus] = useState({
     ok: false,
@@ -101,8 +99,6 @@ export default function TeacherAttendancePage() {
   showCameraScannerRef.current = showCameraScanner;
   const showSettingsModalRef = useRef(showSettingsModal);
   showSettingsModalRef.current = showSettingsModal;
-  const showOtpModalRef = useRef(showOtpModal);
-  showOtpModalRef.current = showOtpModal;
   const showSuccessModalRef = useRef(showSuccessModal);
   showSuccessModalRef.current = showSuccessModal;
   const lastBackPressTimeRef = useRef(0);
@@ -121,12 +117,7 @@ export default function TeacherAttendancePage() {
         setShowSettingsModal(false);
         return;
       }
-      // 3. Close OTP modal
-      if (showOtpModalRef.current) {
-        setShowOtpModal(false);
-        return;
-      }
-      // 4. Close success modal
+      // 3. Close success modal
       if (showSuccessModalRef.current) {
         setShowSuccessModal(false);
         return;
@@ -182,13 +173,29 @@ export default function TeacherAttendancePage() {
     setIsLoading(false);
   }, [hubUrl]);
 
-  // 2. Verify Connection
-  const verifyConnection = useCallback(async (targetUrl = hubUrl) => {
-    const res = await checkHubConnection(targetUrl);
+  // 2. Verify Connection with Smart Auto-Discovery
+  const verifyConnection = useCallback(async (targetUrl = hubUrl, tryAutoScan = true) => {
+    let res = await checkHubConnection(targetUrl);
+
+    // If not reachable and auto-scan allowed, automatically probe the local Wi-Fi subnet
+    if (!res?.ok && tryAutoScan) {
+      setIsAutoDiscovering(true);
+      const disc = await autoDiscoverSchoolPC();
+      setIsAutoDiscovering(false);
+      if (disc?.ok && disc?.url) {
+        setStoredHubUrl(disc.url);
+        setHubUrl(disc.url);
+        setUrlInput(disc.url);
+        res = await checkHubConnection(disc.url);
+        showToast('✓ Auto-connected to School PC on Wi-Fi!');
+      }
+    }
+
     setConnectionStatus(res);
-    loadBatches(targetUrl);
+    const activeUrl = res?.ok ? res.url : (targetUrl || hubUrl);
+    loadBatches(activeUrl);
     if (res?.ok) {
-      flushOfflineQueue(targetUrl).then((r) => {
+      flushOfflineQueue(activeUrl).then((r) => {
         if (r && r.flushedCount > 0) {
           setOfflineQueue(getOfflineQueue());
         }
@@ -197,12 +204,38 @@ export default function TeacherAttendancePage() {
   }, [hubUrl, loadBatches]);
 
   useEffect(() => {
-    verifyConnection(hubUrl);
+    verifyConnection(hubUrl, true);
   }, [hubUrl, verifyConnection]);
+
+  // One-tap manual trigger for local Wi-Fi auto-discovery
+  const handleTriggerAutoDiscovery = async () => {
+    setIsAutoDiscovering(true);
+    showToast('🔍 Scanning local Wi-Fi for School PC...');
+    const disc = await autoDiscoverSchoolPC();
+    setIsAutoDiscovering(false);
+    if (disc?.ok && disc?.url) {
+      setStoredHubUrl(disc.url);
+      setHubUrl(disc.url);
+      setUrlInput(disc.url);
+      verifyConnection(disc.url, false);
+      showToast('✓ Connected to School PC: ' + disc.url.replace(/^https?:\/\//, ''));
+    } else {
+      showToast('⚠️ Could not auto-detect. Please scan PC QR code or enter IP.');
+    }
+  };
+
+  // Continuous background refresh of cohorts while connected so PC changes show on Phone
+  useEffect(() => {
+    if (!connectionStatus.ok || viewMode !== 'batches') return;
+    const interval = setInterval(() => {
+      loadBatches(hubUrl);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [connectionStatus.ok, viewMode, hubUrl, loadBatches]);
 
   // Recheck when phone reconnects to network
   useEffect(() => {
-    const handleOnline = () => verifyConnection(hubUrl);
+    const handleOnline = () => verifyConnection(hubUrl, true);
     const handleOffline = () => {
       setConnectionStatus({
         ok: false,
@@ -412,9 +445,6 @@ export default function TeacherAttendancePage() {
     } else if (res.queued) {
       setOfflineQueue(getOfflineQueue());
       showToast('⚠️ Saved to phone storage (will sync when School Wi-Fi connects).');
-    } else if (res.unauthorized) {
-      alert(res.error || 'Pairing token expired. Please scan the QR code on the School PC.');
-      setShowCameraScanner(true);
     } else {
       alert('Error saving attendance: ' + (res.error || 'Connection failed'));
     }
@@ -437,11 +467,9 @@ export default function TeacherAttendancePage() {
       try {
         let target = rawText.trim();
         let token = '';
-        let otp = '';
         if (target.startsWith('http://') || target.startsWith('https://')) {
           const parsed = new URL(target);
           token = parsed.searchParams.get('token') || '';
-          otp = parsed.searchParams.get('otp') || '';
           target = `${parsed.protocol}//${parsed.host}`;
         } else if (!target.startsWith('http')) {
           target = `http://${target}`;
@@ -453,17 +481,7 @@ export default function TeacherAttendancePage() {
         setHubUrl(target);
         setUrlInput(target);
         showToast(`✓ Scanned & Connected: ${target.replace(/^https?:\/\//, '')}`);
-        verifyConnection(target);
-
-        // Auto-pair device if OTP was included in the scanned QR code
-        if (otp) {
-          pairDeviceWithHub(target, otp).then((pRes) => {
-            if (pRes && pRes.ok) {
-              setIsDevicePaired(true);
-              showToast('✓ Device Registered & Paired with School PC!');
-            }
-          });
-        }
+        verifyConnection(target, false);
 
         // Automatically flush pending queue if connected
         flushOfflineQueue(target).then((r) => {
@@ -478,25 +496,6 @@ export default function TeacherAttendancePage() {
     },
     [verifyConnection]
   );
-
-  const handlePairDevice = async () => {
-    if (!otpInput.trim()) {
-      setOtpError('Please enter the 6-digit OTP from PC screen');
-      return;
-    }
-    setIsPairing(true);
-    setOtpError('');
-    const res = await pairDeviceWithHub(hubUrl, otpInput.trim());
-    setIsPairing(false);
-    if (res.ok) {
-      setIsDevicePaired(true);
-      setShowOtpModal(false);
-      setOtpInput('');
-      showToast('✓ Phone successfully paired with School PC!');
-    } else {
-      setOtpError(res.error || 'Invalid OTP code. Please check your PC screen.');
-    }
-  };
 
   // Camera QR Scanner Handler
   useEffect(() => {
@@ -630,51 +629,28 @@ export default function TeacherAttendancePage() {
             </div>
           </div>
 
-          {/* Right Status / Pairing Indicator */}
+          {/* Right Status / Wi-Fi Indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {isDevicePaired ? (
-              <span
-                onClick={() => setShowOtpModal(true)}
-                style={{
-                  backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                  color: '#10b981',
-                  padding: '4px 8px',
-                  borderRadius: '6px',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  cursor: 'pointer',
-                }}
-                title="Device is permanently paired with School PC"
-              >
-                <ShieldCheck size={13} color="#10b981" />
-                <span>Paired</span>
-              </span>
-            ) : (
-              <button
-                onClick={() => setShowOtpModal(true)}
-                style={{
-                  background: 'rgba(245, 158, 11, 0.15)',
-                  border: '1px solid rgba(245, 158, 11, 0.4)',
-                  color: '#fbbf24',
-                  padding: '4px 9px',
-                  borderRadius: '6px',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  cursor: 'pointer',
-                }}
-                title="Tap to enter 6-digit PC pairing code"
-              >
-                <Lock size={12} color="#fbbf24" />
-                <span>Enter OTP</span>
-              </button>
-            )}
+            <span
+              onClick={() => setShowSettingsModal(true)}
+              style={{
+                backgroundColor: connectionStatus.ok ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                border: `1px solid ${connectionStatus.ok ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.4)'}`,
+                color: connectionStatus.ok ? '#10b981' : '#fbbf24',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: 'pointer',
+              }}
+              title={connectionStatus.ok ? 'Connected to School PC' : 'Tap to configure School PC connection'}
+            >
+              <ShieldCheck size={13} color={connectionStatus.ok ? '#10b981' : '#fbbf24'} />
+              <span>{connectionStatus.ok ? 'Wi-Fi Hub Connected' : 'Wi-Fi Setup'}</span>
+            </span>
           </div>
         </div>
 
@@ -864,11 +840,51 @@ export default function TeacherAttendancePage() {
                 Cannot reach School PC at <strong>{hubUrl}</strong>. Open the Teacher App Connect QR code on your PC screen and scan it below.
               </div>
 
+              {/* Primary: Smart Wi-Fi Auto-Discovery Button */}
+              <button
+                onClick={handleTriggerAutoDiscovery}
+                disabled={isAutoDiscovering}
+                style={{
+                  marginTop: '14px',
+                  width: '100%',
+                  backgroundColor: '#10b981',
+                  border: 'none',
+                  color: '#ffffff',
+                  padding: '13px',
+                  borderRadius: '10px',
+                  fontSize: '14px',
+                  fontWeight: 800,
+                  cursor: isAutoDiscovering ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)',
+                }}
+              >
+                {isAutoDiscovering ? (
+                  <>
+                    <RefreshCw size={18} className="animate-spin" />
+                    <span>Scanning Wi-Fi Network...</span>
+                  </>
+                ) : (
+                  <>
+                    <Search size={18} />
+                    <span>🔍 Auto-Detect School PC on Wi-Fi</span>
+                  </>
+                )}
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '10px 0' }}>
+                <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
+                <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>OR SCAN QR</span>
+                <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
+              </div>
+
               {/* Large Camera Scan Button */}
               <button
                 onClick={() => setShowCameraScanner(true)}
                 style={{
-                  marginTop: '14px',
                   width: '100%',
                   backgroundColor: '#0a1122',
                   border: '2px solid #c5a880',
@@ -1948,6 +1964,34 @@ export default function TeacherAttendancePage() {
               </button>
             </div>
 
+            <div style={{ marginBottom: '14px' }}>
+              <button
+                onClick={() => {
+                  setShowSettingsModal(false);
+                  handleTriggerAutoDiscovery();
+                }}
+                disabled={isAutoDiscovering}
+                style={{
+                  width: '100%',
+                  backgroundColor: '#10b981',
+                  border: 'none',
+                  color: '#ffffff',
+                  padding: '10px',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: isAutoDiscovering ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                }}
+              >
+                <Search size={14} />
+                <span>🔍 Auto-Detect School PC on Wi-Fi</span>
+              </button>
+            </div>
+
             <div style={{ display: 'flex', gap: '8px' }}>
               <button
                 onClick={() => setShowSettingsModal(false)}
@@ -1971,7 +2015,7 @@ export default function TeacherAttendancePage() {
                   setStoredHubUrl(clean);
                   setHubUrl(clean);
                   setShowSettingsModal(false);
-                  verifyConnection(clean);
+                  verifyConnection(clean, false);
                 }}
                 style={{
                   flex: 1,
@@ -1986,158 +2030,6 @@ export default function TeacherAttendancePage() {
                 }}
               >
                 Connect Now
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* One-Time Device OTP Pairing Modal */}
-      {showOtpModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            backgroundColor: 'rgba(0,0,0,0.75)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: '#ffffff',
-              borderRadius: '16px',
-              padding: '22px',
-              width: '100%',
-              maxWidth: '380px',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <ShieldCheck size={22} color="#10b981" />
-                <span style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
-                  Device Pairing & OTP
-                </span>
-              </div>
-              <button
-                onClick={() => {
-                  setShowOtpModal(false);
-                  setOtpError('');
-                }}
-                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '14px', lineHeight: 1.4 }}>
-              Enter the <strong>6-digit OTP code</strong> displayed on your School PC screen to securely authorize this phone. Once verified, this phone is registered permanently.
-            </div>
-
-            {isDevicePaired && (
-              <div
-                style={{
-                  backgroundColor: '#dcfce7',
-                  border: '1px solid #86efac',
-                  borderRadius: '10px',
-                  padding: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  marginBottom: '16px',
-                }}
-              >
-                <CheckCircle2 size={20} color="#15803d" />
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#15803d' }}>
-                    Phone Is Registered & Paired
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#166534', marginTop: '2px' }}>
-                    This device is authorized to sync attendance with the School PC.
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
-                6-DIGIT PC PAIRING CODE:
-              </label>
-              <input
-                type="text"
-                maxLength={6}
-                value={otpInput}
-                onChange={(e) => {
-                  setOtpInput(e.target.value.replace(/\D/g, ''));
-                  setOtpError('');
-                }}
-                placeholder="e.g. 729415"
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  fontSize: '22px',
-                  fontWeight: 800,
-                  letterSpacing: '8px',
-                  textAlign: 'center',
-                  borderRadius: '10px',
-                  border: otpError ? '2px solid #ef4444' : '2px solid #cbd5e1',
-                  outline: 'none',
-                  fontFamily: 'monospace',
-                  boxSizing: 'border-box',
-                }}
-              />
-              {otpError && (
-                <div style={{ fontSize: '11px', color: '#ef4444', marginTop: '6px', fontWeight: 600 }}>
-                  {otpError}
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                onClick={() => {
-                  setShowOtpModal(false);
-                  setOtpError('');
-                }}
-                style={{
-                  flex: 1,
-                  backgroundColor: '#f1f5f9',
-                  border: 'none',
-                  color: '#475569',
-                  padding: '11px',
-                  borderRadius: '10px',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                Close
-              </button>
-              <button
-                onClick={handlePairDevice}
-                disabled={isPairing || otpInput.trim().length !== 6}
-                style={{
-                  flex: 1,
-                  backgroundColor: isPairing || otpInput.trim().length !== 6 ? '#94a3b8' : '#0a1122',
-                  border: '1px solid #c5a880',
-                  color: '#ffffff',
-                  padding: '11px',
-                  borderRadius: '10px',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  cursor: isPairing || otpInput.trim().length !== 6 ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                }}
-              >
-                {isPairing ? <RefreshCw size={14} className="animate-spin" /> : <ShieldCheck size={16} color="#c5a880" />}
-                Pair This Phone
               </button>
             </div>
           </div>
@@ -2224,9 +2116,9 @@ export default function TeacherAttendancePage() {
           <span style={{ fontSize: '10px', fontWeight: 500 }}>Sync PC</span>
         </button>
 
-        {/* 4. Pairing & OTP */}
+        {/* 4. Auto-Scan Wi-Fi */}
         <button
-          onClick={() => setShowOtpModal(true)}
+          onClick={handleTriggerAutoDiscovery}
           style={{
             background: 'none',
             border: 'none',
@@ -2234,18 +2126,18 @@ export default function TeacherAttendancePage() {
             flexDirection: 'column',
             alignItems: 'center',
             gap: '3px',
-            color: isDevicePaired ? '#10b981' : '#f59e0b',
+            color: connectionStatus.ok ? '#10b981' : '#f59e0b',
             cursor: 'pointer',
             padding: '6px 12px',
           }}
         >
-          {isDevicePaired ? (
-            <ShieldCheck size={20} color="#10b981" />
+          {isAutoDiscovering ? (
+            <RefreshCw size={20} color="#10b981" className="animate-spin" />
           ) : (
-            <Lock size={20} color="#f59e0b" />
+            <Search size={20} color={connectionStatus.ok ? '#10b981' : '#f59e0b'} />
           )}
           <span style={{ fontSize: '10px', fontWeight: 700 }}>
-            {isDevicePaired ? 'Paired' : 'Pair OTP'}
+            {connectionStatus.ok ? 'Wi-Fi PC' : 'Find PC'}
           </span>
         </button>
 

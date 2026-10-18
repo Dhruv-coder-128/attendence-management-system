@@ -31,7 +31,8 @@ import { useSchoolDatabaseSync } from './lib/useSchoolDatabaseSync';
  * Desktop Packaging, and Multi-School Licensing with 30-Day Server Trial.
  */
 export default function App() {
-  // Continuous Two-Way Wi-Fi Database Synchronization for Desktop & Phone
+  // Continuous Two-Way Wi-Fi Database Synchronization for Desktop PC
+  // (On mobile Capacitor, the hook safely bypasses desktop background polling)
   useSchoolDatabaseSync();
 
   // Supabase Auth Session State

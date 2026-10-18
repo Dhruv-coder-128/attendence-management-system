@@ -22,7 +22,9 @@
         "resizable": true,
         "fullscreen": false,
         "center": true,
-        "dataDirectory": "webview_data"
+        "visible": true,
+        "focus": true,
+        "decorations": true
       }
     ],
     "security": {

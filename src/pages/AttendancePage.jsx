@@ -294,6 +294,24 @@ export default function AttendancePage({ onRefreshCounts }) {
     }
   }, [selectedBatchId, selectedDate]);
 
+  // Live real-time reactivity: Refresh attendance register when phone attendance is ingested
+  useEffect(() => {
+    const handleDbMutation = (e) => {
+      if (
+        !e?.detail?.tableName ||
+        e?.detail?.tableName === 'attendance' ||
+        e?.detail?.tableName === 'students' ||
+        e?.detail?.tableName === 'batches'
+      ) {
+        if (selectedBatchId) {
+          fetchBatchAttendance();
+        }
+      }
+    };
+    window.addEventListener('sms-db-mutation', handleDbMutation);
+    return () => window.removeEventListener('sms-db-mutation', handleDbMutation);
+  }, [selectedBatchId, selectedDate]);
+
   // 2.1. Live Wi-Fi Hub Synchronization from Teacher Mobile App
   useEffect(() => {
     if (!selectedBatchId) return;

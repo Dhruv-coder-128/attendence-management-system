@@ -190,7 +190,7 @@ export default function TeacherAppConnectModal({ isOpen, onClose }) {
           </button>
         </div>
 
-        {/* OTP Pairing Code Card */}
+        {/* Wi-Fi Direct Connection Status Card */}
         <div
           style={{
             backgroundColor: '#070f1e',
@@ -204,14 +204,15 @@ export default function TeacherAppConnectModal({ isOpen, onClose }) {
           }}
         >
           <div>
-            <div style={{ fontSize: '11px', color: '#c5a880', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              One-Time Device Pairing OTP Code
+            <div style={{ fontSize: '11px', color: '#10b981', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Radio size={13} color="#10b981" />
+              <span>Instant School Wi-Fi Sync (Zero OTP Required)</span>
             </div>
-            <div style={{ fontSize: '24px', fontWeight: 900, color: '#ffffff', letterSpacing: '4px', fontFamily: 'monospace', marginTop: '2px' }}>
-              {pairingOtp ? `${pairingOtp.slice(0, 3)} ${pairingOtp.slice(3)}` : '482 910'}
+            <div style={{ fontSize: '18px', fontWeight: 800, color: '#ffffff', fontFamily: 'monospace', marginTop: '3px' }}>
+              http://{activeIp}:{activePort}
             </div>
             <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
-              Enter this code once on teacher phone to securely authorize device
+              Teacher phones on this Wi-Fi connect automatically or via QR scan
             </div>
           </div>
 
@@ -221,27 +222,18 @@ export default function TeacherAppConnectModal({ isOpen, onClose }) {
                 fontSize: '11px',
                 backgroundColor: '#14532d',
                 color: '#86efac',
-                padding: '3px 8px',
+                padding: '4px 10px',
                 borderRadius: '6px',
                 fontWeight: 700,
                 border: '1px solid #166534',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
               }}
             >
-              {registeredDevicesCount} Device{registeredDevicesCount === 1 ? '' : 's'} Paired
+              <ShieldCheck size={13} color="#86efac" />
+              <span>Trusted Local Hub</span>
             </span>
-            <button
-              onClick={handleRegenerateOtp}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#94a3b8',
-                fontSize: '11px',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-              }}
-            >
-              New Code
-            </button>
           </div>
         </div>
 

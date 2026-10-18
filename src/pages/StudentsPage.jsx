@@ -364,7 +364,7 @@ export default function StudentsPage({ onRefreshCounts }) {
     setFormData({
       full_name: student.full_name || '',
       admission_no: student.admission_no || '',
-      roll_no: student.roll_no || '',
+      roll_no: student.roll_no != null ? String(student.roll_no) : '',
       course_id: student.course_id || (courses[0]?.id || ''),
       batch_id: student.batch_id || (batches[0]?.id || ''),
       phone: student.phone || '',
@@ -407,7 +407,7 @@ export default function StudentsPage({ onRefreshCounts }) {
       const payload = {
         full_name: formData.full_name.trim(),
         admission_no: formData.admission_no.trim(),
-        roll_no: formData.roll_no.trim() || null,
+        roll_no: formData.roll_no != null ? String(formData.roll_no).trim() || null : null,
         course_id: formData.course_id,
         batch_id: formData.batch_id,
         phone: formData.phone.trim() || null,

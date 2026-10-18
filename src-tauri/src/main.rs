@@ -4,16 +4,18 @@
 #[cfg(target_os = "windows")]
 fn cleanup_stale_webview_locks() {
     if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
-        let eb_dir = std::path::PathBuf::from(local_appdata)
-            .join("com.sms.studentmanagementsystem")
-            .join("EBWebView");
-        if eb_dir.exists() {
-            // Delete root Chromium lockfile and leveldb locks if not actively held
-            let _ = std::fs::remove_file(eb_dir.join("lockfile"));
-            let _ = std::fs::remove_file(eb_dir.join("Default").join("LOCK"));
-            let _ = std::fs::remove_file(eb_dir.join("Default").join("Local Storage").join("leveldb").join("LOCK"));
-            let _ = std::fs::remove_file(eb_dir.join("Default").join("Session Storage").join("LOCK"));
-            let _ = std::fs::remove_file(eb_dir.join("Default").join("IndexedDB").join("http_tauri.localhost_0.indexeddb.leveldb").join("LOCK"));
+        for app_id in &["com.sms.desktopapp", "com.sms.studentmanagementsystem"] {
+            let eb_dir = std::path::PathBuf::from(&local_appdata)
+                .join(app_id)
+                .join("EBWebView");
+            if eb_dir.exists() {
+                // Delete root Chromium lockfile and leveldb locks if not actively held
+                let _ = std::fs::remove_file(eb_dir.join("lockfile"));
+                let _ = std::fs::remove_file(eb_dir.join("Default").join("LOCK"));
+                let _ = std::fs::remove_file(eb_dir.join("Default").join("Local Storage").join("leveldb").join("LOCK"));
+                let _ = std::fs::remove_file(eb_dir.join("Default").join("Session Storage").join("LOCK"));
+                let _ = std::fs::remove_file(eb_dir.join("Default").join("IndexedDB").join("http_tauri.localhost_0.indexeddb.leveldb").join("LOCK"));
+            }
         }
     }
 }

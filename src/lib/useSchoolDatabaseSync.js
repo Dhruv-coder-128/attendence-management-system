@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { supabase } from './supabase.js';
 import { isTauriDesktop } from './licenseService.js';
 
@@ -247,7 +248,7 @@ export function useSchoolDatabaseSync() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || Capacitor.isNativePlatform()) return;
 
     // Initial resolution & push
     resolveHubInfo().then(() => {

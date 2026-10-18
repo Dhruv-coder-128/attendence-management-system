@@ -154,6 +154,15 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
+  // Live real-time reactivity: Refresh dashboard when phone attendance or records sync
+  useEffect(() => {
+    const handleDbMutation = () => {
+      fetchDashboardData();
+    };
+    window.addEventListener('sms-db-mutation', handleDbMutation);
+    return () => window.removeEventListener('sms-db-mutation', handleDbMutation);
+  }, [fetchDashboardData]);
+
   return (
     <div>
       {/* Header */}
