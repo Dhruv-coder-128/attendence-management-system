@@ -187,6 +187,13 @@ export default function TeacherAttendancePage() {
     const res = await checkHubConnection(targetUrl);
     setConnectionStatus(res);
     loadBatches(targetUrl);
+    if (res?.ok) {
+      flushOfflineQueue(targetUrl).then((r) => {
+        if (r && r.flushedCount > 0) {
+          setOfflineQueue(getOfflineQueue());
+        }
+      }).catch(() => {});
+    }
   }, [hubUrl, loadBatches]);
 
   useEffect(() => {
@@ -397,6 +404,11 @@ export default function TeacherAttendancePage() {
       });
       setShowSuccessModal(true);
       setOfflineQueue(getOfflineQueue());
+      flushOfflineQueue(hubUrl).then((r) => {
+        if (r && r.flushedCount > 0) {
+          setOfflineQueue(getOfflineQueue());
+        }
+      }).catch(() => {});
     } else if (res.queued) {
       setOfflineQueue(getOfflineQueue());
       showToast('⚠️ Saved to phone storage (will sync when School Wi-Fi connects).');

@@ -469,12 +469,14 @@ export async function submitAttendanceToHub(batchId, date, records, hubUrl = nul
       const resJson = await res.json();
       wifiSyncOk = true;
       serverMessage = resJson?.message || 'Saved to School PC';
-    } else if (res.status === 401) {
-      return {
-        ok: false,
-        unauthorized: true,
-        error: 'Pairing token expired or missing. Please re-scan the QR code on the School PC.',
-      };
+      // On successful Wi-Fi sync, immediately remove any pending offline queued item for this batch and date
+      try {
+        const queue = getOfflineQueue();
+        const remaining = queue.filter(
+          (item) => !(item.batch_id === batchId && item.date === targetDate)
+        );
+        localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
+      } catch {}
     }
   } catch (err) {
     console.warn('Wi-Fi hub sync error:', err.message);

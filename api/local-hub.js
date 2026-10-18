@@ -405,13 +405,6 @@ export default async function handler(req, res) {
       return res.status(405).json({ ok: false, error: 'POST required for saving attendance.' });
     }
 
-    // Optional token validation (Req 9)
-    const tokenHeader = req.headers?.['x-hub-token'] || req.headers?.['X-Hub-Token'];
-    const payloadToken = req.body?.token;
-    if (tokenHeader && tokenHeader !== hubSessionToken && payloadToken !== hubSessionToken) {
-      return res.status(401).json({ ok: false, error: 'Unauthorized: Invalid pairing token' });
-    }
-
     const { batch_id, batch_code, batch_name, date, records } = req.body || {};
     if (!batch_id || !Array.isArray(records) || records.length === 0) {
       return res.status(400).json({ ok: false, error: 'batch_id and records array are required.' });
