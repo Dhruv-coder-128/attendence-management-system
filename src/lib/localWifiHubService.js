@@ -426,7 +426,7 @@ export async function fetchExistingAttendanceFromHub(batchId, date, hubUrl = nul
  * 2. Supabase Cloud Database direct save as background secondary fallback
  * 3. Queue offline for later sync when connection fails
  */
-export async function submitAttendanceToHub(batchId, date, records, hubUrl = null, extraMeta = {}) {
+export async function submitAttendanceToHub(batchId, date, records, hubUrl = null, extraMeta = {}, allowOfflineQueue = true) {
   const targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
   const targetDate = date || new Date().toISOString().split('T')[0];
   const token = getStoredHubToken();
@@ -507,14 +507,16 @@ export async function submitAttendanceToHub(batchId, date, records, hubUrl = nul
     return { ok: true, source: 'wifi', message: serverMessage };
   }
 
-  // 3. Queue offline if Wi-Fi was not reached
-  queueAttendanceOffline({
-    batch_id: batchId,
-    batch_code: extraMeta?.batch_code || batchId,
-    batch_name: extraMeta?.batch_name || '',
-    date: targetDate,
-    records,
-  });
+  // 3. Queue offline if Wi-Fi was not reached and offline queue is allowed
+  if (allowOfflineQueue) {
+    queueAttendanceOffline({
+      batch_id: batchId,
+      batch_code: extraMeta?.batch_code || batchId,
+      batch_name: extraMeta?.batch_name || '',
+      date: targetDate,
+      records,
+    });
+  }
   return { ok: false, queued: true, error: 'School PC unreachable. Stored in phone queue.' };
 }
 
@@ -573,7 +575,8 @@ export async function flushOfflineQueue(hubUrl = null) {
       item.date,
       item.records,
       hubUrl,
-      { batch_code: item.batch_code, batch_name: item.batch_name }
+      { batch_code: item.batch_code, batch_name: item.batch_name },
+      false
     );
     if (res.ok) {
       flushedCount++;

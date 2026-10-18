@@ -179,7 +179,7 @@ export default async function handler(req, res) {
   // CORS & Security headers for Local Wi-Fi network requests
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-school-key, X-Hub-Token, X-School-Token');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-school-key, X-Hub-Token, X-School-Token, X-Device-Id, *');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -446,22 +446,17 @@ export default async function handler(req, res) {
       records: enrichedRecords,
     };
 
-    // Store in-memory cache under all alias keys for 100% reliable matching
-    const keysToSet = new Set([
-      `${batch_id}_${targetDate}`,
-      batch_code ? `${batch_code}_${targetDate}` : null,
-      batch_name ? `${batch_name.replace(/\s+/g, '').toUpperCase()}_${targetDate}` : null,
-    ]);
+    // Store in-memory cache under canonical key to avoid multi-alias duplication
+    const matchedBatch = resolveBatchInfo(batch_id, liveSchoolDb.batches);
+    const canonicalBatchId = matchedBatch ? matchedBatch.id : batch_id;
+    const canonicalKey = `${canonicalBatchId}_${targetDate}`;
 
-    keysToSet.forEach((k) => {
-      if (k) memoryAttendanceStore.set(k, sessionData);
-    });
-
+    memoryAttendanceStore.set(canonicalKey, sessionData);
     savePersistentAttendance();
 
     // Also persist into liveSchoolDb
     if (!liveSchoolDb.attendance) liveSchoolDb.attendance = {};
-    liveSchoolDb.attendance[`${batch_id}_${targetDate}`] = sessionData;
+    liveSchoolDb.attendance[canonicalKey] = sessionData;
     saveSchoolDatabase();
 
     let presentCount = 0;

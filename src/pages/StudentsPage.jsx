@@ -262,11 +262,11 @@ export default function StudentsPage({ onRefreshCounts }) {
       const search = searchTerm.toLowerCase().trim();
       const matchSearch =
         !search ||
-        (student.full_name && student.full_name.toLowerCase().includes(search)) ||
-        (student.admission_no && student.admission_no.toLowerCase().includes(search)) ||
-        (student.roll_no && student.roll_no.toLowerCase().includes(search)) ||
-        (student.phone && student.phone.includes(search)) ||
-        (student.email && student.email.toLowerCase().includes(search));
+        (student.full_name && String(student.full_name).toLowerCase().includes(search)) ||
+        (student.admission_no != null && String(student.admission_no).toLowerCase().includes(search)) ||
+        (student.roll_no != null && String(student.roll_no).toLowerCase().includes(search)) ||
+        (student.phone != null && String(student.phone).includes(search)) ||
+        (student.email && String(student.email).toLowerCase().includes(search));
 
       // Course Filter
       const matchCourse =

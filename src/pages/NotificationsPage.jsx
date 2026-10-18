@@ -76,6 +76,11 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [copiedNotice, setCopiedNotice] = useState(false);
 
+  // Live Message Preview State for Individual Dispatches
+  const [selectedDispatchMessage, setSelectedDispatchMessage] = useState(null);
+  const [isDispatchModalOpen, setIsDispatchModalOpen] = useState(false);
+  const [copiedDispatchText, setCopiedDispatchText] = useState(false);
+
   const telegramSettings = useMemo(() => getSchoolTelegramSettings(), []);
   const academySettings = useMemo(() => getAcademySettings(), []);
 
@@ -810,6 +815,39 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
               })
             : '—'}
         </span>
+      ),
+    },
+    {
+      header: 'Actions',
+      key: 'actions',
+      render: (item) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedDispatchMessage(item);
+              setIsDispatchModalOpen(true);
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '11px',
+              fontWeight: 600,
+              padding: '4px 9px',
+              borderRadius: '5px',
+              backgroundColor: '#eff6ff',
+              color: '#1d4ed8',
+              border: '1px solid #bfdbfe',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+            title="Preview formatted parent alert message"
+          >
+            <Eye size={12} />
+            <span>View Message</span>
+          </button>
+        </div>
       ),
     },
   ];
@@ -2292,6 +2330,179 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
               </p>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {/* Individual Attendance Dispatch Live Message Preview Modal */}
+      {isDispatchModalOpen && selectedDispatchMessage && (
+        <Modal
+          isOpen={isDispatchModalOpen}
+          onClose={() => {
+            setIsDispatchModalOpen(false);
+            setSelectedDispatchMessage(null);
+            setCopiedDispatchText(false);
+          }}
+          title="Parent Alert Message — Live Preview"
+          maxWidth="560px"
+        >
+          {(() => {
+            const item = selectedDispatchMessage;
+            const studentName = item.students?.full_name || 'Student';
+            const rollNo = item.students?.roll_no != null ? item.students.roll_no : 'N/A';
+            const admissionNo = item.students?.admission_no || 'N/A';
+            const batchName = item.batches?.name || item.batches?.code || 'Cohort';
+            const date = item.date || new Date().toISOString().split('T')[0];
+            const academyName = academySettings.academy_name || 'SMS Academy';
+            const parent = item.linked_guardian || item.students?.parent_students?.[0]?.parents;
+            const guardianName = parent?.full_name || item.students?.guardian_name || 'Guardian';
+            const guardianPhone = parent?.phone || item.students?.guardian_phone || '';
+            const chatId = parent?.telegram_chat_id || null;
+
+            let formattedText = '';
+            if (item.status === 'Present') {
+              formattedText = `📚 *Daily Attendance Notification — Present*\n\nDear Guardian,\nYour ward *${studentName}* (Roll No: *${rollNo}*) of batch *${batchName}* was marked *PRESENT* on *${date}* at ${item.time_in || '09:00'}.\n\n_${academyName}_`;
+            } else if (item.status === 'Late') {
+              formattedText = `⏰ *Daily Attendance Alert — Late Arrival*\n\nDear Guardian,\nYour ward *${studentName}* (Roll No: *${rollNo}*) of batch *${batchName}* arrived *LATE* on *${date}* at ${item.time_in || '09:30'}.\n\n_${academyName}_`;
+            } else {
+              formattedText = `⚠️ *Daily Attendance Alert — Absent*\n\nDear Guardian,\nYour ward *${studentName}* (Roll No: *${rollNo}*) of batch *${batchName}* was marked *ABSENT* on *${date}*.\nIf this was unexpected, please contact the academy office immediately.\n\n_${academyName}_`;
+            }
+
+            const waShareUrl = guardianPhone
+              ? `https://wa.me/${guardianPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(formattedText)}`
+              : null;
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Ward & Recipient Info Strip */}
+                <div
+                  style={{
+                    backgroundColor: '#f8fafc',
+                    borderRadius: '8px',
+                    padding: '12px 14px',
+                    border: '1px solid #e2e8f0',
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '10px',
+                    fontSize: '12px',
+                  }}
+                >
+                  <div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginBottom: '2px' }}>STUDENT WARD</div>
+                    <div style={{ fontWeight: 700, color: 'var(--navy-950)' }}>{studentName}</div>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                      Adm: {admissionNo} &bull; Roll: {rollNo} &bull; {batchName}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginBottom: '2px' }}>PARENT / GUARDIAN</div>
+                    <div style={{ fontWeight: 700, color: 'var(--navy-950)' }}>{guardianName}</div>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                      {guardianPhone || 'No phone'} {chatId ? `• TG: ${chatId}` : ''}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Smartphone / Chat Message Bubble */}
+                <div
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '16px',
+                    backgroundColor: '#e2e8f0',
+                    padding: '14px',
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)',
+                  }}
+                >
+                  <div
+                    style={{
+                      maxWidth: '90%',
+                      backgroundColor: '#ffffff',
+                      borderRadius: '12px',
+                      padding: '12px 14px',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+                      borderTopLeftRadius: '2px',
+                      position: 'relative',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: '#0284c7',
+                        marginBottom: '6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <span>{telegramSettings.botName || academyName}</span>
+                      <CheckCircle2 size={12} color="#0284c7" />
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '12.5px',
+                        lineHeight: 1.5,
+                        color: '#0f172a',
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      {formattedText}
+                    </div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        alignItems: 'center',
+                        gap: '4px',
+                        marginTop: '6px',
+                        fontSize: '10px',
+                        color: '#64748b',
+                      }}
+                    >
+                      <span>{item.time_in || '11:45 AM'}</span>
+                      <span style={{ color: '#0284c7', fontWeight: 700 }}>✓✓</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Action Buttons */}
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={copiedDispatchText ? Check : Copy}
+                    onClick={() => {
+                      navigator.clipboard.writeText(formattedText);
+                      setCopiedDispatchText(true);
+                      setTimeout(() => setCopiedDispatchText(false), 2000);
+                    }}
+                  >
+                    {copiedDispatchText ? 'Copied!' : 'Copy Text'}
+                  </Button>
+                  {waShareUrl && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={ExternalLink}
+                      onClick={() => window.open(waShareUrl, '_blank')}
+                      style={{ borderColor: '#22c55e', color: '#15803d', backgroundColor: '#f0fdf4' }}
+                    >
+                      WhatsApp Parent
+                    </Button>
+                  )}
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      setIsDispatchModalOpen(false);
+                      setSelectedDispatchMessage(null);
+                    }}
+                  >
+                    Close Preview
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
         </Modal>
       )}
     </div>

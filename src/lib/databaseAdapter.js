@@ -21,7 +21,7 @@ import {
 const DB_NAME = 'sms_offline_db';
 const DB_VERSION = 1;
 const STORAGE_MODE_KEY = 'sms_storage_mode';
-const ROSTER_MIGRATION_KEY = 'sms_roster_dataset_v4';
+const ROSTER_MIGRATION_KEY = 'sms_roster_dataset_v5';
 
 let rosterMigrationPromise = null;
 
@@ -35,9 +35,11 @@ async function ensureAuthoritativeRosterMigration() {
         const db = await openOfflineDB();
         const tx = db.transaction(['batches', 'students', 'courses', 'parents', 'parent_students'], 'readwrite');
         
-        // Clear old stale/scrambled batches and students
+        // Clear old stale/scrambled batches, students, and duplicate parents
         tx.objectStore('batches').clear();
         tx.objectStore('students').clear();
+        tx.objectStore('parents').clear();
+        tx.objectStore('parent_students').clear();
         
         const bStore = tx.objectStore('batches');
         CANONICAL_BATCHES.forEach((b) => bStore.put(b));
@@ -206,8 +208,15 @@ async function putRecordsInStore(tableName, records) {
 
     list.forEach((rec) => {
       const item = { ...rec };
-      if (!item.id) {
-        item.id = generateLocalId();
+      if (!item.id || item.id.startsWith('id_') || item.id.startsWith('local_')) {
+        if (tableName === 'attendance') {
+          const sId = item.admission_no || item.student_id || 'unk';
+          const bId = item.batch_id || item.batch_code || 'all';
+          const d = item.date || new Date().toISOString().split('T')[0];
+          item.id = `att_${bId}_${d}_${sId}`;
+        } else {
+          item.id = generateLocalId();
+        }
       }
       if (!item.created_at) {
         item.created_at = new Date().toISOString();
@@ -613,7 +622,18 @@ async function resolveRelations(tableName, records, selectString) {
       const allParents = await getAllFromStore('parents');
       const allParentStudents = await getAllFromStore('parent_students');
 
-      const batchMap = new Map(allBatches.map((b) => [b.id, b]));
+      const batchMap = new Map();
+      allBatches.forEach((b) => {
+        if (b.id) batchMap.set(String(b.id).trim(), b);
+        if (b.code) batchMap.set(String(b.code).trim().toLowerCase(), b);
+        if (b.name) batchMap.set(String(b.name).trim().toLowerCase(), b);
+      });
+      const getBatch = (bId) => {
+        if (!bId) return null;
+        const s = String(bId).trim();
+        return batchMap.get(s) || batchMap.get(s.toLowerCase()) || null;
+      };
+
       const parentMap = new Map(allParents.map((p) => [p.id, p]));
 
       // Build rich student map with fully joined parent_students and genuine guardian
@@ -657,20 +677,31 @@ async function resolveRelations(tableName, records, selectString) {
           }
         }
 
-        studentMap.set(student.id, {
+        const enriched = {
           ...student,
           parent_students: parentStudents,
           linked_guardian: primaryParent,
-        });
+        };
+        if (student.id) studentMap.set(String(student.id).trim(), enriched);
+        if (student.admission_no) studentMap.set(String(student.admission_no).trim().toLowerCase(), enriched);
+        if (student.roll_no != null) studentMap.set(String(student.roll_no).trim().toLowerCase(), enriched);
+        if (student.full_name) studentMap.set(String(student.full_name).trim().toLowerCase(), enriched);
       });
 
+      const getStudent = (sId) => {
+        if (!sId) return null;
+        const s = String(sId).trim();
+        return studentMap.get(s) || studentMap.get(s.toLowerCase()) || null;
+      };
+
       return records.map((rec) => {
-        const s = studentMap.get(rec.student_id) || null;
+        const s = getStudent(rec.student_id) || getStudent(rec.admission_no) || getStudent(rec.full_name) || null;
         const guardian = s?.linked_guardian || s?.parent_students?.[0]?.parents || null;
+        const b = getBatch(rec.batch_id) || getBatch(rec.batch_code) || getBatch(rec.batch_name) || null;
         return {
           ...rec,
           students: s,
-          batches: batchMap.get(rec.batch_id) || null,
+          batches: b,
           linked_guardian: guardian,
         };
       });
@@ -810,7 +841,18 @@ async function resolveRelations(tableName, records, selectString) {
       const allParents = await getAllFromStore('parents');
       const allParentStudents = await getAllFromStore('parent_students');
 
-      const batchMap = new Map(allBatches.map((b) => [b.id, b]));
+      const batchMap = new Map();
+      allBatches.forEach((b) => {
+        if (b.id) batchMap.set(String(b.id).trim(), b);
+        if (b.code) batchMap.set(String(b.code).trim().toLowerCase(), b);
+        if (b.name) batchMap.set(String(b.name).trim().toLowerCase(), b);
+      });
+      const getBatch = (bId) => {
+        if (!bId) return null;
+        const s = String(bId).trim();
+        return batchMap.get(s) || batchMap.get(s.toLowerCase()) || null;
+      };
+
       const courseMap = new Map(allCourses.map((c) => [c.id, c]));
       const parentMap = new Map(allParents.map((p) => [p.id, p]));
 
@@ -849,7 +891,7 @@ async function resolveRelations(tableName, records, selectString) {
 
         return {
           ...rec,
-          batches: batchMap.get(rec.batch_id) || null,
+          batches: getBatch(rec.batch_id) || null,
           courses: courseMap.get(rec.course_id) || null,
           parents: parentStudents[0]?.parents || null,
           parent_students: parentStudents,

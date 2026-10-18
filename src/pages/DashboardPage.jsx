@@ -115,8 +115,23 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
       if (aErr) throw aErr;
 
       const records = attendanceData || [];
-      const present = records.filter((r) => r.status === 'Present').length;
-      const absent = records.filter((r) => r.status === 'Absent' || r.status === 'Late').length;
+      // Deduplicate attendance records by distinct student for today to guarantee accurate metrics
+      const studentAttendanceMap = new Map();
+      records.forEach((r) => {
+        const studentKey =
+          (r.students && (r.students.id || r.students.admission_no)) ||
+          r.admission_no ||
+          r.student_id ||
+          (r.full_name ? r.full_name.trim().toLowerCase() : null) ||
+          r.id;
+        if (studentKey && !studentAttendanceMap.has(studentKey)) {
+          studentAttendanceMap.set(studentKey, r);
+        }
+      });
+
+      const uniqueRecords = Array.from(studentAttendanceMap.values());
+      const present = uniqueRecords.filter((r) => r.status === 'Present').length;
+      const absent = uniqueRecords.filter((r) => r.status === 'Absent' || r.status === 'Late').length;
 
       setStats({
         totalStudents: studentCount || 0,
@@ -125,7 +140,7 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
         activeBatches: (batchesData || []).filter((b) => b.is_active !== false).length,
       });
 
-      setTodayAttendance(records);
+      setTodayAttendance(uniqueRecords);
       setBatchesSummary(batchesData || []);
     } catch (err) {
       console.error('Error querying dashboard data:', err);
@@ -580,16 +595,16 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
                       <tr key={rec.id}>
                         <td>
                           <div style={{ fontWeight: 600, color: 'var(--navy-950)' }}>
-                            {rec.students?.full_name || 'Student'}
+                            {rec.students?.full_name || rec.full_name || rec.student_name || 'Student'}
                           </div>
                           <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                            {rec.students?.admission_no || 'N/A'}
+                            {rec.students?.admission_no || rec.admission_no || (rec.roll_no ? `Roll: ${rec.roll_no}` : 'N/A')}
                           </div>
                         </td>
 
                         <td>
                           <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            {rec.batches?.name || rec.batches?.code || 'Batch'}
+                            {rec.batches?.name || rec.batch_name || rec.batches?.code || rec.batch_code || 'Cohort'}
                           </span>
                         </td>
 

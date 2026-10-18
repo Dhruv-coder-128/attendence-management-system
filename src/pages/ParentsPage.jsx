@@ -211,8 +211,26 @@ export default function ParentsPage({ onRefreshCounts }) {
 
       if (prErr) throw prErr;
 
+      // Deduplicate parents by unique student identity or phone to ensure strictly 100 clean guardians
+      const uniqueParentsMap = new Map();
+      (parentsData || []).forEach((p) => {
+        const studentWard = p.parent_students?.[0]?.students;
+        const sKey = studentWard ? (studentWard.admission_no || studentWard.id) : (p.admission_no || p.student_id);
+        const pKey = sKey ? `s_${String(sKey).trim().toLowerCase()}` : p.phone ? `p_${String(p.phone).replace(/[^0-9]/g, '').slice(-10)}` : p.id;
+
+        if (!uniqueParentsMap.has(pKey)) {
+          uniqueParentsMap.set(pKey, p);
+        } else {
+          const existing = uniqueParentsMap.get(pKey);
+          if (p.telegram_chat_id || (p.is_verified && !existing.is_verified)) {
+            uniqueParentsMap.set(pKey, p);
+          }
+        }
+      });
+      const cleanParents = Array.from(uniqueParentsMap.values());
+
       setStudents(studentsData || []);
-      setParents(parentsData || []);
+      setParents(cleanParents);
 
       // 3. Try to fetch invitations from parent_invitations table
       try {

@@ -345,7 +345,7 @@ export default function TeacherAttendancePage() {
       (s) =>
         (s.full_name || s.name || '')?.toLowerCase().includes(term) ||
         String(s.roll_no || '').includes(term) ||
-        s.admission_no?.toLowerCase().includes(term)
+        String(s.admission_no || '').toLowerCase().includes(term)
     );
   }, [students, searchTerm]);
 

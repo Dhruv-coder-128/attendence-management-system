@@ -444,12 +444,17 @@ Connection: close\r\n\r\n";
     // Routing
     let (status_code, response_json) = if path.starts_with("/api/local-hub") {
         match method.as_str() {
+            "OPTIONS" => (200, json!({ "ok": true, "status": "preflight_ok" })),
             "GET" => handle_get_action(&action, &query_params, &headers, &state),
             "POST" => handle_post_action(&action, &body_bytes, &headers, is_loopback, &state),
             _ => (405, json!({ "ok": false, "error": "Method Not Allowed" })),
         }
     } else if path == "/" || path == "/status" || path == "/health" || path.is_empty() {
-        handle_get_action("status", &query_params, &headers, &state)
+        if method == "OPTIONS" {
+            (200, json!({ "ok": true, "status": "preflight_ok" }))
+        } else {
+            handle_get_action("status", &query_params, &headers, &state)
+        }
     } else {
         (404, json!({ "ok": false, "error": "Endpoint not found" }))
     };
@@ -461,7 +466,8 @@ Content-Type: application/json; charset=utf-8\r\n\
 Content-Length: {}\r\n\
 Access-Control-Allow-Origin: *\r\n\
 Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
-Access-Control-Allow-Headers: Content-Type, Accept, Authorization, X-Hub-Token, X-School-Token\r\n\
+Access-Control-Allow-Headers: Content-Type, Accept, Authorization, X-Hub-Token, X-School-Token, X-Device-Id, *\r\n\
+Access-Control-Max-Age: 86400\r\n\
 Connection: close\r\n\r\n{}",
         status_code,
         body_str.len(),
@@ -858,6 +864,21 @@ fn handle_post_action(
                 );
             }
 
+            let canonical_batch_id = guard
+                .batches
+                .iter()
+                .find(|b| {
+                    let b_id = b.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    let b_code = b.get("code").and_then(|v| v.as_str()).unwrap_or("");
+                    let b_name = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    b_id.eq_ignore_ascii_case(&batch_id)
+                        || b_code.eq_ignore_ascii_case(&batch_id)
+                        || b_name.replace(' ', "").eq_ignore_ascii_case(&batch_id.replace(' ', ""))
+                })
+                .and_then(|b| b.get("id").and_then(|v| v.as_str()))
+                .unwrap_or(&batch_id)
+                .to_string();
+
             let records_val = match payload.get("records").and_then(|v| v.as_array()) {
                 Some(arr) if !arr.is_empty() => arr,
                 _ => return (400, json!({ "ok": false, "error": "No attendance records provided" })),
@@ -935,13 +956,13 @@ fn handle_post_action(
                     .or_else(|| matched_student.and_then(|s| s.get("roll_no")).cloned())
                     .unwrap_or(Value::Null);
 
-                let key = format!("{}::{}::{}", batch_id, date, adm);
+                let key = format!("{}::{}::{}", canonical_batch_id, date, adm);
                 let record = json!({
                     "student_id": s_id,
                     "admission_no": adm,
                     "roll_no": roll_no,
                     "full_name": full_name,
-                    "batch_id": batch_id,
+                    "batch_id": canonical_batch_id,
                     "date": date,
                     "session_name": "Regular",
                     "status": status,
