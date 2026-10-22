@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   Calendar,
   Sparkles,
+  Cake,
 } from 'lucide-react';
 import { App } from '@capacitor/app';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -46,18 +47,39 @@ import {
   setDevicePairedLocally,
 } from '../lib/localWifiHubService';
 import { useAcademySettings } from '../lib/academySettings';
-import { CANONICAL_BATCHES } from '../data/canonicalSchoolData';
+import { CANONICAL_BATCHES, CANONICAL_STUDENTS } from '../data/canonicalSchoolData';
+import { isStudentBirthdayToday } from '../lib/telegramClient';
+import BirthdayWishModal from '../components/students/BirthdayWishModal';
 
-const DAILY_METRICS_KEY_PREFIX = 'sms_daily_metrics_v2_';
-const BATCH_ATTENDANCE_STATUS_KEY_PREFIX = 'sms_batch_status_v2_';
+export const CANONICAL_BATCH_CODES = ['11-COM', '12-COM', 'FY-BCA', 'SY-BCA', 'TY-BCA'];
+
+export function getCanonicalBatchCode(raw) {
+  if (!raw) return '';
+  const s = String(raw).trim().toUpperCase();
+  if (s === 'B11' || s.includes('11-COM') || s.includes('11TH')) return '11-COM';
+  if (s === 'B12' || s.includes('12-COM') || s.includes('12TH')) return '12-COM';
+  if (s === 'BFY' || s.includes('FY-BCA') || s === 'FY' || s.includes('FIRST YEAR')) return 'FY-BCA';
+  if (s === 'BSY' || s.includes('SY-BCA') || s === 'SY' || s.includes('SECOND YEAR')) return 'SY-BCA';
+  if (s === 'BTY' || s.includes('TY-BCA') || s === 'TY' || s.includes('THIRD YEAR')) return 'TY-BCA';
+  return s;
+}
+
+const DAILY_METRICS_KEY_PREFIX = 'sms_daily_metrics_v3_';
+const BATCH_ATTENDANCE_STATUS_KEY_PREFIX = 'sms_batch_status_v3_';
 
 function getStoredDailyMetrics(date) {
-  if (typeof window === 'undefined') return { total: 0, present: 0, absent: 0, late: 0, marked: false };
+  if (typeof window === 'undefined') return { total: 100, present: 0, absent: 0, late: 0, pending: 100, marked: false };
   try {
     const raw = localStorage.getItem(DAILY_METRICS_KEY_PREFIX + (date || new Date().toISOString().split('T')[0]));
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.pending === undefined) {
+        parsed.pending = Math.max(0, (parsed.total || 100) - ((parsed.present || 0) + (parsed.absent || 0) + (parsed.late || 0)));
+      }
+      return parsed;
+    }
   } catch {}
-  return { total: 0, present: 0, absent: 0, late: 0, marked: false };
+  return { total: 100, present: 0, absent: 0, late: 0, pending: 100, marked: false };
 }
 
 function setStoredDailyMetrics(date, metrics) {
@@ -113,6 +135,36 @@ export default function TeacherAttendancePage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [students, setStudents] = useState([]);
   const [attendanceMap, setAttendanceMap] = useState({}); // { student_id: 'Present' | 'Late' | 'Absent' }
+
+  // Birthday Greeting Console State
+  const [activeBirthdayStudent, setActiveBirthdayStudent] = useState(null);
+  const [isBirthdayModalOpen, setIsBirthdayModalOpen] = useState(false);
+
+  // Strict Deduplication of Batches by Unique Code (Declared early so callbacks can access safely)
+  const uniqueBatches = useMemo(() => {
+    const map = new Map();
+    (batches || []).forEach((b) => {
+      const codeKey = (b.code || b.id || b.name || '').toUpperCase().trim();
+      if (codeKey && !map.has(codeKey)) {
+        map.set(codeKey, b);
+      }
+    });
+    return Array.from(map.values());
+  }, [batches]);
+
+  // Active Batch Object (Declared early so callbacks can access safely)
+  const activeBatch = useMemo(() => {
+    return (
+      uniqueBatches.find(
+        (b) =>
+          b.id === selectedBatchId ||
+          b.code === selectedBatchId ||
+          b.name === selectedBatchId ||
+          b.name?.toLowerCase() === selectedBatchId?.toLowerCase() ||
+          b.code?.toLowerCase() === selectedBatchId?.toLowerCase()
+      ) || uniqueBatches[0] || {}
+    );
+  }, [uniqueBatches, selectedBatchId]);
 
   // Persistent Daily Metrics across RAM Kills
   const [dailyMetrics, setDailyMetrics] = useState(() => getStoredDailyMetrics(new Date().toISOString().split('T')[0]));
@@ -187,10 +239,21 @@ export default function TeacherAttendancePage() {
       }
     };
 
+    let stateHandle = null;
     try {
       App.addListener('backButton', handleBackAction)
         .then((handle) => {
           listenerHandle = handle;
+        })
+        .catch(() => {});
+
+      App.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) {
+          checkConnection();
+        }
+      })
+        .then((handle) => {
+          stateHandle = handle;
         })
         .catch(() => {});
     } catch {}
@@ -208,9 +271,12 @@ export default function TeacherAttendancePage() {
       if (listenerHandle && typeof listenerHandle.remove === 'function') {
         listenerHandle.remove();
       }
+      if (stateHandle && typeof stateHandle.remove === 'function') {
+        stateHandle.remove();
+      }
       window.removeEventListener('popstate', handlePopState);
     };
-  }, []);
+  }, [checkConnection]);
 
   // 1. Load Batches
   const loadBatches = useCallback(async (targetUrl = hubUrl) => {
@@ -220,7 +286,7 @@ export default function TeacherAttendancePage() {
     setIsLoading(false);
   }, [hubUrl]);
 
-  // Refresh authoritative daily metrics across all batches from PC Hub
+  // Refresh authoritative daily metrics across all batches from PC Hub with canonical deduplication
   const refreshHubMetrics = useCallback(async (targetUrl = hubUrl, date = selectedDate) => {
     const activeUrl = targetUrl || getStoredHubUrl();
     if (!activeUrl) return;
@@ -230,47 +296,88 @@ export default function TeacherAttendancePage() {
         const data = await res.json();
         const records = data.records || data.allRecords || [];
         if (Array.isArray(records) && records.length > 0) {
+          // Build canonical student lookup
+          const studentLookup = new Map();
+          (CANONICAL_STUDENTS || []).forEach((cs) => {
+            if (cs.admission_no) studentLookup.set(cs.admission_no.trim().toUpperCase(), cs);
+            if (cs.id) studentLookup.set(cs.id.trim(), cs);
+            if (cs.full_name) studentLookup.set(cs.full_name.trim().toLowerCase(), cs);
+          });
+
+          // Strict student-level deduplication: exactly 1 state per student
+          const studentAttendanceMap = new Map();
+          records.forEach((r) => {
+            const rawAdm = (r.admission_no || '').trim().toUpperCase();
+            const rawId = (r.student_id || '').trim();
+            const rawName = (r.full_name || '').trim().toLowerCase();
+            const matched = studentLookup.get(rawAdm) || studentLookup.get(rawId) || studentLookup.get(rawName);
+
+            // Discard test mock records
+            if (rawAdm.startsWith('SMS-2026-') || (rawId && rawId.startsWith('SMS-2026-'))) return;
+
+            const studentKey = matched ? matched.admission_no : (rawAdm || rawId || null);
+            if (!studentKey) return;
+
+            if (!studentAttendanceMap.has(studentKey)) {
+              studentAttendanceMap.set(studentKey, {
+                ...r,
+                admission_no: matched ? matched.admission_no : studentKey,
+                batch_code: getCanonicalBatchCode(matched ? matched.batch_code : (r.batch_code || r.batch_id)),
+                status: r.status || 'Present',
+              });
+            }
+          });
+
+          // Compute exact per-batch counts and daily totals
           const batchMap = {};
           let totalPresent = 0;
           let totalAbsent = 0;
           let totalLate = 0;
 
-          records.forEach((r) => {
-            const bId = (r.batch_id || '').toUpperCase();
-            const status = r.status || 'Present';
-            if (bId) {
-              if (!batchMap[bId]) {
-                batchMap[bId] = { present: 0, absent: 0, late: 0, total: 0, taken: true };
-              }
-              batchMap[bId].total += 1;
-              if (status === 'Present') {
-                batchMap[bId].present += 1;
+          // Initialize all 5 canonical batches with 20 students each
+          CANONICAL_BATCH_CODES.forEach((code) => {
+            batchMap[code] = { present: 0, absent: 0, late: 0, total: 20, pending: 20, taken: false };
+          });
+
+          studentAttendanceMap.forEach((entry) => {
+            const bCode = entry.batch_code;
+            if (bCode && batchMap[bCode]) {
+              batchMap[bCode].taken = true;
+              if (entry.status === 'Present') {
+                batchMap[bCode].present += 1;
                 totalPresent += 1;
-              } else if (status === 'Late') {
-                batchMap[bId].late += 1;
+              } else if (entry.status === 'Late') {
+                batchMap[bCode].late += 1;
                 totalLate += 1;
               } else {
-                batchMap[bId].absent += 1;
+                batchMap[bCode].absent += 1;
                 totalAbsent += 1;
               }
             }
           });
 
+          // Calculate exact pending for each cohort (20 - marked)
+          CANONICAL_BATCH_CODES.forEach((code) => {
+            if (batchMap[code]) {
+              batchMap[code].pending = Math.max(0, 20 - (batchMap[code].present + batchMap[code].absent + batchMap[code].late));
+            }
+          });
+
+          const totalPending = Math.max(0, 100 - (totalPresent + totalAbsent + totalLate));
+
           const newMetrics = {
-            total: records.length,
+            total: 100,
             present: totalPresent,
             absent: totalAbsent,
             late: totalLate,
+            pending: totalPending,
             marked: true,
           };
 
           setDailyMetrics(newMetrics);
           setStoredDailyMetrics(date, newMetrics);
-          setBatchStatuses((prev) => {
-            const updated = { ...prev, ...batchMap };
-            setStoredBatchStatuses(date, updated);
-            return updated;
-          });
+          setBatchStatuses(batchMap);
+          setStoredBatchStatuses(date, batchMap);
         }
       }
     } catch {}
@@ -338,30 +445,7 @@ export default function TeacherAttendancePage() {
     return () => clearInterval(interval);
   }, [connectionStatus.ok, viewMode, hubUrl, loadBatches, refreshHubMetrics, selectedDate]);
 
-  // Live real-time reactivity in roll call mode: pick up any PC changes (PC marked student or changed status)
-  useEffect(() => {
-    if (!connectionStatus.ok || viewMode !== 'rollcall' || !selectedBatchId) return;
-    const interval = setInterval(async () => {
-      try {
-        const existingRecords = await fetchExistingAttendanceFromHub(selectedBatchId, selectedDate, hubUrl);
-        if (Array.isArray(existingRecords) && existingRecords.length > 0) {
-          setAttendanceMap((prev) => {
-            let changed = false;
-            const next = { ...prev };
-            existingRecords.forEach((r) => {
-              const idKey = r.student_id || r.admission_no;
-              if (idKey && r.status && next[idKey] !== r.status) {
-                next[idKey] = r.status;
-                changed = true;
-              }
-            });
-            return changed ? next : prev;
-          });
-        }
-      } catch {}
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [connectionStatus.ok, viewMode, selectedBatchId, selectedDate, hubUrl]);
+  // Note: Destructive 3-second poll in roll call mode removed to prevent clobbering active teacher edits
 
   // Recheck when phone reconnects to network
   useEffect(() => {
@@ -378,35 +462,42 @@ export default function TeacherAttendancePage() {
     setViewMode('rollcall');
     setIsLoading(true);
 
-    // Push state so back gesture works
     try {
       window.history.pushState({ view: 'rollcall' }, '');
     } catch {}
 
     let studentList = await fetchStudentsFromHub(batchId, hubUrl);
-    if (!Array.isArray(studentList)) {
-      studentList = [];
+    if (!Array.isArray(studentList) || studentList.length === 0) {
+      // Fallback to canonical roster for this batch
+      const canonicalCode = getCanonicalBatchCode(batchId);
+      studentList = (CANONICAL_STUDENTS || []).filter(
+        (s) => getCanonicalBatchCode(s.batch_code || s.batch_id) === canonicalCode
+      );
     }
     setStudents(studentList);
 
-    // Fetch any attendance previously marked today on PC or phone
+    // Fetch existing attendance previously marked today on PC or phone
     const existingRecords = await fetchExistingAttendanceFromHub(batchId, selectedDate, hubUrl);
-
     const initialMap = {};
     if (Array.isArray(existingRecords) && existingRecords.length > 0) {
       existingRecords.forEach((r) => {
-        const idKey = r.student_id || r.admission_no;
-        if (idKey) {
-          initialMap[idKey] = r.status || 'Present';
+        const targetAdm = String(r.admission_no || r.student_id || '').trim().toUpperCase();
+        const matched = studentList.find(
+          (s) =>
+            s.id === r.student_id ||
+            (s.admission_no && s.admission_no.trim().toUpperCase() === targetAdm) ||
+            (s.full_name && r.full_name && s.full_name.trim().toLowerCase() === r.full_name.trim().toLowerCase())
+        );
+        if (matched) {
+          initialMap[matched.id] = r.status || 'Present';
         }
       });
-      // Fill in any students missing from existing records as Present
       studentList.forEach((s) => {
-        if (!initialMap[s.id] && !initialMap[s.admission_no]) {
+        if (!initialMap[s.id]) {
           initialMap[s.id] = 'Present';
         }
       });
-      showToast('✓ Loaded existing roll call from School PC');
+      showToast('✓ Loaded existing roll call');
     } else {
       // Default: Everyone is marked Present
       studentList.forEach((s) => {
@@ -428,11 +519,19 @@ export default function TeacherAttendancePage() {
     const map = {};
     if (Array.isArray(existingRecords) && existingRecords.length > 0) {
       existingRecords.forEach((r) => {
-        const idKey = r.student_id || r.admission_no;
-        if (idKey) map[idKey] = r.status || 'Present';
+        const targetAdm = String(r.admission_no || r.student_id || '').trim().toUpperCase();
+        const matched = students.find(
+          (s) =>
+            s.id === r.student_id ||
+            (s.admission_no && s.admission_no.trim().toUpperCase() === targetAdm) ||
+            (s.full_name && r.full_name && s.full_name.trim().toLowerCase() === r.full_name.trim().toLowerCase())
+        );
+        if (matched) {
+          map[matched.id] = r.status || 'Present';
+        }
       });
       students.forEach((s) => {
-        if (!map[s.id] && !map[s.admission_no]) map[s.id] = 'Present';
+        if (!map[s.id]) map[s.id] = 'Present';
       });
       showToast(`Loaded records for ${newDate}`);
     } else {
@@ -444,58 +543,151 @@ export default function TeacherAttendancePage() {
     setIsLoading(false);
   };
 
+  // Auto-sync debounced ref
+  const autoSyncTimerRef = useRef(null);
+
+  const syncRollCallToHubDebounced = useCallback((updatedMap) => {
+    const activeUrl = hubUrl || getStoredHubUrl();
+    if (!activeUrl || !selectedBatchId) return;
+    if (autoSyncTimerRef.current) clearTimeout(autoSyncTimerRef.current);
+
+    autoSyncTimerRef.current = setTimeout(async () => {
+      try {
+        const bCode = getCanonicalBatchCode(activeBatch?.code || selectedBatchId);
+        const records = students.map((s) => ({
+          student_id: s.id,
+          admission_no: s.admission_no || s.id,
+          roll_no: s.roll_no,
+          full_name: s.full_name || s.name || '',
+          status: updatedMap[s.id] || updatedMap[s.admission_no] || 'Present',
+          remarks: '',
+          time_in: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+        }));
+
+        await submitAttendanceToHub(
+          activeBatch?.id || selectedBatchId,
+          selectedDate,
+          records,
+          activeUrl,
+          {
+            batch_code: bCode,
+            batch_name: activeBatch?.name || '',
+          },
+          false // Don't spam offline queue on auto-sync keystrokes
+        );
+      } catch (err) {
+        console.warn('Background auto-sync deferred:', err);
+      }
+    }, 600);
+  }, [hubUrl, selectedBatchId, activeBatch, students, selectedDate]);
+
+  // Recalculates batch and top metrics immediately from a map
+  const updateMetricsFromMap = useCallback((newMap) => {
+    const bCode = getCanonicalBatchCode(activeBatch?.code || selectedBatchId);
+    let pCount = 0;
+    let aCount = 0;
+    let lCount = 0;
+
+    students.forEach((s) => {
+      const st = newMap[s.id] || newMap[s.admission_no] || 'Present';
+      if (st === 'Present') pCount++;
+      else if (st === 'Late') lCount++;
+      else aCount++;
+    });
+
+    const newBatchInfo = {
+      present: pCount,
+      absent: aCount,
+      late: lCount,
+      total: students.length || 20,
+      pending: Math.max(0, (students.length || 20) - (pCount + aCount + lCount)),
+      taken: true,
+    };
+
+    setBatchStatuses((prev) => {
+      const next = { ...prev, [bCode]: newBatchInfo };
+      setStoredBatchStatuses(selectedDate, next);
+
+      let sumPresent = 0;
+      let sumAbsent = 0;
+      let sumLate = 0;
+      let sumTotal = 0;
+      CANONICAL_BATCH_CODES.forEach((c) => {
+        const b = next[c];
+        if (b) {
+          sumPresent += b.present || 0;
+          sumAbsent += b.absent || 0;
+          sumLate += b.late || 0;
+          sumTotal += b.total || 0;
+        }
+      });
+
+      const totalPending = Math.max(0, 100 - (sumPresent + sumAbsent + sumLate));
+      const metrics = {
+        total: 100,
+        present: sumPresent,
+        absent: sumAbsent,
+        late: sumLate,
+        pending: totalPending,
+        marked: true,
+      };
+      setDailyMetrics(metrics);
+      setStoredDailyMetrics(selectedDate, metrics);
+
+      return next;
+    });
+  }, [activeBatch, selectedBatchId, students, selectedDate]);
+
   // Toggle single student status (Present / Late / Absent)
   const setStudentStatus = (studentId, status) => {
-    setAttendanceMap((prev) => ({
-      ...prev,
-      [studentId]: status,
-    }));
+    setAttendanceMap((prev) => {
+      const next = {
+        ...prev,
+        [studentId]: status,
+      };
+      updateMetricsFromMap(next);
+      syncRollCallToHubDebounced(next);
+      return next;
+    });
   };
 
-  // Bulk actions
+  // Bulk actions: Mark All Present & Mark All Absent (Strictly 1 state per student)
   const markAllPresent = () => {
-    const map = {};
+    const next = {};
     students.forEach((s) => {
-      map[s.id] = 'Present';
+      next[s.id] = 'Present';
     });
-    setAttendanceMap(map);
-    showToast('All students marked Present');
+    setAttendanceMap(next);
+    updateMetricsFromMap(next);
+    syncRollCallToHubDebounced(next);
+    showToast(`✓ All ${students.length} students marked Present`);
   };
 
   const markAllAbsent = () => {
-    const map = {};
+    const next = {};
     students.forEach((s) => {
-      map[s.id] = 'Absent';
+      next[s.id] = 'Absent';
     });
-    setAttendanceMap(map);
-    showToast('All students marked Absent');
+    setAttendanceMap(next);
+    updateMetricsFromMap(next);
+    syncRollCallToHubDebounced(next);
+    showToast(`✓ All ${students.length} students marked Absent`);
   };
 
-  // Metric Computations (Present, Late, Absent, Total)
+  // Metric Computations (Present, Late, Absent, Total) - strictly 1 state per student
+  const getStudentStatus = (s) => attendanceMap[s.id] || (s.admission_no ? attendanceMap[s.admission_no] : 'Present');
   const totalCount = students.length;
   const presentCount = useMemo(() => {
-    return Object.values(attendanceMap).filter((st) => st === 'Present').length;
-  }, [attendanceMap]);
+    return students.filter((s) => getStudentStatus(s) === 'Present').length;
+  }, [students, attendanceMap]);
 
   const lateCount = useMemo(() => {
-    return Object.values(attendanceMap).filter((st) => st === 'Late').length;
-  }, [attendanceMap]);
+    return students.filter((s) => getStudentStatus(s) === 'Late').length;
+  }, [students, attendanceMap]);
 
   const absentCount = useMemo(() => {
-    return Object.values(attendanceMap).filter((st) => st === 'Absent').length;
-  }, [attendanceMap]);
-
-  // Strict Deduplication of Batches by Unique Code
-  const uniqueBatches = useMemo(() => {
-    const map = new Map();
-    (batches || []).forEach((b) => {
-      const codeKey = (b.code || b.id || b.name || '').toUpperCase().trim();
-      if (codeKey && !map.has(codeKey)) {
-        map.set(codeKey, b);
-      }
-    });
-    return Array.from(map.values());
-  }, [batches]);
+    return students.filter((s) => getStudentStatus(s) === 'Absent').length;
+  }, [students, attendanceMap]);
 
   // Filter students
   const filteredStudents = useMemo(() => {
@@ -508,16 +700,6 @@ export default function TeacherAttendancePage() {
         String(s.admission_no || '').toLowerCase().includes(term)
     );
   }, [students, searchTerm]);
-
-  // Active Batch Object
-  const activeBatch = uniqueBatches.find(
-    (b) =>
-      b.id === selectedBatchId ||
-      b.code === selectedBatchId ||
-      b.name === selectedBatchId ||
-      b.name?.toLowerCase() === selectedBatchId?.toLowerCase() ||
-      b.code?.toLowerCase() === selectedBatchId?.toLowerCase()
-  ) || uniqueBatches[0] || {};
 
   // Submit attendance ("DONE" Action)
   const handleSubmit = async () => {
@@ -547,12 +729,13 @@ export default function TeacherAttendancePage() {
     setIsSubmitting(false);
 
     // Authoritatively update batch status and daily metrics immediately
-    const bKey = (activeBatch.code || selectedBatchId || '').toUpperCase();
+    const bKey = getCanonicalBatchCode(activeBatch.code || selectedBatchId);
     const newBatchInfo = {
       present: presentCount,
       late: lateCount,
       absent: absentCount,
-      total: totalCount,
+      total: totalCount || 20,
+      pending: Math.max(0, (totalCount || 20) - (presentCount + absentCount + lateCount)),
       taken: true,
     };
 
@@ -568,17 +751,22 @@ export default function TeacherAttendancePage() {
       let sumPresent = 0;
       let sumAbsent = 0;
       let sumLate = 0;
-      Object.values(currentMap).forEach((st) => {
-        sumTotal += st.total || 0;
-        sumPresent += st.present || 0;
-        sumAbsent += st.absent || 0;
-        sumLate += st.late || 0;
+      CANONICAL_BATCH_CODES.forEach((c) => {
+        const st = currentMap[c];
+        if (st) {
+          sumTotal += st.total || 0;
+          sumPresent += st.present || 0;
+          sumAbsent += st.absent || 0;
+          sumLate += st.late || 0;
+        }
       });
+      const totalPending = Math.max(0, 100 - (sumPresent + sumAbsent + sumLate));
       const next = {
-        total: sumTotal,
+        total: 100,
         present: sumPresent,
         absent: sumAbsent,
         late: sumLate,
+        pending: totalPending,
         marked: true,
       };
       setStoredDailyMetrics(selectedDate, next);
@@ -717,13 +905,13 @@ export default function TeacherAttendancePage() {
     <div
       style={{
         minHeight: '100vh',
-        backgroundColor: '#070c18',
+        backgroundColor: '#f8fafc',
         backgroundImage: `
-          radial-gradient(circle at 12% 8%, rgba(59, 130, 246, 0.14) 0%, transparent 45%),
-          radial-gradient(circle at 88% 22%, rgba(197, 168, 128, 0.10) 0%, transparent 45%),
-          radial-gradient(circle at 50% 85%, rgba(16, 185, 129, 0.08) 0%, transparent 50%)
+          radial-gradient(circle at 12% 8%, rgba(219, 234, 254, 0.6) 0%, transparent 45%),
+          radial-gradient(circle at 88% 22%, rgba(254, 243, 199, 0.45) 0%, transparent 45%),
+          radial-gradient(circle at 50% 85%, rgba(209, 250, 229, 0.4) 0%, transparent 50%)
         `,
-        color: '#f8fafc',
+        color: '#0f172a',
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
         paddingBottom: viewMode === 'rollcall' ? '180px' : '90px',
         WebkitFontSmoothing: 'antialiased',
@@ -772,26 +960,26 @@ export default function TeacherAttendancePage() {
             style={{
               maxWidth: '460px',
               width: '100%',
-              backgroundColor: 'rgba(10, 17, 34, 0.88)',
+              backgroundColor: 'rgba(255, 255, 255, 0.96)',
               backdropFilter: 'blur(24px)',
               WebkitBackdropFilter: 'blur(24px)',
               border: `1px solid ${
                 toast.type === 'error'
-                  ? 'rgba(239, 68, 68, 0.55)'
+                  ? '#fecaca'
                   : toast.type === 'warning'
-                  ? 'rgba(245, 158, 11, 0.55)'
-                  : 'rgba(16, 185, 129, 0.55)'
+                  ? '#fde68a'
+                  : '#a7f3d0'
               }`,
-              boxShadow: `0 16px 36px rgba(0, 0, 0, 0.55), 0 0 20px ${
+              boxShadow: `0 16px 36px rgba(15, 23, 42, 0.12), 0 0 20px ${
                 toast.type === 'error'
-                  ? 'rgba(239, 68, 68, 0.25)'
+                  ? 'rgba(239, 68, 68, 0.15)'
                   : toast.type === 'warning'
-                  ? 'rgba(245, 158, 11, 0.25)'
-                  : 'rgba(16, 185, 129, 0.25)'
+                  ? 'rgba(245, 158, 11, 0.15)'
+                  : 'rgba(16, 185, 129, 0.15)'
               }`,
               borderRadius: '16px',
               padding: '12px 18px',
-              color: '#ffffff',
+              color: '#0f172a',
               display: 'flex',
               alignItems: 'center',
               gap: '12px',
@@ -809,21 +997,21 @@ export default function TeacherAttendancePage() {
                 flexShrink: 0,
                 backgroundColor:
                   toast.type === 'error'
-                    ? 'rgba(239, 68, 68, 0.2)'
+                    ? '#fee2e2'
                     : toast.type === 'warning'
-                    ? 'rgba(245, 158, 11, 0.2)'
-                    : 'rgba(16, 185, 129, 0.2)',
+                    ? '#fef3c7'
+                    : '#d1fae5',
               }}
             >
               {toast.type === 'error' ? (
-                <XCircle size={18} color="#f87171" />
+                <XCircle size={18} color="#dc2626" />
               ) : toast.type === 'warning' ? (
-                <AlertTriangle size={18} color="#fbbf24" />
+                <AlertTriangle size={18} color="#d97706" />
               ) : (
-                <CheckCircle2 size={18} color="#34d399" />
+                <CheckCircle2 size={18} color="#059669" />
               )}
             </div>
-            <div style={{ flex: 1, minWidth: 0, fontSize: '13px', fontWeight: 600, lineHeight: 1.4, color: '#f1f5f9' }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: '13px', fontWeight: 600, lineHeight: 1.4, color: '#0f172a' }}>
               {toast.message}
             </div>
             <button
@@ -831,7 +1019,7 @@ export default function TeacherAttendancePage() {
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#94a3b8',
+                color: '#64748b',
                 cursor: 'pointer',
                 padding: '4px',
                 display: 'flex',
@@ -850,12 +1038,12 @@ export default function TeacherAttendancePage() {
           position: 'sticky',
           top: 0,
           zIndex: 50,
-          backgroundColor: 'rgba(10, 17, 34, 0.82)',
+          backgroundColor: 'rgba(255, 255, 255, 0.92)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          borderBottom: '1px solid rgba(226, 232, 240, 0.85)',
           padding: '12px 16px',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
+          boxShadow: '0 4px 20px rgba(15, 23, 42, 0.04)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -866,22 +1054,22 @@ export default function TeacherAttendancePage() {
                 width: '40px',
                 height: '40px',
                 borderRadius: '12px',
-                backgroundColor: 'rgba(197, 168, 128, 0.12)',
-                border: '1px solid rgba(197, 168, 128, 0.4)',
+                backgroundColor: '#f1f5f9',
+                border: '1px solid #cbd5e1',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 0 16px rgba(197, 168, 128, 0.25)',
+                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.05)',
               }}
             >
-              <School size={20} color="#c5a880" />
+              <School size={20} color="#0284c7" />
             </div>
             <div>
-              <div style={{ fontSize: '15px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.3px' }}>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
                 {academySettings.academy_name || 'SMS Student System'}
               </div>
-              <div style={{ fontSize: '11px', color: '#c5a880', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Sparkles size={11} color="#c5a880" />
+              <div style={{ fontSize: '11px', color: '#0284c7', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Sparkles size={11} color="#0284c7" />
                 <span>Teacher Roll Call Hub</span>
               </div>
             </div>
@@ -892,9 +1080,9 @@ export default function TeacherAttendancePage() {
             <button
               onClick={() => setShowSettingsModal(true)}
               style={{
-                backgroundColor: connectionStatus.ok ? 'rgba(16, 185, 129, 0.16)' : 'rgba(245, 158, 11, 0.16)',
-                border: `1px solid ${connectionStatus.ok ? 'rgba(16, 185, 129, 0.4)' : 'rgba(245, 158, 11, 0.4)'}`,
-                color: connectionStatus.ok ? '#34d399' : '#fbbf24',
+                backgroundColor: connectionStatus.ok ? '#ecfdf5' : '#fffbeb',
+                border: `1px solid ${connectionStatus.ok ? '#a7f3d0' : '#fde68a'}`,
+                color: connectionStatus.ok ? '#059669' : '#b45309',
                 padding: '6px 10px',
                 borderRadius: '10px',
                 fontSize: '11px',
@@ -903,11 +1091,10 @@ export default function TeacherAttendancePage() {
                 alignItems: 'center',
                 gap: '5px',
                 cursor: 'pointer',
-                backdropFilter: 'blur(8px)',
               }}
               title={connectionStatus.ok ? 'Connected to School PC' : 'Tap to configure School PC connection'}
             >
-              <ShieldCheck size={14} color={connectionStatus.ok ? '#34d399' : '#fbbf24'} />
+              <ShieldCheck size={14} color={connectionStatus.ok ? '#059669' : '#b45309'} />
               <span>{connectionStatus.ok ? 'PC Hub Synced' : 'Connect PC'}</span>
             </button>
           </div>
@@ -923,8 +1110,8 @@ export default function TeacherAttendancePage() {
             justifyContent: 'space-between',
             padding: '6px 12px',
             borderRadius: '10px',
-            backgroundColor: connectionStatus.ok ? 'rgba(16, 185, 129, 0.10)' : 'rgba(239, 68, 68, 0.12)',
-            border: `1px solid ${connectionStatus.ok ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.3)'}`,
+            backgroundColor: connectionStatus.ok ? '#f0fdf4' : '#fef2f2',
+            border: `1px solid ${connectionStatus.ok ? '#bbf7d0' : '#fecaca'}`,
             cursor: 'pointer',
           }}
         >
@@ -935,7 +1122,7 @@ export default function TeacherAttendancePage() {
                 height: '8px',
                 borderRadius: '50%',
                 backgroundColor: connectionStatus.ok ? '#10b981' : '#ef4444',
-                boxShadow: connectionStatus.ok ? '0 0 10px #10b981' : '0 0 10px #ef4444',
+                boxShadow: connectionStatus.ok ? '0 0 8px #10b981' : '0 0 8px #ef4444',
                 animation: 'pulseGlow 2s infinite ease-in-out',
               }}
             />
@@ -943,7 +1130,7 @@ export default function TeacherAttendancePage() {
               style={{
                 fontSize: '11px',
                 fontWeight: 600,
-                color: connectionStatus.ok ? '#6ee7b7' : '#fca5a5',
+                color: connectionStatus.ok ? '#166534' : '#991b1b',
               }}
             >
               {connectionStatus.ok
@@ -953,7 +1140,7 @@ export default function TeacherAttendancePage() {
                 : 'School PC Not Found / Tap to Scan'}
             </span>
           </div>
-          <span style={{ fontSize: '10px', color: '#94a3b8', fontFamily: 'monospace', opacity: 0.85 }}>
+          <span style={{ fontSize: '10px', color: '#64748b', fontFamily: 'monospace', fontWeight: 600 }}>
             {hubUrl.replace(/^https?:\/\//, '')}
           </span>
         </div>
@@ -968,10 +1155,8 @@ export default function TeacherAttendancePage() {
           {offlineQueue && offlineQueue.length > 0 && (
             <div
               style={{
-                backgroundColor: 'rgba(245, 158, 11, 0.12)',
-                border: '1px solid rgba(245, 158, 11, 0.35)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
+                backgroundColor: '#fffbeb',
+                border: '1px solid #fde68a',
                 borderRadius: '14px',
                 padding: '12px 16px',
                 marginBottom: '16px',
@@ -979,12 +1164,12 @@ export default function TeacherAttendancePage() {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 gap: '10px',
-                boxShadow: '0 8px 24px rgba(245, 158, 11, 0.15)',
+                boxShadow: '0 4px 14px rgba(245, 158, 11, 0.12)',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Clock size={18} color="#fbbf24" />
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#fef3c7' }}>
+                <Clock size={18} color="#d97706" />
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#92400e' }}>
                   {offlineQueue.length} offline roll call{offlineQueue.length > 1 ? 's' : ''} saved locally.
                 </span>
               </div>
@@ -1001,7 +1186,7 @@ export default function TeacherAttendancePage() {
                   fontSize: '12px',
                   fontWeight: 700,
                   cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(217, 119, 6, 0.4)',
+                  boxShadow: '0 2px 8px rgba(217, 119, 6, 0.3)',
                 }}
               >
                 {isFlushingQueue ? 'Syncing...' : 'Sync to PC'}
@@ -1013,14 +1198,12 @@ export default function TeacherAttendancePage() {
           {connectionStatus.state === 'wifi_disconnected' && (
             <div
               style={{
-                backgroundColor: 'rgba(239, 68, 68, 0.12)',
-                border: '1px solid rgba(239, 68, 68, 0.35)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
+                backgroundColor: '#fef2f2',
+                border: '1px solid #fecaca',
                 borderRadius: '16px',
                 padding: '16px',
                 marginBottom: '16px',
-                boxShadow: '0 12px 28px rgba(239, 68, 68, 0.15)',
+                boxShadow: '0 4px 16px rgba(239, 68, 68, 0.08)',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '12px',
@@ -1032,20 +1215,20 @@ export default function TeacherAttendancePage() {
                     width: '42px',
                     height: '42px',
                     borderRadius: '12px',
-                    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                    backgroundColor: '#fee2e2',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
                   }}
                 >
-                  <WifiOff size={22} color="#f87171" />
+                  <WifiOff size={22} color="#dc2626" />
                 </div>
                 <div>
-                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#fee2e2' }}>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#991b1b' }}>
                     Connect to School Wi-Fi Network
                   </div>
-                  <div style={{ fontSize: '12px', color: '#cbd5e1', marginTop: '3px', lineHeight: 1.4 }}>
+                  <div style={{ fontSize: '12px', color: '#7f1d1d', marginTop: '3px', lineHeight: 1.4 }}>
                     Your phone Wi-Fi is currently off or disconnected. Please join the same school Wi-Fi network as your School PC to sync roll calls instantly.
                   </div>
                 </div>
@@ -1066,7 +1249,7 @@ export default function TeacherAttendancePage() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '6px',
-                  boxShadow: '0 4px 14px rgba(220, 38, 38, 0.35)',
+                  boxShadow: '0 2px 8px rgba(220, 38, 38, 0.25)',
                 }}
               >
                 <RefreshCw size={14} />
@@ -1079,14 +1262,12 @@ export default function TeacherAttendancePage() {
           {connectionStatus.state === 'pc_unreachable' && (
             <div
               style={{
-                backgroundColor: 'rgba(15, 23, 42, 0.75)',
-                border: '1px solid rgba(245, 158, 11, 0.35)',
-                backdropFilter: 'blur(20px)',
-                WebkitBackdropFilter: 'blur(20px)',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
                 borderRadius: '18px',
                 padding: '18px',
                 marginBottom: '16px',
-                boxShadow: '0 16px 36px rgba(0, 0, 0, 0.45)',
+                boxShadow: '0 8px 24px rgba(15, 23, 42, 0.05)',
                 textAlign: 'center',
               }}
             >
@@ -1095,21 +1276,21 @@ export default function TeacherAttendancePage() {
                   width: '50px',
                   height: '50px',
                   borderRadius: '14px',
-                  backgroundColor: 'rgba(245, 158, 11, 0.15)',
-                  border: '1px solid rgba(245, 158, 11, 0.35)',
+                  backgroundColor: '#eff6ff',
+                  border: '1px solid #bfdbfe',
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   marginBottom: '10px',
                 }}
               >
-                <QrCode size={26} color="#fbbf24" />
+                <QrCode size={26} color="#2563eb" />
               </div>
-              <div style={{ fontSize: '16px', fontWeight: 800, color: '#fef3c7' }}>
+              <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
                 School PC Hub Not Detected
               </div>
-              <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px', lineHeight: 1.5 }}>
-                Cannot reach School PC at <span style={{ color: '#c5a880', fontFamily: 'monospace' }}>{hubUrl}</span>. Auto-detect below or scan the QR code displayed on your PC screen.
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', lineHeight: 1.5 }}>
+                Cannot reach School PC at <span style={{ color: '#0284c7', fontFamily: 'monospace', fontWeight: 700 }}>{hubUrl}</span>. Auto-detect below or scan the QR code displayed on your PC screen.
               </div>
 
               {/* Primary: Smart Wi-Fi Auto-Discovery Button */}
@@ -1133,7 +1314,7 @@ export default function TeacherAttendancePage() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '8px',
-                  boxShadow: '0 8px 20px rgba(16, 185, 129, 0.35)',
+                  boxShadow: '0 4px 16px rgba(16, 185, 129, 0.25)',
                 }}
               >
                 {isAutoDiscovering ? (
@@ -1150,9 +1331,9 @@ export default function TeacherAttendancePage() {
               </button>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '12px 0' }}>
-                <div style={{ flex: 1, height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
-                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>OR SCAN QR CODE</span>
-                <div style={{ flex: 1, height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
+                <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
+                <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>OR SCAN QR CODE</span>
+                <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
               </div>
 
               {/* Large Camera Scan Button */}
@@ -1161,9 +1342,9 @@ export default function TeacherAttendancePage() {
                 className="touch-action-btn"
                 style={{
                   width: '100%',
-                  backgroundColor: 'rgba(10, 17, 34, 0.85)',
-                  border: '1px solid rgba(197, 168, 128, 0.4)',
-                  color: '#c5a880',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  color: '#0f172a',
                   padding: '12px',
                   borderRadius: '12px',
                   fontSize: '14px',
@@ -1173,10 +1354,10 @@ export default function TeacherAttendancePage() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '8px',
-                  boxShadow: '0 6px 18px rgba(0, 0, 0, 0.35)',
+                  boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
                 }}
               >
-                <Camera size={18} color="#c5a880" />
+                <Camera size={18} color="#0284c7" />
                 <span>Scan School PC QR Code</span>
               </button>
 
@@ -1192,9 +1373,9 @@ export default function TeacherAttendancePage() {
                     padding: '9px 12px',
                     fontSize: '12px',
                     borderRadius: '10px',
-                    backgroundColor: 'rgba(2, 6, 23, 0.65)',
-                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                    color: '#ffffff',
+                    backgroundColor: '#f8fafc',
+                    border: '1px solid #cbd5e1',
+                    color: '#0f172a',
                     outline: 'none',
                     fontFamily: 'monospace',
                   }}
@@ -1208,8 +1389,8 @@ export default function TeacherAttendancePage() {
                   }}
                   className="touch-action-btn"
                   style={{
-                    backgroundColor: '#1e293b',
-                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    backgroundColor: '#0f172a',
+                    border: 'none',
                     color: '#ffffff',
                     padding: '9px 14px',
                     borderRadius: '10px',
@@ -1228,8 +1409,8 @@ export default function TeacherAttendancePage() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: '8px',
+              gridTemplateColumns: 'repeat(5, 1fr)',
+              gap: '6px',
               marginBottom: '18px',
             }}
           >
@@ -1237,21 +1418,19 @@ export default function TeacherAttendancePage() {
             <div
               className="liquid-card"
               style={{
-                backgroundColor: 'rgba(15, 23, 42, 0.65)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderTop: '2px solid #3b82f6',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderTop: '3px solid #2563eb',
                 borderRadius: '14px',
-                padding: '10px 4px',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+                padding: '10px 2px',
+                boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.4px' }}>
+              <div style={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.2px' }}>
                 Enrolled
               </div>
-              <div style={{ fontSize: '20px', fontWeight: 800, color: '#ffffff', marginTop: '2px' }}>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
                 {schoolTotalStudents}
               </div>
             </div>
@@ -1260,21 +1439,19 @@ export default function TeacherAttendancePage() {
             <div
               className="liquid-card"
               style={{
-                backgroundColor: 'rgba(15, 23, 42, 0.65)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderTop: '2px solid #10b981',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderTop: '3px solid #10b981',
                 borderRadius: '14px',
-                padding: '10px 4px',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+                padding: '10px 2px',
+                boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '9px', color: '#34d399', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.4px' }}>
+              <div style={{ fontSize: '9px', color: '#059669', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.2px' }}>
                 Present
               </div>
-              <div style={{ fontSize: '20px', fontWeight: 800, color: '#34d399', marginTop: '2px' }}>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#059669', marginTop: '2px' }}>
                 {dailyMetrics?.marked ? dailyMetrics.present : (savedSummary?.present ?? 0)}
               </div>
             </div>
@@ -1283,22 +1460,45 @@ export default function TeacherAttendancePage() {
             <div
               className="liquid-card"
               style={{
-                backgroundColor: 'rgba(15, 23, 42, 0.65)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderTop: '2px solid #ef4444',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderTop: '3px solid #ef4444',
                 borderRadius: '14px',
-                padding: '10px 4px',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+                padding: '10px 2px',
+                boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '9px', color: '#f87171', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.4px' }}>
+              <div style={{ fontSize: '9px', color: '#dc2626', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.2px' }}>
                 Absent
               </div>
-              <div style={{ fontSize: '20px', fontWeight: 800, color: '#f87171', marginTop: '2px' }}>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#dc2626', marginTop: '2px' }}>
                 {dailyMetrics?.marked ? dailyMetrics.absent : (savedSummary?.absent ?? 0)}
+              </div>
+            </div>
+
+            {/* Pending Today (Strict Invariant: Present + Absent + Pending = 100) */}
+            <div
+              className="liquid-card"
+              style={{
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderTop: '3px solid #f59e0b',
+                borderRadius: '14px',
+                padding: '10px 2px',
+                boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: '9px', color: '#d97706', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.2px' }}>
+                Pending
+              </div>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#d97706', marginTop: '2px' }}>
+                {dailyMetrics?.marked
+                  ? (dailyMetrics.pending !== undefined
+                      ? dailyMetrics.pending
+                      : Math.max(0, 100 - ((dailyMetrics.present || 0) + (dailyMetrics.absent || 0) + (dailyMetrics.late || 0))))
+                  : 100}
               </div>
             </div>
 
@@ -1306,21 +1506,19 @@ export default function TeacherAttendancePage() {
             <div
               className="liquid-card"
               style={{
-                backgroundColor: 'rgba(15, 23, 42, 0.65)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderTop: '2px solid #a855f7',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderTop: '3px solid #8b5cf6',
                 borderRadius: '14px',
-                padding: '10px 4px',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+                padding: '10px 2px',
+                boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '9px', color: '#c084fc', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.4px' }}>
+              <div style={{ fontSize: '9px', color: '#7c3aed', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.2px' }}>
                 Batches
               </div>
-              <div style={{ fontSize: '20px', fontWeight: 800, color: '#c084fc', marginTop: '2px' }}>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#7c3aed', marginTop: '2px' }}>
                 {uniqueBatches.length}
               </div>
             </div>
@@ -1336,23 +1534,22 @@ export default function TeacherAttendancePage() {
             }}
           >
             <div>
-              <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.3px' }}>
+              <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
                 Academic Batches
               </h1>
-              <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
                 Select a class cohort to record student attendance
               </div>
             </div>
             <span
               style={{
-                backgroundColor: 'rgba(197, 168, 128, 0.12)',
-                border: '1px solid rgba(197, 168, 128, 0.35)',
+                backgroundColor: '#eff6ff',
+                border: '1px solid #bfdbfe',
                 borderRadius: '20px',
                 padding: '4px 12px',
                 fontSize: '11px',
                 fontWeight: 700,
-                color: '#c5a880',
-                backdropFilter: 'blur(8px)',
+                color: '#1d4ed8',
               }}
             >
               {uniqueBatches.length} Classes
@@ -1380,20 +1577,18 @@ export default function TeacherAttendancePage() {
                 width: '100%',
                 padding: '10px 14px 10px 38px',
                 fontSize: '13px',
-                backgroundColor: 'rgba(15, 23, 42, 0.65)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                backgroundColor: '#ffffff',
+                border: '1px solid #cbd5e1',
                 borderRadius: '12px',
-                color: '#ffffff',
+                color: '#0f172a',
                 outline: 'none',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
+                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.03)',
                 boxSizing: 'border-box',
               }}
             />
           </div>
 
-          {/* Batches Cards Grid (Artisanal Liquid Glass Cards) */}
+          {/* Batches Cards Grid (Artisanal Pure White Cards) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {uniqueBatches
               .filter(
@@ -1403,7 +1598,7 @@ export default function TeacherAttendancePage() {
                   b.code?.toLowerCase().includes(searchTerm.toLowerCase())
               )
               .map((batch) => {
-                const bKey = (batch.code || batch.id || '').toUpperCase();
+                const bKey = getCanonicalBatchCode(batch.code || batch.id);
                 const bStatus = batchStatuses[bKey];
                 const isMarkedToday = bStatus && bStatus.taken;
 
@@ -1413,15 +1608,13 @@ export default function TeacherAttendancePage() {
                     onClick={() => openBatchRollCall(batch.id || batch.code)}
                     className="liquid-card"
                     style={{
-                      backgroundColor: 'rgba(15, 23, 42, 0.72)',
-                      backdropFilter: 'blur(20px)',
-                      WebkitBackdropFilter: 'blur(20px)',
+                      backgroundColor: '#ffffff',
                       borderRadius: '16px',
                       padding: '16px',
                       border: isMarkedToday
-                        ? '1px solid rgba(16, 185, 129, 0.35)'
-                        : '1px solid rgba(255, 255, 255, 0.08)',
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                        ? '1px solid #a7f3d0'
+                        : '1px solid #e2e8f0',
+                      boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
@@ -1432,9 +1625,9 @@ export default function TeacherAttendancePage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
                         <span
                           style={{
-                            backgroundColor: 'rgba(197, 168, 128, 0.15)',
-                            border: '1px solid rgba(197, 168, 128, 0.4)',
-                            color: '#c5a880',
+                            backgroundColor: '#f1f5f9',
+                            border: '1px solid #cbd5e1',
+                            color: '#0f172a',
                             padding: '2px 8px',
                             borderRadius: '6px',
                             fontSize: '11px',
@@ -1450,9 +1643,9 @@ export default function TeacherAttendancePage() {
                           <span
                             style={{
                               fontSize: '11px',
-                              color: '#34d399',
-                              backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                              border: '1px solid rgba(16, 185, 129, 0.35)',
+                              color: '#059669',
+                              backgroundColor: '#ecfdf5',
+                              border: '1px solid #a7f3d0',
                               padding: '2px 8px',
                               borderRadius: '20px',
                               fontWeight: 700,
@@ -1462,15 +1655,20 @@ export default function TeacherAttendancePage() {
                             }}
                           >
                             <Check size={11} strokeWidth={3} />
-                            <span>{bStatus.present} Present · {bStatus.absent} Absent</span>
+                            <span>
+                              {bStatus.present} Present · {bStatus.absent} Absent
+                              {(bStatus.pending !== undefined ? bStatus.pending : Math.max(0, (bStatus.total || 20) - (bStatus.present + bStatus.absent + (bStatus.late || 0)))) > 0
+                                ? ` · ${bStatus.pending !== undefined ? bStatus.pending : Math.max(0, (bStatus.total || 20) - (bStatus.present + bStatus.absent + (bStatus.late || 0)))} Pending`
+                                : ''}
+                            </span>
                           </span>
                         ) : (
                           <span
                             style={{
                               fontSize: '11px',
-                              color: '#fbbf24',
-                              backgroundColor: 'rgba(245, 158, 11, 0.12)',
-                              border: '1px solid rgba(245, 158, 11, 0.25)',
+                              color: '#b45309',
+                              backgroundColor: '#fffbeb',
+                              border: '1px solid #fde68a',
                               padding: '2px 8px',
                               borderRadius: '20px',
                               fontWeight: 600,
@@ -1480,14 +1678,14 @@ export default function TeacherAttendancePage() {
                             }}
                           >
                             <Clock size={11} />
-                            <span>Pending Today</span>
+                            <span>20 Students Pending</span>
                           </span>
                         )}
 
                         <span
                           style={{
                             fontSize: '11px',
-                            color: '#94a3b8',
+                            color: '#64748b',
                             display: 'flex',
                             alignItems: 'center',
                             gap: '3px',
@@ -1502,7 +1700,7 @@ export default function TeacherAttendancePage() {
                         style={{
                           fontSize: '16px',
                           fontWeight: 800,
-                          color: '#ffffff',
+                          color: '#0f172a',
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
@@ -1515,7 +1713,7 @@ export default function TeacherAttendancePage() {
                       <div
                         style={{
                           fontSize: '12px',
-                          color: '#94a3b8',
+                          color: '#64748b',
                           marginTop: '4px',
                           display: 'flex',
                           alignItems: 'center',
@@ -1524,8 +1722,8 @@ export default function TeacherAttendancePage() {
                       >
                         <Clock size={12} color="#64748b" />
                         <span>{batch.timing || '08:00 AM – 10:30 AM'}</span>
-                        <span style={{ color: '#475569' }}>•</span>
-                        <span style={{ color: '#60a5fa' }}>
+                        <span style={{ color: '#cbd5e1' }}>•</span>
+                        <span style={{ color: '#2563eb', fontWeight: 600 }}>
                           {batch.student_count !== undefined ? `${batch.student_count} Students` : 'Enrolled'}
                         </span>
                       </div>
@@ -1536,7 +1734,7 @@ export default function TeacherAttendancePage() {
                         display: 'flex',
                         alignItems: 'center',
                         gap: '4px',
-                        color: '#c5a880',
+                        color: '#0284c7',
                         fontSize: '12px',
                         fontWeight: 700,
                         paddingLeft: '12px',
@@ -1571,11 +1769,9 @@ export default function TeacherAttendancePage() {
               onClick={() => setViewMode('batches')}
               className="touch-action-btn"
               style={{
-                backgroundColor: 'rgba(15, 23, 42, 0.75)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                color: '#ffffff',
+                backgroundColor: '#ffffff',
+                border: '1px solid #cbd5e1',
+                color: '#0f172a',
                 padding: '9px 16px',
                 borderRadius: '12px',
                 fontSize: '13px',
@@ -1584,10 +1780,10 @@ export default function TeacherAttendancePage() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px',
-                boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
               }}
             >
-              <ArrowLeft size={16} color="#c5a880" />
+              <ArrowLeft size={16} color="#0284c7" />
               <span>← Batches</span>
             </button>
 
@@ -1596,16 +1792,14 @@ export default function TeacherAttendancePage() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
-                backgroundColor: 'rgba(15, 23, 42, 0.75)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
+                backgroundColor: '#ffffff',
+                border: '1px solid #cbd5e1',
                 borderRadius: '12px',
                 padding: '4px 10px',
-                boxShadow: '0 4px 14px rgba(0,0,0,0.2)',
+                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
               }}
             >
-              <Calendar size={14} color="#c5a880" />
+              <Calendar size={14} color="#0284c7" />
               <input
                 type="date"
                 value={selectedDate}
@@ -1613,7 +1807,7 @@ export default function TeacherAttendancePage() {
                 style={{
                   backgroundColor: 'transparent',
                   border: 'none',
-                  color: '#ffffff',
+                  color: '#0f172a',
                   fontSize: '12px',
                   fontWeight: 700,
                   outline: 'none',
@@ -1628,9 +1822,9 @@ export default function TeacherAttendancePage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
               <span
                 style={{
-                  backgroundColor: 'rgba(197, 168, 128, 0.15)',
-                  border: '1px solid rgba(197, 168, 128, 0.4)',
-                  color: '#c5a880',
+                  backgroundColor: '#f1f5f9',
+                  border: '1px solid #cbd5e1',
+                  color: '#0f172a',
                   padding: '2px 8px',
                   borderRadius: '6px',
                   fontSize: '11px',
@@ -1643,7 +1837,7 @@ export default function TeacherAttendancePage() {
               <span
                 style={{
                   fontSize: '11px',
-                  color: '#94a3b8',
+                  color: '#64748b',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '4px',
@@ -1653,10 +1847,10 @@ export default function TeacherAttendancePage() {
                 {activeBatch.classroom || 'Room 101'}
               </span>
             </div>
-            <h2 style={{ margin: 0, fontSize: '19px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.3px' }}>
+            <h2 style={{ margin: 0, fontSize: '19px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
               {activeBatch.name}
             </h2>
-            <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
               {activeBatch.timing || 'Daily Roll Call Session'}
             </div>
           </div>
@@ -1674,21 +1868,19 @@ export default function TeacherAttendancePage() {
             <div
               className="liquid-card"
               style={{
-                backgroundColor: 'rgba(15, 23, 42, 0.65)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderTop: '2px solid #3b82f6',
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderTop: '3px solid #2563eb',
                 borderRadius: '12px',
                 padding: '8px 4px',
-                boxShadow: '0 6px 18px rgba(0,0,0,0.2)',
+                boxShadow: '0 4px 12px rgba(15, 23, 42, 0.04)',
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '9px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
+              <div style={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>
                 Enrolled
               </div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#ffffff', marginTop: '2px' }}>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
                 {totalCount}
               </div>
             </div>
@@ -1697,21 +1889,19 @@ export default function TeacherAttendancePage() {
             <div
               className="liquid-card"
               style={{
-                backgroundColor: 'rgba(15, 23, 42, 0.65)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderTop: '2px solid #10b981',
+                backgroundColor: '#ecfdf5',
+                border: '1px solid #a7f3d0',
+                borderTop: '3px solid #10b981',
                 borderRadius: '12px',
                 padding: '8px 4px',
-                boxShadow: '0 6px 18px rgba(0,0,0,0.2)',
+                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.06)',
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '9px', color: '#34d399', textTransform: 'uppercase', fontWeight: 700 }}>
+              <div style={{ fontSize: '9px', color: '#047857', textTransform: 'uppercase', fontWeight: 700 }}>
                 Present
               </div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#34d399', marginTop: '2px' }}>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#047857', marginTop: '2px' }}>
                 {presentCount}
               </div>
             </div>
@@ -1720,21 +1910,19 @@ export default function TeacherAttendancePage() {
             <div
               className="liquid-card"
               style={{
-                backgroundColor: 'rgba(15, 23, 42, 0.65)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderTop: '2px solid #f59e0b',
+                backgroundColor: '#fffbeb',
+                border: '1px solid #fde68a',
+                borderTop: '3px solid #f59e0b',
                 borderRadius: '12px',
                 padding: '8px 4px',
-                boxShadow: '0 6px 18px rgba(0,0,0,0.2)',
+                boxShadow: '0 4px 12px rgba(245, 158, 11, 0.06)',
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '9px', color: '#fbbf24', textTransform: 'uppercase', fontWeight: 700 }}>
+              <div style={{ fontSize: '9px', color: '#92400e', textTransform: 'uppercase', fontWeight: 700 }}>
                 Late
               </div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#fbbf24', marginTop: '2px' }}>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#b45309', marginTop: '2px' }}>
                 {lateCount}
               </div>
             </div>
@@ -1743,21 +1931,19 @@ export default function TeacherAttendancePage() {
             <div
               className="liquid-card"
               style={{
-                backgroundColor: 'rgba(15, 23, 42, 0.65)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderTop: '2px solid #ef4444',
+                backgroundColor: '#fff1f2',
+                border: '1px solid #fecdd3',
+                borderTop: '3px solid #ef4444',
                 borderRadius: '12px',
                 padding: '8px 4px',
-                boxShadow: '0 6px 18px rgba(0,0,0,0.2)',
+                boxShadow: '0 4px 12px rgba(239, 68, 68, 0.06)',
                 textAlign: 'center',
               }}
             >
-              <div style={{ fontSize: '9px', color: '#f87171', textTransform: 'uppercase', fontWeight: 700 }}>
+              <div style={{ fontSize: '9px', color: '#9f1239', textTransform: 'uppercase', fontWeight: 700 }}>
                 Absent
               </div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#f87171', marginTop: '2px' }}>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: '#e11d48', marginTop: '2px' }}>
                 {absentCount}
               </div>
             </div>
@@ -1770,9 +1956,9 @@ export default function TeacherAttendancePage() {
               className="touch-action-btn"
               style={{
                 flex: 1,
-                backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                border: '1px solid rgba(16, 185, 129, 0.4)',
-                color: '#34d399',
+                backgroundColor: '#ecfdf5',
+                border: '1px solid #a7f3d0',
+                color: '#047857',
                 borderRadius: '10px',
                 padding: '9px 12px',
                 fontSize: '12px',
@@ -1782,11 +1968,10 @@ export default function TeacherAttendancePage() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '6px',
-                backdropFilter: 'blur(12px)',
-                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.1)',
               }}
             >
-              <CheckCheck size={14} color="#34d399" />
+              <CheckCheck size={14} color="#059669" />
               <span>Mark All Present</span>
             </button>
 
@@ -1795,9 +1980,9 @@ export default function TeacherAttendancePage() {
               className="touch-action-btn"
               style={{
                 flex: 1,
-                backgroundColor: 'rgba(239, 68, 68, 0.12)',
-                border: '1px solid rgba(239, 68, 68, 0.4)',
-                color: '#f87171',
+                backgroundColor: '#fff1f2',
+                border: '1px solid #fecdd3',
+                color: '#e11d48',
                 borderRadius: '10px',
                 padding: '9px 12px',
                 fontSize: '12px',
@@ -1807,11 +1992,10 @@ export default function TeacherAttendancePage() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '6px',
-                backdropFilter: 'blur(12px)',
-                boxShadow: '0 4px 12px rgba(239, 68, 68, 0.15)',
+                boxShadow: '0 2px 8px rgba(239, 68, 68, 0.1)',
               }}
             >
-              <XCircle size={14} color="#f87171" />
+              <XCircle size={14} color="#ef4444" />
               <span>Mark All Absent</span>
             </button>
           </div>
@@ -1832,14 +2016,13 @@ export default function TeacherAttendancePage() {
                 width: '100%',
                 padding: '9px 12px 9px 36px',
                 fontSize: '12px',
-                backgroundColor: 'rgba(15, 23, 42, 0.65)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                backgroundColor: '#ffffff',
+                border: '1px solid #cbd5e1',
                 borderRadius: '10px',
-                color: '#ffffff',
+                color: '#0f172a',
                 outline: 'none',
                 boxSizing: 'border-box',
+                boxShadow: '0 2px 6px rgba(15, 23, 42, 0.03)',
               }}
             />
           </div>
@@ -1857,13 +2040,11 @@ export default function TeacherAttendancePage() {
                   key={student.id}
                   className="liquid-card"
                   style={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.72)',
-                    backdropFilter: 'blur(18px)',
-                    WebkitBackdropFilter: 'blur(18px)',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #e2e8f0',
                     borderRadius: '16px',
                     padding: '14px',
-                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
+                    boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: '12px',
@@ -1885,16 +2066,16 @@ export default function TeacherAttendancePage() {
                           width: '36px',
                           height: '36px',
                           borderRadius: '10px',
-                          backgroundColor: 'rgba(197, 168, 128, 0.15)',
-                          border: '1px solid rgba(197, 168, 128, 0.35)',
-                          color: '#c5a880',
+                          backgroundColor: '#f1f5f9',
+                          border: '1px solid #cbd5e1',
+                          color: '#0f172a',
                           fontSize: '14px',
                           fontWeight: 800,
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           flexShrink: 0,
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                          boxShadow: '0 2px 6px rgba(15, 23, 42, 0.05)',
                         }}
                       >
                         {student.roll_no}
@@ -1906,22 +2087,68 @@ export default function TeacherAttendancePage() {
                           style={{
                             fontSize: '15px',
                             fontWeight: 800,
-                            color: '#ffffff',
+                            color: '#0f172a',
                             lineHeight: 1.3,
                             wordBreak: 'break-word',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            flexWrap: 'wrap',
                           }}
                         >
-                          {student.full_name || student.name || student['Student Name'] || `Student ${student.roll_no || student.admission_no}`}
+                          <span>{student.full_name || student.name || student['Student Name'] || `Student ${student.roll_no || student.admission_no}`}</span>
+                          {isStudentBirthdayToday(student.dob) && (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                padding: '1px 6px',
+                                borderRadius: '10px',
+                                backgroundColor: '#fce7f3',
+                                color: '#be185d',
+                                fontSize: '10px',
+                                fontWeight: 800,
+                              }}
+                            >
+                              🎂 Birthday!
+                            </span>
+                          )}
                         </div>
                         <div
                           style={{
                             fontSize: '11px',
-                            color: '#94a3b8',
+                            color: '#64748b',
                             marginTop: '2px',
                             fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
                           }}
                         >
-                          ID: <span style={{ color: '#cbd5e1', fontFamily: 'monospace' }}>{student.admission_no}</span>
+                          <span>ID: <span style={{ color: '#334155', fontFamily: 'monospace', fontWeight: 700 }}>{student.admission_no}</span></span>
+                          {isStudentBirthdayToday(student.dob) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveBirthdayStudent(student);
+                                setIsBirthdayModalOpen(true);
+                              }}
+                              style={{
+                                border: 'none',
+                                background: '#ec4899',
+                                color: '#ffffff',
+                                borderRadius: '4px',
+                                padding: '2px 8px',
+                                fontSize: '10.5px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              🎉 Wish
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1933,11 +2160,10 @@ export default function TeacherAttendancePage() {
                         borderRadius: '20px',
                         fontSize: '11px',
                         fontWeight: 800,
-                        backgroundColor: isPresent ? 'rgba(16, 185, 129, 0.18)' : isLate ? 'rgba(245, 158, 11, 0.18)' : 'rgba(239, 68, 68, 0.18)',
-                        color: isPresent ? '#34d399' : isLate ? '#fbbf24' : '#f87171',
-                        border: `1px solid ${isPresent ? 'rgba(16, 185, 129, 0.4)' : isLate ? 'rgba(245, 158, 11, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                        backgroundColor: isPresent ? '#ecfdf5' : isLate ? '#fffbeb' : '#fff1f2',
+                        color: isPresent ? '#059669' : isLate ? '#b45309' : '#e11d48',
+                        border: `1px solid ${isPresent ? '#a7f3d0' : isLate ? '#fde68a' : '#fecdd3'}`,
                         flexShrink: 0,
-                        backdropFilter: 'blur(8px)',
                       }}
                     >
                       {status}
@@ -1950,8 +2176,8 @@ export default function TeacherAttendancePage() {
                       display: 'grid',
                       gridTemplateColumns: 'repeat(3, 1fr)',
                       gap: '6px',
-                      backgroundColor: 'rgba(2, 6, 23, 0.65)',
-                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                      backgroundColor: '#f1f5f9',
+                      border: '1px solid #e2e8f0',
                       padding: '4px',
                       borderRadius: '12px',
                     }}
@@ -1962,9 +2188,8 @@ export default function TeacherAttendancePage() {
                       onClick={() => setStudentStatus(student.id, 'Present')}
                       className="touch-action-btn"
                       style={{
-                        backgroundColor: isPresent ? '#059669' : 'transparent',
-                        backgroundImage: isPresent ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)' : 'none',
-                        color: isPresent ? '#ffffff' : '#94a3b8',
+                        backgroundColor: isPresent ? '#10b981' : 'transparent',
+                        color: isPresent ? '#ffffff' : '#64748b',
                         border: 'none',
                         borderRadius: '9px',
                         padding: '10px 4px',
@@ -1975,10 +2200,10 @@ export default function TeacherAttendancePage() {
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '6px',
-                        boxShadow: isPresent ? '0 4px 14px rgba(16, 185, 129, 0.4)' : 'none',
+                        boxShadow: isPresent ? '0 2px 8px rgba(16, 185, 129, 0.35)' : 'none',
                       }}
                     >
-                      <Check size={15} strokeWidth={isPresent ? 3 : 2} color={isPresent ? '#ffffff' : '#94a3b8'} />
+                      <Check size={15} strokeWidth={isPresent ? 3 : 2} color={isPresent ? '#ffffff' : '#64748b'} />
                       <span>Present</span>
                     </button>
 
@@ -1988,9 +2213,8 @@ export default function TeacherAttendancePage() {
                       onClick={() => setStudentStatus(student.id, 'Late')}
                       className="touch-action-btn"
                       style={{
-                        backgroundColor: isLate ? '#d97706' : 'transparent',
-                        backgroundImage: isLate ? 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)' : 'none',
-                        color: isLate ? '#ffffff' : '#94a3b8',
+                        backgroundColor: isLate ? '#f59e0b' : 'transparent',
+                        color: isLate ? '#ffffff' : '#64748b',
                         border: 'none',
                         borderRadius: '9px',
                         padding: '10px 4px',
@@ -2001,10 +2225,10 @@ export default function TeacherAttendancePage() {
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '6px',
-                        boxShadow: isLate ? '0 4px 14px rgba(245, 158, 11, 0.4)' : 'none',
+                        boxShadow: isLate ? '0 2px 8px rgba(245, 158, 11, 0.35)' : 'none',
                       }}
                     >
-                      <Clock size={15} strokeWidth={isLate ? 3 : 2} color={isLate ? '#ffffff' : '#94a3b8'} />
+                      <Clock size={15} strokeWidth={isLate ? 3 : 2} color={isLate ? '#ffffff' : '#64748b'} />
                       <span>Late</span>
                     </button>
 
@@ -2014,9 +2238,8 @@ export default function TeacherAttendancePage() {
                       onClick={() => setStudentStatus(student.id, 'Absent')}
                       className="touch-action-btn"
                       style={{
-                        backgroundColor: isAbsent ? '#dc2626' : 'transparent',
-                        backgroundImage: isAbsent ? 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)' : 'none',
-                        color: isAbsent ? '#ffffff' : '#94a3b8',
+                        backgroundColor: isAbsent ? '#ef4444' : 'transparent',
+                        color: isAbsent ? '#ffffff' : '#64748b',
                         border: 'none',
                         borderRadius: '9px',
                         padding: '10px 4px',
@@ -2027,10 +2250,10 @@ export default function TeacherAttendancePage() {
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '6px',
-                        boxShadow: isAbsent ? '0 4px 14px rgba(239, 68, 68, 0.4)' : 'none',
+                        boxShadow: isAbsent ? '0 2px 8px rgba(239, 68, 68, 0.35)' : 'none',
                       }}
                     >
-                      <X size={15} strokeWidth={isAbsent ? 3 : 2} color={isAbsent ? '#ffffff' : '#94a3b8'} />
+                      <X size={15} strokeWidth={isAbsent ? 3 : 2} color={isAbsent ? '#ffffff' : '#64748b'} />
                       <span>Absent</span>
                     </button>
                   </div>
@@ -2039,20 +2262,20 @@ export default function TeacherAttendancePage() {
             })}
           </div>
 
-          {/* Sticky Bottom "DONE — Save to School PC" Action Bar (Floating Liquid Glass Dock) */}
+          {/* Sticky Bottom "DONE — Save to School PC" Action Bar (Floating White Glass Dock) */}
           <div
             style={{
               position: 'fixed',
               bottom: '64px',
               left: 0,
               right: 0,
-              backgroundColor: 'rgba(10, 17, 34, 0.88)',
+              backgroundColor: 'rgba(255, 255, 255, 0.94)',
               backdropFilter: 'blur(24px)',
               WebkitBackdropFilter: 'blur(24px)',
-              borderTop: '1px solid rgba(255, 255, 255, 0.12)',
+              borderTop: '1px solid #e2e8f0',
               padding: '10px 16px',
               zIndex: 40,
-              boxShadow: '0 -8px 30px rgba(0,0,0,0.5)',
+              boxShadow: '0 -4px 20px rgba(15, 23, 42, 0.08)',
             }}
           >
             <div style={{ maxWidth: '640px', margin: '0 auto' }}>
@@ -2062,9 +2285,9 @@ export default function TeacherAttendancePage() {
                 className="touch-action-btn"
                 style={{
                   width: '100%',
-                  backgroundColor: '#059669',
-                  backgroundImage: 'linear-gradient(135deg, #065f46 0%, #059669 50%, #10b981 100%)',
-                  border: '1px solid rgba(52, 211, 153, 0.4)',
+                  backgroundColor: '#2563eb',
+                  backgroundImage: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 50%, #3b82f6 100%)',
+                  border: 'none',
                   color: '#ffffff',
                   padding: '14px 18px',
                   borderRadius: '14px',
@@ -2075,7 +2298,7 @@ export default function TeacherAttendancePage() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '8px',
-                  boxShadow: '0 8px 24px rgba(16, 185, 129, 0.35)',
+                  boxShadow: '0 4px 16px rgba(37, 99, 235, 0.35)',
                 }}
               >
                 {isSubmitting ? (
@@ -2104,7 +2327,9 @@ export default function TeacherAttendancePage() {
             position: 'fixed',
             inset: 0,
             zIndex: 9999,
-            backgroundColor: 'rgba(0,0,0,0.92)',
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -2114,14 +2339,14 @@ export default function TeacherAttendancePage() {
         >
           <div
             style={{
-              backgroundColor: '#0a1122',
+              backgroundColor: '#ffffff',
               borderRadius: '16px',
-              border: '2px solid #c5a880',
+              border: '1px solid #e2e8f0',
               padding: '18px',
               width: '100%',
               maxWidth: '380px',
               textAlign: 'center',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+              boxShadow: '0 20px 50px rgba(15, 23, 42, 0.15)',
             }}
           >
             <div
@@ -2132,7 +2357,7 @@ export default function TeacherAttendancePage() {
                 marginBottom: '12px',
               }}
             >
-              <div style={{ fontSize: '15px', fontWeight: 800, color: '#ffffff' }}>
+              <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
                 📷 Scan School PC QR Code
               </div>
               <button
@@ -2140,7 +2365,7 @@ export default function TeacherAttendancePage() {
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#cbd5e1',
+                  color: '#64748b',
                   cursor: 'pointer',
                 }}
               >
@@ -2164,9 +2389,9 @@ export default function TeacherAttendancePage() {
               <div
                 style={{
                   marginTop: '10px',
-                  backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                  border: '1px solid #ef4444',
-                  color: '#f87171',
+                  backgroundColor: '#fee2e2',
+                  border: '1px solid #fecaca',
+                  color: '#dc2626',
                   padding: '8px 12px',
                   borderRadius: '8px',
                   fontSize: '11px',
@@ -2177,7 +2402,7 @@ export default function TeacherAttendancePage() {
               </div>
             )}
 
-            <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '12px' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '12px' }}>
               Point camera at the QR code displayed in the School PC Desktop App
             </div>
           </div>
@@ -2191,7 +2416,9 @@ export default function TeacherAttendancePage() {
             position: 'fixed',
             inset: 0,
             zIndex: 9999,
-            backgroundColor: 'rgba(0,0,0,0.7)',
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -2201,16 +2428,14 @@ export default function TeacherAttendancePage() {
           <div
             className="liquid-card"
             style={{
-              backgroundColor: 'rgba(10, 17, 34, 0.92)',
-              backdropFilter: 'blur(24px)',
-              WebkitBackdropFilter: 'blur(24px)',
-              border: '1px solid rgba(16, 185, 129, 0.4)',
+              backgroundColor: '#ffffff',
+              border: '1px solid #e2e8f0',
               borderRadius: '20px',
               padding: '24px',
               width: '100%',
               maxWidth: '380px',
               textAlign: 'center',
-              boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 20px rgba(16, 185, 129, 0.2)',
+              boxShadow: '0 20px 50px rgba(15, 23, 42, 0.15)',
             }}
           >
             <div
@@ -2218,22 +2443,22 @@ export default function TeacherAttendancePage() {
                 width: '60px',
                 height: '60px',
                 borderRadius: '50%',
-                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                backgroundColor: '#ecfdf5',
                 border: '2px solid #10b981',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: '14px',
-                boxShadow: '0 0 20px rgba(16, 185, 129, 0.35)',
+                boxShadow: '0 4px 16px rgba(16, 185, 129, 0.25)',
               }}
             >
-              <CheckCircle2 size={34} color="#34d399" />
+              <CheckCircle2 size={34} color="#059669" />
             </div>
 
-            <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.3px' }}>
+            <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
               Roll Call Recorded!
             </h3>
-            <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px', lineHeight: 1.4 }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', lineHeight: 1.4 }}>
               Attendance data has been synchronized with the School PC in real-time.
             </div>
 
@@ -2241,8 +2466,8 @@ export default function TeacherAttendancePage() {
             <div
               style={{
                 marginTop: '16px',
-                backgroundColor: 'rgba(2, 6, 23, 0.65)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
+                backgroundColor: '#f8fafc',
+                border: '1px solid #e2e8f0',
                 borderRadius: '14px',
                 padding: '12px',
                 display: 'grid',
@@ -2252,26 +2477,26 @@ export default function TeacherAttendancePage() {
               }}
             >
               <div>
-                <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700 }}>Total</div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff', marginTop: '2px' }}>
+                <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>Total</div>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
                   {savedSummary.total}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: '10px', color: '#34d399', fontWeight: 700 }}>Present</div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: '#34d399', marginTop: '2px' }}>
+                <div style={{ fontSize: '10px', color: '#059669', fontWeight: 700 }}>Present</div>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: '#059669', marginTop: '2px' }}>
                   {savedSummary.present}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: '10px', color: '#fbbf24', fontWeight: 700 }}>Late</div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: '#fbbf24', marginTop: '2px' }}>
+                <div style={{ fontSize: '10px', color: '#b45309', fontWeight: 700 }}>Late</div>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: '#b45309', marginTop: '2px' }}>
                   {savedSummary.late}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: '10px', color: '#f87171', fontWeight: 700 }}>Absent</div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: '#f87171', marginTop: '2px' }}>
+                <div style={{ fontSize: '10px', color: '#dc2626', fontWeight: 700 }}>Absent</div>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: '#dc2626', marginTop: '2px' }}>
                   {savedSummary.absent}
                 </div>
               </div>
@@ -2296,7 +2521,7 @@ export default function TeacherAttendancePage() {
                 fontSize: '13px',
                 fontWeight: 800,
                 cursor: 'pointer',
-                boxShadow: '0 6px 18px rgba(16, 185, 129, 0.35)',
+                boxShadow: '0 4px 16px rgba(16, 185, 129, 0.3)',
               }}
             >
               Back to Batches
@@ -2312,9 +2537,9 @@ export default function TeacherAttendancePage() {
             position: 'fixed',
             inset: 0,
             zIndex: 9999,
-            backgroundColor: 'rgba(0,0,0,0.85)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -2324,35 +2549,33 @@ export default function TeacherAttendancePage() {
           <div
             className="liquid-card"
             style={{
-              backgroundColor: 'rgba(10, 17, 34, 0.95)',
-              backdropFilter: 'blur(24px)',
-              WebkitBackdropFilter: 'blur(24px)',
-              border: '1px solid rgba(197, 168, 128, 0.35)',
+              backgroundColor: '#ffffff',
+              border: '1px solid #e2e8f0',
               borderRadius: '20px',
               padding: '22px',
               width: '100%',
               maxWidth: '380px',
-              boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+              boxShadow: '0 20px 50px rgba(15, 23, 42, 0.15)',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <div style={{ fontSize: '16px', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.3px' }}>
+              <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
                 School PC Wi-Fi Connection
               </div>
               <button
                 onClick={() => setShowSettingsModal(false)}
-                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '4px' }}
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '16px', lineHeight: 1.45 }}>
+            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '16px', lineHeight: 1.45 }}>
               Enter the local IP address of your School PC. Both devices must be on the same School Wi-Fi network.
             </div>
 
             <div style={{ marginBottom: '14px' }}>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#c5a880', marginBottom: '6px' }}>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
                 SCHOOL PC WI-FI URL:
               </label>
               <input
@@ -2365,9 +2588,9 @@ export default function TeacherAttendancePage() {
                   padding: '10px 12px',
                   fontSize: '13px',
                   borderRadius: '10px',
-                  backgroundColor: 'rgba(2, 6, 23, 0.75)',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
-                  color: '#ffffff',
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  color: '#0f172a',
                   outline: 'none',
                   fontFamily: 'monospace',
                   boxSizing: 'border-box',
@@ -2380,7 +2603,7 @@ export default function TeacherAttendancePage() {
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#c5a880',
+                  color: '#0284c7',
                   fontSize: '11px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -2415,7 +2638,7 @@ export default function TeacherAttendancePage() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '6px',
-                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)',
+                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.25)',
                 }}
               >
                 <Search size={14} />
@@ -2429,9 +2652,9 @@ export default function TeacherAttendancePage() {
                 className="touch-action-btn"
                 style={{
                   flex: 1,
-                  backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  color: '#cbd5e1',
+                  backgroundColor: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  color: '#334155',
                   padding: '11px',
                   borderRadius: '10px',
                   fontSize: '12px',
@@ -2452,9 +2675,9 @@ export default function TeacherAttendancePage() {
                 className="touch-action-btn"
                 style={{
                   flex: 1,
-                  backgroundColor: '#1e293b',
-                  border: '1px solid rgba(197, 168, 128, 0.4)',
-                  color: '#c5a880',
+                  backgroundColor: '#0f172a',
+                  border: 'none',
+                  color: '#ffffff',
                   padding: '11px',
                   borderRadius: '10px',
                   fontSize: '12px',
@@ -2470,7 +2693,7 @@ export default function TeacherAttendancePage() {
       )}
 
       {/* ========================================================================= */}
-      {/* ARTISANAL LIQUID GLASS FIXED MOBILE BOTTOM NAVIGATION BAR                */}
+      {/* ARTISANAL PURE WHITE FIXED MOBILE BOTTOM NAVIGATION BAR                  */}
       {/* ========================================================================= */}
       <nav
         style={{
@@ -2479,15 +2702,15 @@ export default function TeacherAttendancePage() {
           left: 0,
           right: 0,
           height: '64px',
-          backgroundColor: 'rgba(10, 17, 34, 0.88)',
+          backgroundColor: 'rgba(255, 255, 255, 0.94)',
           backdropFilter: 'blur(24px)',
           WebkitBackdropFilter: 'blur(24px)',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          borderTop: '1px solid #e2e8f0',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-around',
           zIndex: 100,
-          boxShadow: '0 -6px 20px rgba(0,0,0,0.35)',
+          boxShadow: '0 -4px 16px rgba(15, 23, 42, 0.04)',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
       >
@@ -2502,7 +2725,7 @@ export default function TeacherAttendancePage() {
             flexDirection: 'column',
             alignItems: 'center',
             gap: '3px',
-            color: viewMode === 'batches' ? '#c5a880' : '#94a3b8',
+            color: viewMode === 'batches' ? '#2563eb' : '#64748b',
             cursor: 'pointer',
             padding: '6px 12px',
           }}
@@ -2511,13 +2734,13 @@ export default function TeacherAttendancePage() {
             style={{
               padding: '2px 10px',
               borderRadius: '12px',
-              backgroundColor: viewMode === 'batches' ? 'rgba(197, 168, 128, 0.15)' : 'transparent',
+              backgroundColor: viewMode === 'batches' ? '#eff6ff' : 'transparent',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <School size={20} color={viewMode === 'batches' ? '#c5a880' : '#94a3b8'} />
+            <School size={20} color={viewMode === 'batches' ? '#2563eb' : '#64748b'} />
           </div>
           <span style={{ fontSize: '10px', fontWeight: viewMode === 'batches' ? 800 : 500 }}>Batches</span>
         </button>
@@ -2533,12 +2756,12 @@ export default function TeacherAttendancePage() {
             flexDirection: 'column',
             alignItems: 'center',
             gap: '3px',
-            color: '#94a3b8',
+            color: '#64748b',
             cursor: 'pointer',
             padding: '6px 12px',
           }}
         >
-          <Camera size={20} color="#94a3b8" />
+          <Camera size={20} color="#64748b" />
           <span style={{ fontSize: '10px', fontWeight: 500 }}>Scan QR</span>
         </button>
 
@@ -2556,12 +2779,12 @@ export default function TeacherAttendancePage() {
             flexDirection: 'column',
             alignItems: 'center',
             gap: '3px',
-            color: '#94a3b8',
+            color: '#64748b',
             cursor: 'pointer',
             padding: '6px 12px',
           }}
         >
-          <RefreshCw size={20} color="#94a3b8" className={isLoading || isFlushingQueue ? 'animate-spin' : ''} />
+          <RefreshCw size={20} color="#64748b" className={isLoading || isFlushingQueue ? 'animate-spin' : ''} />
           <span style={{ fontSize: '10px', fontWeight: 500 }}>Sync PC</span>
         </button>
 
@@ -2576,15 +2799,15 @@ export default function TeacherAttendancePage() {
             flexDirection: 'column',
             alignItems: 'center',
             gap: '3px',
-            color: connectionStatus.ok ? '#34d399' : '#fbbf24',
+            color: connectionStatus.ok ? '#059669' : '#b45309',
             cursor: 'pointer',
             padding: '6px 12px',
           }}
         >
           {isAutoDiscovering ? (
-            <RefreshCw size={20} color="#34d399" className="animate-spin" />
+            <RefreshCw size={20} color="#059669" className="animate-spin" />
           ) : (
-            <Search size={20} color={connectionStatus.ok ? '#34d399' : '#fbbf24'} />
+            <Search size={20} color={connectionStatus.ok ? '#059669' : '#b45309'} />
           )}
           <span style={{ fontSize: '10px', fontWeight: 700 }}>
             {connectionStatus.ok ? 'Wi-Fi PC' : 'Find PC'}
@@ -2602,15 +2825,21 @@ export default function TeacherAttendancePage() {
             flexDirection: 'column',
             alignItems: 'center',
             gap: '3px',
-            color: '#94a3b8',
+            color: '#64748b',
             cursor: 'pointer',
             padding: '6px 12px',
           }}
         >
-          <Settings size={20} color="#94a3b8" />
+          <Settings size={20} color="#64748b" />
           <span style={{ fontSize: '10px', fontWeight: 500 }}>Settings</span>
         </button>
       </nav>
+
+      <BirthdayWishModal
+        isOpen={isBirthdayModalOpen}
+        onClose={() => setIsBirthdayModalOpen(false)}
+        student={activeBirthdayStudent}
+      />
     </div>
   );
 }

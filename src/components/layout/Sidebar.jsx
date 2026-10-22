@@ -77,6 +77,7 @@ export default function Sidebar({
 
     if (logoClicksRef.current.count >= 5) {
       logoClicksRef.current.count = 0;
+      if (isTauriDesktop()) return;
       try {
         sessionStorage.setItem('sms_dev_console_unlocked', 'true');
       } catch {}
@@ -151,24 +152,22 @@ export default function Sidebar({
       icon: Settings,
       permission: 'manage_settings',
     },
+    {
+      id: 'master-portal',
+      label: 'Admin Control Center',
+      icon: ShieldCheck,
+      badge: 'Admin',
+      permission: null,
+    },
   ];
 
-  const isDesktop = isTauriDesktop();
-
-  // Strict Platform Architecture Split:
-  // 1. Desktop EXE (isDesktop): Pure School ERP Client Only. Zero SaaS Master Console.
-  // 2. Vercel Web (!isDesktop): Pure SaaS Master Admin & License Management Portal for Developer/Owner.
-  const visibleNavItems = !isDesktop
-    ? [
-        {
-          id: 'master-portal',
-          label: 'SaaS Master Console',
-          icon: ShieldAlert,
-          badge: 'Dev',
-          permission: null,
-        },
-      ]
-    : allNavItems;
+  // Strictly filter out Admin Control Center on Desktop EXE
+  const visibleNavItems = allNavItems.filter((item) => {
+    if (item.id === 'master-portal' && isTauriDesktop()) {
+      return false;
+    }
+    return true;
+  });
 
   const handleNavClick = (id) => {
     onNavigate(id);

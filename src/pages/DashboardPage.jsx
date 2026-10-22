@@ -20,6 +20,7 @@ import {
   Download,
   Sparkles,
   Plus,
+  Cake,
 } from 'lucide-react';
 import StatsCard from '../components/common/StatsCard';
 import Badge from '../components/common/Badge';
@@ -27,7 +28,10 @@ import Button from '../components/common/Button';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import SqlImportModal from '../components/importer/SqlImportModal';
 import MasterImportModal from '../components/importer/MasterImportModal';
+import BirthdayWishModal from '../components/students/BirthdayWishModal';
 import { downloadSampleTemplate, downloadAllInOneTemplate } from '../lib/importer/templateGenerator';
+import { CANONICAL_STUDENTS } from '../data/canonicalSchoolData.js';
+import { isStudentBirthdayToday } from '../lib/telegramClient.js';
 
 /**
  * Simplified Executive Dashboard
@@ -41,16 +45,22 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
   const [isMasterModalOpen, setIsMasterModalOpen] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
-  // 4 Primary Metrics
+  // 5 Primary Metrics (Strict Invariant: Present + Absent + Pending = Total Students)
   const [stats, setStats] = useState({
     totalStudents: 0,
     presentToday: 0,
     absentToday: 0,
+    pendingToday: 0,
     activeBatches: 0,
   });
 
   const [todayAttendance, setTodayAttendance] = useState([]);
   const [batchesSummary, setBatchesSummary] = useState([]);
+
+  // Birthday Greeting State
+  const [birthdayStudents, setBirthdayStudents] = useState([]);
+  const [activeBirthdayStudent, setActiveBirthdayStudent] = useState(null);
+  const [isBirthdayModalOpen, setIsBirthdayModalOpen] = useState(false);
 
   const todayIso = new Date().toISOString().split('T')[0];
   const todayFormatted = new Date().toLocaleDateString('en-IN', {
@@ -74,11 +84,17 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
     setError(null);
 
     try {
-      // 1. Total Enrolled Students
-      const { count: studentCount, error: sErr } = await supabase
+      // 1. Total Enrolled Students & Birthday Detection
+      const { data: studentsData, count: studentCount, error: sErr } = await supabase
         .from('students')
-        .select('id', { count: 'exact', head: true });
+        .select('id, admission_no, roll_no, full_name, batch_id, dob, phone, contact_number, status', { count: 'exact' });
       if (sErr) throw sErr;
+
+      const studentList = studentsData && studentsData.length > 0 ? studentsData : CANONICAL_STUDENTS;
+      const bdays = studentList.filter(
+        (s) => s.status !== 'inactive' && s.status !== 'suspended' && isStudentBirthdayToday(s.dob)
+      );
+      setBirthdayStudents(bdays);
 
       // 2. Active Batches with enrolled student count
       const { data: batchesData, error: bErr } = await supabase
@@ -117,28 +133,63 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
       if (aErr) throw aErr;
 
       const records = attendanceData || [];
-      // Deduplicate attendance records by distinct student for today to guarantee accurate metrics
+      // Build canonical student lookup dictionary to resolve any student ID or admission_no
+      const canonicalStudentLookup = new Map();
+      (CANONICAL_STUDENTS || []).forEach((cs) => {
+        if (cs.admission_no) canonicalStudentLookup.set(cs.admission_no.trim().toUpperCase(), cs);
+        if (cs.id) canonicalStudentLookup.set(cs.id.trim().toUpperCase(), cs);
+      });
+
+      // Deduplicate attendance records: Strictly 1 state per student per date
       const studentAttendanceMap = new Map();
       records.forEach((r) => {
-        const studentKey =
-          (r.students && (r.students.id || r.students.admission_no)) ||
-          r.admission_no ||
-          r.student_id ||
-          (r.full_name ? r.full_name.trim().toLowerCase() : null) ||
-          r.id;
-        if (studentKey && !studentAttendanceMap.has(studentKey)) {
-          studentAttendanceMap.set(studentKey, r);
+        const rawAdm = (r.students?.admission_no || r.admission_no || '').trim().toUpperCase();
+        const rawId = (r.students?.id || r.student_id || '').trim().toUpperCase();
+        const rawBatch = (r.batch_id || r.batch_code || r.batches?.code || r.batches?.id || '').trim().toUpperCase();
+        const rawName = (r.students?.full_name || r.full_name || '').trim().toLowerCase();
+
+        // 1. Match authoritatively by Admission No or Student ID
+        let matched = (rawAdm ? canonicalStudentLookup.get(rawAdm) : null) || (rawId ? canonicalStudentLookup.get(rawId) : null);
+
+        // 2. Fallback to name matching strictly scoped within the matching batch
+        if (!matched && rawName) {
+          matched = (CANONICAL_STUDENTS || []).find((cs) => {
+            const batchMatch = !rawBatch || 
+              cs.batch_id.toUpperCase() === rawBatch || 
+              cs.batch_code.toUpperCase() === rawBatch;
+            return batchMatch && cs.full_name.trim().toLowerCase() === rawName;
+          });
+        }
+
+        // Discard extraneous test mock records (e.g. SMS-2026-2666)
+        if (rawAdm.startsWith('SMS-2026-') || (rawId && rawId.startsWith('SMS-2026-'))) {
+          return;
+        }
+
+        const studentKey = matched ? matched.admission_no : (rawAdm || rawId || null);
+        if (!studentKey) return;
+
+        if (!studentAttendanceMap.has(studentKey)) {
+          studentAttendanceMap.set(studentKey, {
+            ...r,
+            admission_no: matched ? matched.admission_no : (r.admission_no || studentKey),
+            full_name: matched ? matched.full_name : (r.full_name || r.students?.full_name || ''),
+            roll_no: matched ? matched.roll_no : (r.roll_no || r.students?.roll_no || ''),
+          });
         }
       });
 
       const uniqueRecords = Array.from(studentAttendanceMap.values());
       const present = uniqueRecords.filter((r) => r.status === 'Present').length;
       const absent = uniqueRecords.filter((r) => r.status === 'Absent' || r.status === 'Late').length;
+      const totalEnrolled = studentCount || (CANONICAL_STUDENTS ? CANONICAL_STUDENTS.length : 100);
+      const pending = Math.max(0, totalEnrolled - (present + absent));
 
       setStats({
-        totalStudents: studentCount || 0,
+        totalStudents: totalEnrolled,
         presentToday: present,
         absentToday: absent,
+        pendingToday: pending,
         activeBatches: (batchesData || []).filter((b) => b.is_active !== false).length,
       });
 
@@ -233,8 +284,110 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
         </div>
       )}
 
-      {/* EXACTLY 4 PRIMARY STATS (Equal-width row on desktop) */}
-      <div className="stats-grid" style={{ marginBottom: '16px' }}>
+      {/* 🎂 Celebratory Birthday Banner */}
+      {birthdayStudents.length > 0 && (
+        <div
+          style={{
+            marginBottom: '16px',
+            padding: '14px 18px',
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, rgba(236, 72, 153, 0.08) 0%, rgba(244, 114, 182, 0.16) 100%)',
+            border: '1px solid rgba(236, 72, 153, 0.35)',
+            boxShadow: '0 4px 14px rgba(236, 72, 153, 0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div
+              style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '10px',
+                backgroundColor: '#ec4899',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(236, 72, 153, 0.35)',
+              }}
+            >
+              <Cake size={22} />
+            </div>
+            <div>
+              <div
+                style={{
+                  fontSize: '14.5px',
+                  fontWeight: 700,
+                  color: '#831843',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <span>🎂 Today's Student Birthdays ({birthdayStudents.length})</span>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    padding: '2px 8px',
+                    borderRadius: '999px',
+                    backgroundColor: '#fbcfe8',
+                    color: '#9d174d',
+                    fontWeight: 600,
+                  }}
+                >
+                  Celebration
+                </span>
+              </div>
+              <div style={{ fontSize: '12.5px', color: '#9d174d', marginTop: '2px' }}>
+                {birthdayStudents.map((s, idx) => (
+                  <span key={s.id || s.admission_no || idx} style={{ fontWeight: 600 }}>
+                    {s.full_name} ({s.batch_name || s.batch_code || s.batch_id || 'General'})
+                    {idx < birthdayStudents.length - 1 ? ', ' : ''}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {birthdayStudents.map((s) => (
+              <button
+                key={s.id || s.admission_no}
+                type="button"
+                onClick={() => {
+                  setActiveBirthdayStudent(s);
+                  setIsBirthdayModalOpen(true);
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 13px',
+                  borderRadius: '6px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid #f472b6',
+                  color: '#be185d',
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Sparkles size={14} color="#ec4899" />
+                Wish {s.full_name ? s.full_name.split(' ')[0] : 'Student'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 5 PRIMARY STATS GRID (Enrolled, Present, Absent, Pending, Batches) */}
+      <div className="stats-grid" style={{ marginBottom: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
         <StatsCard
           title="Total Students"
           value={loading ? '...' : String(stats.totalStudents)}
@@ -260,6 +413,14 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
         />
 
         <StatsCard
+          title="Pending Roll Call"
+          value={loading ? '...' : String(stats.pendingToday)}
+          subtext="Attendance not marked yet"
+          icon={Clock}
+          variant={stats.pendingToday > 0 ? 'warning' : 'success'}
+        />
+
+        <StatsCard
           title="Active Batches"
           value={loading ? '...' : String(stats.activeBatches)}
           subtext="Configured cohorts"
@@ -267,6 +428,76 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
           variant="gold"
         />
       </div>
+
+      {/* Synchronized Attendance Proportion Bar: Present + Absent + Pending = Total */}
+      {stats.totalStudents > 0 && (
+        <div
+          style={{
+            marginBottom: '20px',
+            padding: '12px 18px',
+            borderRadius: '12px',
+            backgroundColor: '#ffffff',
+            border: '1px solid rgba(226, 232, 240, 0.9)',
+            boxShadow: '0 2px 8px rgba(15, 23, 42, 0.03)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', fontWeight: 700 }}>
+            <span style={{ color: 'var(--navy-900)' }}>Today's Roll Call Completion</span>
+            <span style={{ color: 'var(--text-muted)' }}>
+              {stats.presentToday + stats.absentToday} / {stats.totalStudents} Marked ({Math.round(((stats.presentToday + stats.absentToday) / stats.totalStudents) * 100)}%)
+            </span>
+          </div>
+          <div
+            style={{
+              height: '8px',
+              width: '100%',
+              backgroundColor: '#f1f5f9',
+              borderRadius: '999px',
+              overflow: 'hidden',
+              display: 'flex',
+            }}
+          >
+            <div
+              style={{
+                width: `${(stats.presentToday / stats.totalStudents) * 100}%`,
+                backgroundColor: '#10b981',
+                transition: 'width 0.4s ease',
+              }}
+              title={`Present: ${stats.presentToday}`}
+            />
+            <div
+              style={{
+                width: `${(stats.absentToday / stats.totalStudents) * 100}%`,
+                backgroundColor: '#ef4444',
+                transition: 'width 0.4s ease',
+              }}
+              title={`Absent: ${stats.absentToday}`}
+            />
+            <div
+              style={{
+                width: `${(stats.pendingToday / stats.totalStudents) * 100}%`,
+                backgroundColor: '#f59e0b',
+                transition: 'width 0.4s ease',
+              }}
+              title={`Pending: ${stats.pendingToday}`}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+              Present: {stats.presentToday}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ef4444' }} />
+              Absent: {stats.absentToday}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
+              Pending: {stats.pendingToday}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* QUICK TASK SHORTCUTS */}
       <div
@@ -799,6 +1030,12 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
         isOpen={isMasterModalOpen}
         onClose={() => setIsMasterModalOpen(false)}
         onSuccess={() => fetchDashboardData()}
+      />
+
+      <BirthdayWishModal
+        isOpen={isBirthdayModalOpen}
+        onClose={() => setIsBirthdayModalOpen(false)}
+        student={activeBirthdayStudent}
       />
     </div>
   );

@@ -1491,6 +1491,11 @@ export const DEFAULT_NOTIFICATION_TEMPLATES = {
     template: `🏆 *Academic Evaluation Report Card*\n\nDear Guardian,\nResults for *{exam_name}* have been published:\nStudent: *{student_name}* (Roll No: *{roll_no}*)\nScore: *{score} / {max_marks}* (*{percentage}%*)\nResult: *{grade}*\n\n_{school_name}_`,
     variables: ['student_name', 'roll_no', 'exam_name', 'score', 'max_marks', 'percentage', 'grade', 'school_name'],
   },
+  birthday_greeting: {
+    title: 'Birthday Celebration & Wishes',
+    template: `🎂 *Happy Birthday {student_name}!* 🎉\n\nDear *{student_name}* (Roll No: *{roll_no}*),\nOn behalf of all teachers, staff, and management at *{school_name}*, we wish you a very Joyful & Prosperous Birthday! 🌟\n\nMay this special year bring you good health, great academic achievements, and endless happiness!\n\nWarmest Wishes,\n_{school_name}_`,
+    variables: ['student_name', 'roll_no', 'batch_name', 'date', 'school_name'],
+  },
 };
 
 /**
@@ -1553,6 +1558,44 @@ export function renderNotificationMessage(type, variables = {}, customTemplates 
   });
 
   return text;
+}
+
+/**
+ * Checks whether a given Date of Birth (YYYY-MM-DD or ISO string) matches today's month and day.
+ */
+export function isStudentBirthdayToday(dob, targetDate = new Date()) {
+  if (!dob) return false;
+  try {
+    const parts = String(dob).split('T')[0].split('-');
+    if (parts.length >= 3) {
+      const month = parseInt(parts[1], 10); // 1-12
+      const day = parseInt(parts[2], 10);
+      const today = targetDate instanceof Date ? targetDate : new Date(targetDate);
+      return today.getMonth() + 1 === month && today.getDate() === day;
+    }
+    const d = new Date(dob);
+    if (isNaN(d.getTime())) return false;
+    const today = targetDate instanceof Date ? targetDate : new Date(targetDate);
+    return today.getMonth() === d.getMonth() && today.getDate() === d.getDate();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Filters a list of students to find those celebrating their birthday today.
+ */
+export function getTodayBirthdayStudents(students = [], targetDate = new Date()) {
+  if (!Array.isArray(students)) return [];
+  return students.filter((s) => isStudentBirthdayToday(s.dob, targetDate));
+}
+
+/**
+ * Builds a 1-Click WhatsApp deep link URL to send a birthday greeting.
+ */
+export function formatStudentBirthdayWhatsAppUrl(phone, messageText) {
+  const cleanPhone = String(phone || '').replace(/[^0-9]/g, '');
+  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messageText)}`;
 }
 
 /**

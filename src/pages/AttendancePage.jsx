@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Calendar,
   CheckCircle,
@@ -70,6 +70,7 @@ export default function AttendancePage({ onRefreshCounts }) {
   const [savingId, setSavingId] = useState(null);
   const [error, setError] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
+  const lastUserActionTimestampRef = useRef(new Map());
 
   // Bulk Attendance Notification State
   const [isBulkNotifyModalOpen, setIsBulkNotifyModalOpen] = useState(false);
@@ -372,7 +373,26 @@ export default function AttendancePage({ onRefreshCounts }) {
 
                 if (matchedStudent) {
                   const targetKey = matchedStudent.id;
-                  const currentRec = next[targetKey];
+                  const currentRec = next[targetKey] || (matchedStudent.admission_no ? next[matchedStudent.admission_no] : null);
+
+                  // 1. User Action Shield: If user marked this student within the last 25s, DO NOT OVERWRITE!
+                  const lastUserAction = Math.max(
+                    lastUserActionTimestampRef.current.get(matchedStudent.id) || 0,
+                    lastUserActionTimestampRef.current.get(matchedStudent.admission_no) || 0
+                  );
+                  if (Date.now() - lastUserAction < 25000) {
+                    return;
+                  }
+
+                  // 2. Status Protection: Never allow background polling to downgrade a "Present" status to "Absent"
+                  // unless incoming record has a strictly newer updated_at timestamp!
+                  if (currentRec && currentRec.status === 'Present' && r.status === 'Absent') {
+                    const currentUpdated = new Date(currentRec.updated_at || 0).getTime();
+                    const incomingUpdated = new Date(r.updated_at || 0).getTime();
+                    if (incomingUpdated <= currentUpdated) {
+                      return; // Reject stale absent record
+                    }
+                  }
 
                   if (!currentRec || currentRec.status !== r.status) {
                     const updatedRec = {
@@ -380,12 +400,14 @@ export default function AttendancePage({ onRefreshCounts }) {
                       id: currentRec?.id || r.id,
                       student_id: matchedStudent.id,
                       admission_no: matchedStudent.admission_no,
+                      full_name: matchedStudent.full_name || r.full_name || '',
+                      roll_no: matchedStudent.roll_no || r.roll_no || null,
                       batch_id: selectedBatchId,
                       date: selectedDate,
                       session_name: 'Regular',
                       status: r.status,
                       time_in: r.time_in || '11:00',
-                      updated_at: new Date().toISOString(),
+                      updated_at: r.updated_at || new Date().toISOString(),
                     };
 
                     next[targetKey] = updatedRec;
@@ -428,33 +450,51 @@ export default function AttendancePage({ onRefreshCounts }) {
 
   const activeBatch = batches.find((b) => b.id === selectedBatchId);
 
-  // 3. Mark Single Student Attendance (Upsert in Supabase)
+  // 3. Mark Single Student Attendance (Upsert in Supabase & Hub)
   const handleMarkStatus = async (studentId, status) => {
     setSavingId(studentId);
+    lastUserActionTimestampRef.current.set(studentId, Date.now());
+
+    const targetStudent = students.find((s) => s.id === studentId);
+    const admissionNo = targetStudent?.admission_no || studentId;
+    if (admissionNo) {
+      lastUserActionTimestampRef.current.set(admissionNo, Date.now());
+    }
 
     // Optimistic UI update
     const previous = attendanceMap[studentId];
     const nowTime = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    const nowIso = new Date().toISOString();
     const optimistic = {
       ...previous,
       student_id: studentId,
+      admission_no: admissionNo,
+      full_name: targetStudent?.full_name || previous?.full_name || '',
+      roll_no: targetStudent?.roll_no || previous?.roll_no || null,
       batch_id: selectedBatchId,
       date: selectedDate,
       session_name: 'Regular',
       status,
       time_in: status === 'Present' || status === 'Late' ? nowTime : null,
+      updated_at: nowIso,
     };
-    setAttendanceMap((prev) => ({ ...prev, [studentId]: optimistic }));
+    setAttendanceMap((prev) => ({
+      ...prev,
+      [studentId]: optimistic,
+      ...(admissionNo ? { [admissionNo]: optimistic } : {}),
+    }));
 
     try {
       const payload = {
         ...(previous?.id ? { id: previous.id } : {}),
         student_id: studentId,
+        admission_no: admissionNo,
         batch_id: selectedBatchId,
         date: selectedDate,
         session_name: 'Regular',
         status,
         time_in: status === 'Present' || status === 'Late' ? nowTime : null,
+        updated_at: nowIso,
       };
 
       const { data, error: upsertErr } = await supabase
@@ -465,19 +505,34 @@ export default function AttendancePage({ onRefreshCounts }) {
 
       if (upsertErr) throw upsertErr;
 
-      setAttendanceMap((prev) => ({ ...prev, [studentId]: data }));
+      setAttendanceMap((prev) => ({
+        ...prev,
+        [studentId]: data || optimistic,
+        ...(admissionNo ? { [admissionNo]: data || optimistic } : {}),
+      }));
       if (onRefreshCounts) onRefreshCounts();
 
-      // Broadcast to local Wi-Fi hub so mobile app syncs immediately
+      // Broadcast full record to local Wi-Fi hub so mobile app syncs immediately
       try {
         const hubBase = getHubBaseUrl();
+        const currentBatch = batches.find((b) => b.id === selectedBatchId || b.code === selectedBatchId);
         fetch(`${hubBase}/api/local-hub?action=attendance`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             batch_id: selectedBatchId,
+            batch_code: currentBatch?.code || selectedBatchId,
+            batch_name: currentBatch?.name || '',
             date: selectedDate,
-            records: [{ student_id: studentId, status }],
+            records: [{
+              student_id: studentId,
+              admission_no: admissionNo,
+              full_name: targetStudent?.full_name || '',
+              roll_no: targetStudent?.roll_no || null,
+              status,
+              time_in: status === 'Present' || status === 'Late' ? nowTime : null,
+              updated_at: nowIso,
+            }],
           }),
         }).catch(() => {});
       } catch {}
@@ -540,6 +595,62 @@ export default function AttendancePage({ onRefreshCounts }) {
     } catch (err) {
       console.error('Error marking all present:', err);
       alert('Failed to mark all present: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 4b. Mark All Absent (Batch Upsert in Supabase)
+  const handleMarkAllAbsent = async () => {
+    if (students.length === 0) return;
+    setLoading(true);
+
+    const nowTime = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+
+    try {
+      const payloads = students.map((s) => ({
+        student_id: s.id,
+        admission_no: s.admission_no || s.id,
+        roll_no: s.roll_no,
+        batch_id: selectedBatchId,
+        date: selectedDate,
+        session_name: 'Regular',
+        status: 'Absent',
+        time_in: nowTime,
+        remarks: 'Bulk roll call marked Absent',
+      }));
+
+      const { data, error: batchErr } = await supabase
+        .from('attendance')
+        .upsert(payloads, { onConflict: 'student_id,batch_id,date,session_name' })
+        .select();
+
+      if (batchErr) throw batchErr;
+
+      const newMap = {};
+      (data || []).forEach((att) => {
+        newMap[att.student_id] = att;
+      });
+      setAttendanceMap((prev) => ({ ...prev, ...newMap }));
+
+      // Broadcast bulk roll call to Local Wi-Fi Hub
+      try {
+        const hubBase = getHubBaseUrl();
+        fetch(`${hubBase}/api/local-hub?action=attendance`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            batch_id: selectedBatchId,
+            date: selectedDate,
+            records: payloads.map((p) => ({ student_id: p.student_id, admission_no: p.admission_no, status: 'Absent' })),
+          }),
+        }).catch(() => {});
+      } catch {}
+
+      showToast(`Marked ${students.length} students as Absent!`);
+    } catch (err) {
+      console.error('Error marking all absent:', err);
+      alert('Failed to mark all absent: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -790,6 +901,17 @@ export default function AttendancePage({ onRefreshCounts }) {
                 disabled={loading || students.length === 0}
               >
                 Mark All Present
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                icon={XCircle}
+                onClick={handleMarkAllAbsent}
+                disabled={loading || students.length === 0}
+                style={{ borderColor: 'var(--status-absent-border, #fecdd3)', color: 'var(--status-absent, #ef4444)' }}
+              >
+                Mark All Absent
               </Button>
 
               <Button

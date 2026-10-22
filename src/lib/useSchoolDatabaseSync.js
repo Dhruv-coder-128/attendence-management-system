@@ -129,6 +129,31 @@ export function useSchoolDatabaseSync() {
           };
         });
 
+        // Fetch today's attendance records from IndexedDB to keep Mobile and Desktop 100% in sync
+        const todayIso = new Date().toISOString().split('T')[0];
+        const { data: todayAttendance } = await supabase
+          .from('attendance')
+          .select('id, student_id, batch_id, date, status, time_in, remarks, updated_at')
+          .eq('date', todayIso);
+
+        const studentLookup = new Map();
+        (students || []).forEach((s) => {
+          if (s.id) studentLookup.set(s.id, s);
+          if (s.admission_no) studentLookup.set(s.admission_no, s);
+        });
+
+        const enrichedAttendance = (todayAttendance || []).map((att) => {
+          const s = studentLookup.get(att.student_id);
+          const b = batchMap.get(att.batch_id);
+          return {
+            ...att,
+            admission_no: s?.admission_no || att.student_id,
+            full_name: s?.full_name || '',
+            roll_no: s?.roll_no || null,
+            batch_code: b?.code || att.batch_id,
+          };
+        });
+
         const headers = { 'Content-Type': 'application/json' };
         if (hub.token) {
           headers['X-Hub-Token'] = hub.token;
@@ -141,6 +166,7 @@ export function useSchoolDatabaseSync() {
             batches: batches || [],
             students: enrichedStudents,
             courses: courses || [],
+            attendance: enrichedAttendance,
             lastModified: new Date().toISOString(),
           }),
         });
@@ -204,6 +230,15 @@ export function useSchoolDatabaseSync() {
 
             const dedupeKey = `${batchId}::${date}::${studentId}`;
             const lastKnown = lastProcessedAttendanceMapRef.current.get(dedupeKey);
+
+            // Protection: Never downgrade local "Present" to "Absent" unless incoming record has a strictly newer timestamp!
+            if (lastKnown && lastKnown.status === 'Present' && status === 'Absent') {
+              const localTs = new Date(lastKnown.updatedAt || 0).getTime();
+              const incomingTs = new Date(updatedAt || 0).getTime();
+              if (incomingTs <= localTs) {
+                continue; // Reject stale absent record
+              }
+            }
 
             // Only upsert if status or timestamp changed
             if (!lastKnown || lastKnown.status !== status || lastKnown.updatedAt !== updatedAt) {

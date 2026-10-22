@@ -34,6 +34,7 @@ pub struct HubState {
     pub batches: Vec<Value>,
     pub students: Vec<Value>,
     pub attendance: HashMap<String, Value>,
+    pub is_locked: bool,
 }
 
 pub type SharedHubState = Arc<RwLock<HubState>>;
@@ -250,16 +251,65 @@ pub fn start_hub_server(app_data_dir: PathBuf, preferred_port: u16) -> (SharedHu
     if let Some(att_json) = load_json_file(&att_path) {
         if let Some(records) = att_json.get("records").and_then(|v| v.as_array()) {
             for rec in records {
-                let batch = rec.get("batch_id").and_then(|v| v.as_str()).unwrap_or("");
                 let date = rec.get("date").and_then(|v| v.as_str()).unwrap_or("");
                 let adm = rec
                     .get("admission_no")
                     .or_else(|| rec.get("student_id"))
                     .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                if !batch.is_empty() && !date.is_empty() && !adm.is_empty() {
-                    let key = format!("{}::{}::{}", batch, date, adm);
-                    initial_attendance.insert(key, rec.clone());
+                    .unwrap_or("")
+                    .trim();
+                let full_name = rec
+                    .get("full_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .trim();
+
+                // Match with student from live database to resolve canonical admission number
+                let rec_batch = rec.get("batch_id").or_else(|| rec.get("batch_code")).and_then(|v| v.as_str()).unwrap_or("");
+                let matched_student = initial_students.iter().find(|s| {
+                    let s_adm = s.get("admission_no").and_then(|v| v.as_str()).unwrap_or("");
+                    let s_id = s.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    if !adm.is_empty() && (s_adm.eq_ignore_ascii_case(adm) || s_id.eq_ignore_ascii_case(adm)) {
+                        return true;
+                    }
+                    if !full_name.is_empty() && !rec_batch.is_empty() {
+                        let s_batch_id = s.get("batch_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let s_batch_code = s.get("batch_code").and_then(|v| v.as_str()).unwrap_or("");
+                        let batch_matches = s_batch_id.eq_ignore_ascii_case(rec_batch)
+                            || s_batch_code.eq_ignore_ascii_case(rec_batch);
+                        if batch_matches {
+                            let s_name = s.get("full_name").and_then(|v| v.as_str()).unwrap_or("");
+                            if s_name.eq_ignore_ascii_case(full_name) {
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                });
+
+                let canonical_adm = matched_student
+                    .and_then(|s| s.get("admission_no"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(adm);
+
+                // Prune non-canonical test student or empty keys
+                if !date.is_empty() && !canonical_adm.is_empty() && !canonical_adm.starts_with("SMS-2026-") {
+                    let key = format!("{}::{}", date, canonical_adm);
+                    let mut normalized_rec = rec.clone();
+                    if let Some(obj) = normalized_rec.as_object_mut() {
+                        obj.insert("admission_no".to_string(), json!(canonical_adm));
+                        if let Some(s) = matched_student {
+                            if let Some(s_name) = s.get("full_name") {
+                                obj.insert("full_name".to_string(), s_name.clone());
+                            }
+                            if let Some(s_batch) = s.get("batch_id") {
+                                if !s_batch.as_str().unwrap_or("").is_empty() {
+                                    obj.insert("batch_id".to_string(), s_batch.clone());
+                                }
+                            }
+                        }
+                    }
+                    initial_attendance.insert(key, normalized_rec);
                 }
             }
         }
@@ -292,6 +342,7 @@ pub fn start_hub_server(app_data_dir: PathBuf, preferred_port: u16) -> (SharedHu
                 batches: initial_batches,
                 students: initial_students,
                 attendance: initial_attendance,
+                is_locked: false,
             }));
             let info = HubServerInfo {
                 ok: false,
@@ -335,6 +386,7 @@ pub fn start_hub_server(app_data_dir: PathBuf, preferred_port: u16) -> (SharedHu
         batches: initial_batches.clone(),
         students: initial_students.clone(),
         attendance: initial_attendance.clone(),
+        is_locked: false,
     }));
 
     let info = HubServerInfo {
@@ -374,6 +426,8 @@ pub fn start_hub_server(app_data_dir: PathBuf, preferred_port: u16) -> (SharedHu
 }
 
 fn handle_connection(mut stream: TcpStream, state: SharedHubState) {
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+    let _ = stream.set_write_timeout(Some(std::time::Duration::from_secs(5)));
     let is_loopback = stream.peer_addr().map(|a| a.ip().is_loopback()).unwrap_or(false);
 
     let mut reader = BufReader::new(&stream);
@@ -533,7 +587,9 @@ fn handle_get_action(
                         "batchesCount": write_guard.batches.len(),
                         "studentsCount": write_guard.students.len(),
                         "attendanceCount": write_guard.attendance.len(),
-                        "status": "active",
+                        "is_locked": write_guard.is_locked,
+                        "isLocked": write_guard.is_locked,
+                        "status": if write_guard.is_locked { "locked" } else { "active" },
                         "timestamp": chrono_now_iso(),
                     }),
                 )
@@ -826,6 +882,23 @@ fn handle_post_action(
         Err(_) => return (500, json!({ "ok": false, "error": "Lock error" })),
     };
 
+    if effective_action == "set_lock_status" {
+        let is_locked = payload.get("is_locked").and_then(|v| v.as_bool()).unwrap_or(false);
+        guard.is_locked = is_locked;
+        return (200, json!({ "ok": true, "is_locked": is_locked }));
+    }
+
+    if guard.is_locked && effective_action == "attendance" {
+        return (
+            403,
+            json!({
+                "ok": false,
+                "is_locked": true,
+                "error": "This school installation is currently locked by the administrator. Contact Dhruv Shah (+91 8866039007)."
+            }),
+        );
+    }
+
     if effective_action == "pair_device" {
         let otp = payload.get("otp").and_then(|v| v.as_str()).unwrap_or("").trim();
         let device_id = payload.get("device_id").and_then(|v| v.as_str()).unwrap_or("").trim();
@@ -891,19 +964,23 @@ fn handle_post_action(
                 );
             }
 
-            let canonical_batch_id = guard
-                .batches
-                .iter()
-                .find(|b| {
-                    let b_id = b.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                    let b_code = b.get("code").and_then(|v| v.as_str()).unwrap_or("");
-                    let b_name = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                    b_id.eq_ignore_ascii_case(&batch_id)
-                        || b_code.eq_ignore_ascii_case(&batch_id)
-                        || b_name.replace(' ', "").eq_ignore_ascii_case(&batch_id.replace(' ', ""))
-                })
+            let matched_batch = guard.batches.iter().find(|b| {
+                let b_id = b.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let b_code = b.get("code").and_then(|v| v.as_str()).unwrap_or("");
+                let b_name = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                b_id.eq_ignore_ascii_case(&batch_id)
+                    || b_code.eq_ignore_ascii_case(&batch_id)
+                    || b_name.replace(' ', "").eq_ignore_ascii_case(&batch_id.replace(' ', ""))
+            });
+
+            let canonical_batch_id = matched_batch
                 .and_then(|b| b.get("id").and_then(|v| v.as_str()))
                 .unwrap_or(&batch_id)
+                .to_string();
+
+            let canonical_batch_code = matched_batch
+                .and_then(|b| b.get("code").and_then(|v| v.as_str()))
+                .unwrap_or(&canonical_batch_id)
                 .to_string();
 
             let records_val = match payload.get("records").and_then(|v| v.as_array()) {
@@ -950,46 +1027,67 @@ fn handle_post_action(
                     continue;
                 }
 
+                let item_name = item.get("full_name").and_then(|v| v.as_str()).unwrap_or("").trim();
                 // Match with student from live database for full details
+                // 1. Direct admission_no / student_id match (highest priority, 100% authoritative)
+                // 2. Strict batch-scoped name matching: NEVER match across different batches!
                 let matched_student = guard.students.iter().find(|s| {
                     let s_adm = s.get("admission_no").and_then(|v| v.as_str()).unwrap_or("");
                     let s_id = s.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                    s_adm.eq_ignore_ascii_case(adm) || s_id.eq_ignore_ascii_case(adm)
+                    if !adm.is_empty() && (s_adm.eq_ignore_ascii_case(adm) || s_id.eq_ignore_ascii_case(adm)) {
+                        return true;
+                    }
+                    if !item_name.is_empty() {
+                        let s_batch_id = s.get("batch_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let s_batch_code = s.get("batch_code").and_then(|v| v.as_str()).unwrap_or("");
+                        let batch_matches = s_batch_id.eq_ignore_ascii_case(&canonical_batch_id)
+                            || s_batch_code.eq_ignore_ascii_case(&canonical_batch_code);
+                        if batch_matches {
+                            let s_name = s.get("full_name").and_then(|v| v.as_str()).unwrap_or("");
+                            if s_name.eq_ignore_ascii_case(item_name) {
+                                return true;
+                            }
+                        }
+                    }
+                    false
                 });
 
-                let s_id = item
-                    .get("student_id")
+                let canonical_adm = matched_student
+                    .and_then(|s| s.get("admission_no"))
                     .and_then(|v| v.as_str())
-                    .unwrap_or_else(|| {
-                        matched_student
-                            .and_then(|s| s.get("id"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(adm)
-                    });
+                    .unwrap_or(adm);
 
-                let full_name = item
-                    .get("full_name")
+                if canonical_adm.starts_with("SMS-2026-") {
+                    continue;
+                }
+
+                let s_id = matched_student
+                    .and_then(|s| s.get("id"))
                     .and_then(|v| v.as_str())
-                    .unwrap_or_else(|| {
-                        matched_student
-                            .and_then(|s| s.get("full_name"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                    });
+                    .or_else(|| item.get("student_id").and_then(|v| v.as_str()))
+                    .unwrap_or(canonical_adm);
 
-                let roll_no = item
-                    .get("roll_no")
+                let full_name = matched_student
+                    .and_then(|s| s.get("full_name"))
+                    .and_then(|v| v.as_str())
+                    .or_else(|| item.get("full_name").and_then(|v| v.as_str()))
+                    .unwrap_or("");
+
+                let roll_no = matched_student
+                    .and_then(|s| s.get("roll_no"))
                     .cloned()
-                    .or_else(|| matched_student.and_then(|s| s.get("roll_no")).cloned())
+                    .or_else(|| item.get("roll_no").cloned())
                     .unwrap_or(Value::Null);
 
-                let key = format!("{}::{}::{}", canonical_batch_id, date, adm);
+                // Strictly 1 state per student per date: key is format!("{}::{}", date, canonical_adm)
+                let key = format!("{}::{}", date, canonical_adm);
                 let record = json!({
                     "student_id": s_id,
-                    "admission_no": adm,
+                    "admission_no": canonical_adm,
                     "roll_no": roll_no,
                     "full_name": full_name,
                     "batch_id": canonical_batch_id,
+                    "batch_code": canonical_batch_code,
                     "date": date,
                     "session_name": "Regular",
                     "status": status,
@@ -1028,6 +1126,7 @@ fn handle_post_action(
         }
         "sync_school_data" => {
             let mut updated = false;
+            let mut att_updated = false;
             let now_iso = chrono_now_iso();
 
             if let Some(b_arr) = payload.get("batches").and_then(|v| v.as_array()) {
@@ -1037,6 +1136,19 @@ fn handle_post_action(
             if let Some(s_arr) = payload.get("students").and_then(|v| v.as_array()) {
                 guard.students = s_arr.clone();
                 updated = true;
+            }
+
+            if let Some(a_arr) = payload.get("attendance").and_then(|v| v.as_array()) {
+                for item in a_arr {
+                    let adm = item.get("admission_no").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    let date = item.get("date").and_then(|v| v.as_str()).unwrap_or("").trim();
+                    if adm.is_empty() || date.is_empty() || adm.starts_with("SMS-2026-") {
+                        continue;
+                    }
+                    let key = format!("{}::{}", date, adm);
+                    guard.attendance.insert(key, item.clone());
+                    att_updated = true;
+                }
             }
 
             if updated {
@@ -1049,12 +1161,24 @@ fn handle_post_action(
                 let _ = atomic_write_json(&db_file, &db_payload);
             }
 
+            if att_updated {
+                let att_file = guard.app_data_dir.join("attendance_sync.json");
+                let all_records: Vec<&Value> = guard.attendance.values().collect();
+                let save_payload = json!({
+                    "last_synced": now_iso,
+                    "count": all_records.len(),
+                    "records": all_records
+                });
+                let _ = atomic_write_json(&att_file, &save_payload);
+            }
+
             (
                 200,
                 json!({
                     "ok": true,
                     "batchesCount": guard.batches.len(),
                     "studentsCount": guard.students.len(),
+                    "attendanceCount": guard.attendance.len(),
                     "timestamp": now_iso
                 }),
             )

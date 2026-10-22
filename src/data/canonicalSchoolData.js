@@ -1,10 +1,7 @@
 /**
- * SMS — Student Management System
- * Production Canonical School Cohort & Student Roster
- * 
- * 100% synchronized with PC Desktop EXE and Android Mobile App.
- * Contains 5 Batches (20 Students each = 100 total students)
- * Direct import from official school Excel roster.
+ * SMS — Canonical School Batches & Student Roster
+ * Embedded institutional data from official school records.
+ * 5 Cohort Batches & 100 Enrolled Students (20 students per batch).
  */
 
 export const CANONICAL_COURSES = [
@@ -98,7 +95,7 @@ export const CANONICAL_STUDENTS = [
     "id": "ST1001",
     "admission_no": "ST1001",
     "roll_no": 1,
-    "full_name": "Krishna Dave",
+    "full_name": "Krishna D. Dave",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
     "batch_code": "11-COM",
@@ -109,7 +106,8 @@ export const CANONICAL_STUDENTS = [
     "email": "krishna.dave58@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-10-22"
   },
   {
     "id": "ST1002",
@@ -126,7 +124,8 @@ export const CANONICAL_STUDENTS = [
     "email": "ananya.zala70@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-02-02"
   },
   {
     "id": "ST1003",
@@ -143,7 +142,8 @@ export const CANONICAL_STUDENTS = [
     "email": "arjun.patel14@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-03-03"
   },
   {
     "id": "ST1004",
@@ -160,13 +160,14 @@ export const CANONICAL_STUDENTS = [
     "email": "yash.vora29@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-04-04"
   },
   {
     "id": "ST1005",
     "admission_no": "ST1005",
     "roll_no": 5,
-    "full_name": "Diya Vora",
+    "full_name": "Diya S. Vora",
     "batch_id": "B11",
     "batch_name": "11th Commerce",
     "batch_code": "11-COM",
@@ -177,7 +178,8 @@ export const CANONICAL_STUDENTS = [
     "email": "diya.vora74@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-05-05"
   },
   {
     "id": "ST1006",
@@ -194,7 +196,8 @@ export const CANONICAL_STUDENTS = [
     "email": "ananya.joshi93@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-06-06"
   },
   {
     "id": "ST1007",
@@ -211,7 +214,8 @@ export const CANONICAL_STUDENTS = [
     "email": "vihaan.jadeja70@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-07-07"
   },
   {
     "id": "ST1008",
@@ -228,7 +232,8 @@ export const CANONICAL_STUDENTS = [
     "email": "karan.mehta86@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-08-08"
   },
   {
     "id": "ST1009",
@@ -245,7 +250,8 @@ export const CANONICAL_STUDENTS = [
     "email": "pari.joshi33@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-09-09"
   },
   {
     "id": "ST1010",
@@ -262,7 +268,8 @@ export const CANONICAL_STUDENTS = [
     "email": "reyansh.vora40@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-10-10"
   },
   {
     "id": "ST1011",
@@ -279,7 +286,8 @@ export const CANONICAL_STUDENTS = [
     "email": "meera.makwana96@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-11-11"
   },
   {
     "id": "ST1012",
@@ -296,7 +304,8 @@ export const CANONICAL_STUDENTS = [
     "email": "meera.thakkar54@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-12-12"
   },
   {
     "id": "ST1013",
@@ -313,7 +322,8 @@ export const CANONICAL_STUDENTS = [
     "email": "saanvi.trivedi77@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-01-13"
   },
   {
     "id": "ST1014",
@@ -330,7 +340,8 @@ export const CANONICAL_STUDENTS = [
     "email": "dev.thakkar38@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-02-14"
   },
   {
     "id": "ST1015",
@@ -347,7 +358,8 @@ export const CANONICAL_STUDENTS = [
     "email": "ananya.makwana40@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-03-15"
   },
   {
     "id": "ST1016",
@@ -364,7 +376,8 @@ export const CANONICAL_STUDENTS = [
     "email": "rohan.mehta48@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-04-16"
   },
   {
     "id": "ST1017",
@@ -381,7 +394,8 @@ export const CANONICAL_STUDENTS = [
     "email": "riya.bhatt54@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-05-17"
   },
   {
     "id": "ST1018",
@@ -398,7 +412,8 @@ export const CANONICAL_STUDENTS = [
     "email": "tanvi.trivedi12@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-06-18"
   },
   {
     "id": "ST1019",
@@ -415,7 +430,8 @@ export const CANONICAL_STUDENTS = [
     "email": "saanvi.amin21@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-07-19"
   },
   {
     "id": "ST1020",
@@ -432,7 +448,8 @@ export const CANONICAL_STUDENTS = [
     "email": "ishaan.sanghani71@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2008-08-20"
   },
   {
     "id": "ST1021",
@@ -449,7 +466,8 @@ export const CANONICAL_STUDENTS = [
     "email": "reyansh.thakkar24@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-09-21"
   },
   {
     "id": "ST1022",
@@ -466,7 +484,8 @@ export const CANONICAL_STUDENTS = [
     "email": "ishaan.rathod23@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-10-22"
   },
   {
     "id": "ST1023",
@@ -483,7 +502,8 @@ export const CANONICAL_STUDENTS = [
     "email": "ishaan.patel46@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-11-23"
   },
   {
     "id": "ST1024",
@@ -500,7 +520,8 @@ export const CANONICAL_STUDENTS = [
     "email": "neha.rathod98@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-12-24"
   },
   {
     "id": "ST1025",
@@ -517,7 +538,8 @@ export const CANONICAL_STUDENTS = [
     "email": "pranav.zala97@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-10-22"
   },
   {
     "id": "ST1026",
@@ -534,7 +556,8 @@ export const CANONICAL_STUDENTS = [
     "email": "vihaan.trivedi58@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-02-26"
   },
   {
     "id": "ST1027",
@@ -551,7 +574,8 @@ export const CANONICAL_STUDENTS = [
     "email": "pari.chauhan80@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-03-27"
   },
   {
     "id": "ST1028",
@@ -568,7 +592,8 @@ export const CANONICAL_STUDENTS = [
     "email": "aadhya.chauhan44@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-04-28"
   },
   {
     "id": "ST1029",
@@ -585,7 +610,8 @@ export const CANONICAL_STUDENTS = [
     "email": "meera.trivedi69@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-05-01"
   },
   {
     "id": "ST1030",
@@ -602,7 +628,8 @@ export const CANONICAL_STUDENTS = [
     "email": "diya.makwana91@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-06-02"
   },
   {
     "id": "ST1031",
@@ -619,7 +646,8 @@ export const CANONICAL_STUDENTS = [
     "email": "aarav.amin61@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-07-03"
   },
   {
     "id": "ST1032",
@@ -636,7 +664,8 @@ export const CANONICAL_STUDENTS = [
     "email": "reyansh.dave62@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-08-04"
   },
   {
     "id": "ST1033",
@@ -653,7 +682,8 @@ export const CANONICAL_STUDENTS = [
     "email": "pranav.rathod71@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-09-05"
   },
   {
     "id": "ST1034",
@@ -670,7 +700,8 @@ export const CANONICAL_STUDENTS = [
     "email": "atharv.modi43@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-10-06"
   },
   {
     "id": "ST1035",
@@ -687,7 +718,8 @@ export const CANONICAL_STUDENTS = [
     "email": "ananya.vora72@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-11-07"
   },
   {
     "id": "ST1036",
@@ -704,7 +736,8 @@ export const CANONICAL_STUDENTS = [
     "email": "aarav.dave17@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-12-08"
   },
   {
     "id": "ST1037",
@@ -721,7 +754,8 @@ export const CANONICAL_STUDENTS = [
     "email": "vivaan.solanki58@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-01-09"
   },
   {
     "id": "ST1038",
@@ -738,7 +772,8 @@ export const CANONICAL_STUDENTS = [
     "email": "ayaan.bhatt17@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-02-10"
   },
   {
     "id": "ST1039",
@@ -755,7 +790,8 @@ export const CANONICAL_STUDENTS = [
     "email": "aadhya.zala78@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-03-11"
   },
   {
     "id": "ST1040",
@@ -772,7 +808,8 @@ export const CANONICAL_STUDENTS = [
     "email": "reyansh.trivedi51@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-04-12"
   },
   {
     "id": "ST1041",
@@ -789,7 +826,8 @@ export const CANONICAL_STUDENTS = [
     "email": "neha.pandya81@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-05-13"
   },
   {
     "id": "ST1042",
@@ -806,7 +844,8 @@ export const CANONICAL_STUDENTS = [
     "email": "pooja.patel97@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-10-23"
   },
   {
     "id": "ST1043",
@@ -823,7 +862,8 @@ export const CANONICAL_STUDENTS = [
     "email": "yash.mehta62@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-07-15"
   },
   {
     "id": "ST1044",
@@ -840,7 +880,8 @@ export const CANONICAL_STUDENTS = [
     "email": "sai.patel47@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-08-16"
   },
   {
     "id": "ST1045",
@@ -857,7 +898,8 @@ export const CANONICAL_STUDENTS = [
     "email": "ishaan.pandya28@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-09-17"
   },
   {
     "id": "ST1046",
@@ -874,7 +916,8 @@ export const CANONICAL_STUDENTS = [
     "email": "meera.jadeja69@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-10-18"
   },
   {
     "id": "ST1047",
@@ -891,7 +934,8 @@ export const CANONICAL_STUDENTS = [
     "email": "krishna.vora44@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-11-19"
   },
   {
     "id": "ST1048",
@@ -908,7 +952,8 @@ export const CANONICAL_STUDENTS = [
     "email": "advik.dave73@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-12-20"
   },
   {
     "id": "ST1049",
@@ -925,7 +970,8 @@ export const CANONICAL_STUDENTS = [
     "email": "krishna.mehta22@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-01-21"
   },
   {
     "id": "ST1050",
@@ -942,7 +988,8 @@ export const CANONICAL_STUDENTS = [
     "email": "tanvi.solanki88@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-02-22"
   },
   {
     "id": "ST1051",
@@ -959,7 +1006,8 @@ export const CANONICAL_STUDENTS = [
     "email": "riya.vora30@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-03-23"
   },
   {
     "id": "ST1052",
@@ -976,7 +1024,8 @@ export const CANONICAL_STUDENTS = [
     "email": "sai.thakkar81@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-04-24"
   },
   {
     "id": "ST1053",
@@ -993,7 +1042,8 @@ export const CANONICAL_STUDENTS = [
     "email": "adhira.mehta23@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-05-25"
   },
   {
     "id": "ST1054",
@@ -1010,7 +1060,8 @@ export const CANONICAL_STUDENTS = [
     "email": "reyansh.bhatt45@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-06-26"
   },
   {
     "id": "ST1055",
@@ -1027,7 +1078,8 @@ export const CANONICAL_STUDENTS = [
     "email": "aarav.thakkar98@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-07-27"
   },
   {
     "id": "ST1056",
@@ -1044,13 +1096,14 @@ export const CANONICAL_STUDENTS = [
     "email": "pooja.joshi79@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-08-28"
   },
   {
     "id": "ST1057",
     "admission_no": "ST1057",
     "roll_no": 17,
-    "full_name": "Ishaan Sanghani",
+    "full_name": "Ishaan S. Sanghani",
     "batch_id": "BFY",
     "batch_name": "FY",
     "batch_code": "FY-BCA",
@@ -1061,7 +1114,8 @@ export const CANONICAL_STUDENTS = [
     "email": "ishaan.sanghani32@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-09-01"
   },
   {
     "id": "ST1058",
@@ -1078,7 +1132,8 @@ export const CANONICAL_STUDENTS = [
     "email": "atharv.pandya75@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-10-02"
   },
   {
     "id": "ST1059",
@@ -1095,7 +1150,8 @@ export const CANONICAL_STUDENTS = [
     "email": "adhira.rathod61@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-11-03"
   },
   {
     "id": "ST1060",
@@ -1112,7 +1168,8 @@ export const CANONICAL_STUDENTS = [
     "email": "saanvi.shah59@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2006-12-04"
   },
   {
     "id": "ST1061",
@@ -1129,7 +1186,8 @@ export const CANONICAL_STUDENTS = [
     "email": "saanvi.vora33@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-01-05"
   },
   {
     "id": "ST1062",
@@ -1146,7 +1204,8 @@ export const CANONICAL_STUDENTS = [
     "email": "karan.dave47@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-02-06"
   },
   {
     "id": "ST1063",
@@ -1163,7 +1222,8 @@ export const CANONICAL_STUDENTS = [
     "email": "pooja.dave34@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-03-07"
   },
   {
     "id": "ST1064",
@@ -1180,13 +1240,14 @@ export const CANONICAL_STUDENTS = [
     "email": "adhira.pandya81@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-04-08"
   },
   {
     "id": "ST1065",
     "admission_no": "ST1065",
     "roll_no": 5,
-    "full_name": "Diya Vora",
+    "full_name": "Diya R. Vora",
     "batch_id": "BSY",
     "batch_name": "SY",
     "batch_code": "SY-BCA",
@@ -1197,7 +1258,8 @@ export const CANONICAL_STUDENTS = [
     "email": "diya.vora56@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-05-09"
   },
   {
     "id": "ST1066",
@@ -1214,7 +1276,8 @@ export const CANONICAL_STUDENTS = [
     "email": "pranav.vora66@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-06-10"
   },
   {
     "id": "ST1067",
@@ -1231,7 +1294,8 @@ export const CANONICAL_STUDENTS = [
     "email": "dev.modi66@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-07-11"
   },
   {
     "id": "ST1068",
@@ -1248,7 +1312,8 @@ export const CANONICAL_STUDENTS = [
     "email": "aditya.amin54@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-08-12"
   },
   {
     "id": "ST1069",
@@ -1265,7 +1330,8 @@ export const CANONICAL_STUDENTS = [
     "email": "atharv.pandya48@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-09-13"
   },
   {
     "id": "ST1070",
@@ -1282,7 +1348,8 @@ export const CANONICAL_STUDENTS = [
     "email": "ayaan.solanki23@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-10-14"
   },
   {
     "id": "ST1071",
@@ -1299,7 +1366,8 @@ export const CANONICAL_STUDENTS = [
     "email": "vihaan.shah24@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-11-15"
   },
   {
     "id": "ST1072",
@@ -1316,7 +1384,8 @@ export const CANONICAL_STUDENTS = [
     "email": "dev.jadeja77@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-12-16"
   },
   {
     "id": "ST1073",
@@ -1333,7 +1402,8 @@ export const CANONICAL_STUDENTS = [
     "email": "arjun.mehta30@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-01-17"
   },
   {
     "id": "ST1074",
@@ -1350,7 +1420,8 @@ export const CANONICAL_STUDENTS = [
     "email": "krishna.chauhan25@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-02-18"
   },
   {
     "id": "ST1075",
@@ -1367,7 +1438,8 @@ export const CANONICAL_STUDENTS = [
     "email": "sai.vora17@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-03-19"
   },
   {
     "id": "ST1076",
@@ -1384,7 +1456,8 @@ export const CANONICAL_STUDENTS = [
     "email": "dev.shah35@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-04-20"
   },
   {
     "id": "ST1077",
@@ -1401,7 +1474,8 @@ export const CANONICAL_STUDENTS = [
     "email": "ananya.sanghani77@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-05-21"
   },
   {
     "id": "ST1078",
@@ -1418,7 +1492,8 @@ export const CANONICAL_STUDENTS = [
     "email": "arjun.jadeja50@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-06-22"
   },
   {
     "id": "ST1079",
@@ -1435,7 +1510,8 @@ export const CANONICAL_STUDENTS = [
     "email": "arjun.shah95@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-07-23"
   },
   {
     "id": "ST1080",
@@ -1452,7 +1528,8 @@ export const CANONICAL_STUDENTS = [
     "email": "atharv.patel44@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2005-08-24"
   },
   {
     "id": "ST1081",
@@ -1469,7 +1546,8 @@ export const CANONICAL_STUDENTS = [
     "email": "reyansh.amin68@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-09-25"
   },
   {
     "id": "ST1082",
@@ -1486,7 +1564,8 @@ export const CANONICAL_STUDENTS = [
     "email": "aarav.solanki91@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-10-26"
   },
   {
     "id": "ST1083",
@@ -1503,7 +1582,8 @@ export const CANONICAL_STUDENTS = [
     "email": "adhira.parmar27@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-11-27"
   },
   {
     "id": "ST1084",
@@ -1520,7 +1600,8 @@ export const CANONICAL_STUDENTS = [
     "email": "vivaan.thakkar85@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-12-28"
   },
   {
     "id": "ST1085",
@@ -1537,7 +1618,8 @@ export const CANONICAL_STUDENTS = [
     "email": "meera.shah33@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-01-01"
   },
   {
     "id": "ST1086",
@@ -1554,7 +1636,8 @@ export const CANONICAL_STUDENTS = [
     "email": "vihaan.modi66@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-02-02"
   },
   {
     "id": "ST1087",
@@ -1571,7 +1654,8 @@ export const CANONICAL_STUDENTS = [
     "email": "aadhya.trivedi48@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-03-03"
   },
   {
     "id": "ST1088",
@@ -1588,13 +1672,14 @@ export const CANONICAL_STUDENTS = [
     "email": "meera.parmar38@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-04-04"
   },
   {
     "id": "ST1089",
     "admission_no": "ST1089",
     "roll_no": 9,
-    "full_name": "Krishna Dave",
+    "full_name": "Krishna R. Dave",
     "batch_id": "BTY",
     "batch_name": "TY",
     "batch_code": "TY-BCA",
@@ -1605,7 +1690,8 @@ export const CANONICAL_STUDENTS = [
     "email": "krishna.dave87@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-05-05"
   },
   {
     "id": "ST1090",
@@ -1622,7 +1708,8 @@ export const CANONICAL_STUDENTS = [
     "email": "diya.shah77@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-06-06"
   },
   {
     "id": "ST1091",
@@ -1639,7 +1726,8 @@ export const CANONICAL_STUDENTS = [
     "email": "riya.jadeja12@gmail.com",
     "address": "Near City Center, Ahmedabad",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-07-07"
   },
   {
     "id": "ST1092",
@@ -1656,7 +1744,8 @@ export const CANONICAL_STUDENTS = [
     "email": "reyansh.dave55@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-08-08"
   },
   {
     "id": "ST1093",
@@ -1673,7 +1762,8 @@ export const CANONICAL_STUDENTS = [
     "email": "arjun.trivedi46@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-09-09"
   },
   {
     "id": "ST1094",
@@ -1690,7 +1780,8 @@ export const CANONICAL_STUDENTS = [
     "email": "krishna.modi93@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-10-10"
   },
   {
     "id": "ST1095",
@@ -1707,7 +1798,8 @@ export const CANONICAL_STUDENTS = [
     "email": "aadhya.parmar60@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-11-11"
   },
   {
     "id": "ST1096",
@@ -1724,7 +1816,8 @@ export const CANONICAL_STUDENTS = [
     "email": "krishna.parmar35@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-12-12"
   },
   {
     "id": "ST1097",
@@ -1741,7 +1834,8 @@ export const CANONICAL_STUDENTS = [
     "email": "diya.patel93@gmail.com",
     "address": "Near City Center, Gandhinager",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-01-13"
   },
   {
     "id": "ST1098",
@@ -1758,7 +1852,8 @@ export const CANONICAL_STUDENTS = [
     "email": "yash.thakkar52@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-02-14"
   },
   {
     "id": "ST1099",
@@ -1775,7 +1870,8 @@ export const CANONICAL_STUDENTS = [
     "email": "aditya.solanki62@gmail.com",
     "address": "Near City Center, Rajkot",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-03-15"
   },
   {
     "id": "ST1100",
@@ -1792,7 +1888,8 @@ export const CANONICAL_STUDENTS = [
     "email": "adhira.patel90@gmail.com",
     "address": "Near City Center, Junagadh",
     "status": "Active",
-    "created_at": "2026-06-01T08:00:00Z"
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2004-04-16"
   }
 ];
 
@@ -3602,33 +3699,14 @@ export const CANONICAL_PARENT_STUDENTS = [
   }
 ];
 
-/**
- * Helper to fetch canonical students by batch ID or code
- */
-export function getBatchStudents(batchIdentifier) {
-  if (!batchIdentifier) return [];
-  const cleanId = String(batchIdentifier).trim().toUpperCase();
-  
+export function getBatchStudents(batchId) {
+  if (!batchId) return [];
+  const normalized = String(batchId).trim().toUpperCase();
   return CANONICAL_STUDENTS.filter((s) => {
-    const bId = String(s.batch_id).trim().toUpperCase();
-    const bName = String(s.batch_name).trim().toUpperCase();
-    const bCode = String(s.batch_code || '').trim().toUpperCase();
-    return bId === cleanId || bName === cleanId || bCode === cleanId;
+    return (
+      s.batch_id.toUpperCase() === normalized ||
+      s.batch_code.toUpperCase() === normalized ||
+      s.batch_name.toUpperCase() === normalized
+    );
   });
-}
-
-/**
- * Helper to get batch details by ID or code
- */
-export function getBatchById(batchIdentifier) {
-  if (!batchIdentifier) return null;
-  const clean = String(batchIdentifier).trim().toUpperCase();
-  return (
-    CANONICAL_BATCHES.find(
-      (b) =>
-        b.id.toUpperCase() === clean ||
-        b.code.toUpperCase() === clean ||
-        b.name.toUpperCase() === clean
-    ) || null
-  );
 }

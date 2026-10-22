@@ -45,11 +45,11 @@ for (const [batchId, batchName] of Object.entries(batchMap)) {
 
 // 3. Verify specific samples from user's provided Excel
 const sample1 = CANONICAL_STUDENTS.find((s) => s.id === 'ST1001');
-if (!sample1 || sample1.roll_no !== 1 || sample1.full_name !== 'Krishna Dave' || sample1.batch_id !== 'B11') {
+if (!sample1 || sample1.roll_no !== 1 || sample1.full_name !== 'Krishna D. Dave' || sample1.batch_id !== 'B11') {
   console.error('FAIL: Sample ST1001 did not match authoritative data', sample1);
   process.exit(1);
 }
-console.log('✓ PASS: ST1001: Krishna Dave, Roll 1, 11th Commerce');
+console.log('✓ PASS: ST1001: Krishna D. Dave, Roll 1, 11th Commerce');
 
 const sample2 = CANONICAL_STUDENTS.find((s) => s.id === 'ST1021');
 if (!sample2 || sample2.roll_no !== 1 || sample2.full_name !== 'Reyansh Thakkar' || sample2.batch_id !== 'B12') {
