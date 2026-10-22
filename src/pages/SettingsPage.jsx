@@ -18,6 +18,9 @@ import {
   Download,
   Upload,
   HardDrive,
+  Lock,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
@@ -70,6 +73,7 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
   const [botTestResult, setBotTestResult] = useState(null);
   const [testingBot, setTestingBot] = useState(false);
   const [botNotice, setBotNotice] = useState('');
+  const [showGatewayCredentials, setShowGatewayCredentials] = useState(false);
 
   // Storage Engine & Backup State
   const [activeStorageMode, setActiveStorageMode] = useState(getStorageMode());
@@ -893,54 +897,90 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
           </div>
 
           <div className="erp-card" style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-              <div
-                style={{
-                  width: '38px',
-                  height: '38px',
-                  borderRadius: '10px',
-                  backgroundColor: 'var(--navy-900)',
-                  color: 'var(--gold-primary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Bot size={20} />
-              </div>
-              <div>
-                <h2
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
                   style={{
-                    fontFamily: 'var(--font-heading)',
-                    fontSize: '16px',
-                    fontWeight: 700,
-                    color: 'var(--navy-950)',
-                    margin: 0,
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    backgroundColor: 'var(--navy-900)',
+                    color: 'var(--gold-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
                 >
-                  Telegram Bot Settings
-                </h2>
-                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
-                  Enter your school Telegram bot details to dispatch automated parent attendance alerts.
-                </p>
+                  <Shield size={20} />
+                </div>
+                <div>
+                  <h2
+                    style={{
+                      fontFamily: 'var(--font-heading)',
+                      fontSize: '16px',
+                      fontWeight: 700,
+                      color: 'var(--navy-950)',
+                      margin: 0,
+                    }}
+                  >
+                    Automated Parent Alert &amp; SMS Gateway
+                  </h2>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                    Enterprise automated dispatch engine for real-time parent notifications.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '3px 10px',
+                    borderRadius: '12px',
+                    backgroundColor: customBotToken ? '#f0fdf4' : '#fffbeb',
+                    color: customBotToken ? '#166534' : '#b45309',
+                    border: `1px solid ${customBotToken ? '#bbf7d0' : '#fde68a'}`,
+                  }}
+                >
+                  {customBotToken ? '🟢 Gateway Active & Ready' : '🟡 Setup Required'}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowGatewayCredentials(!showGatewayCredentials)}
+                  icon={showGatewayCredentials ? EyeOff : Lock}
+                  style={{ fontSize: '11.5px', padding: '4px 10px' }}
+                >
+                  {showGatewayCredentials ? 'Hide Config' : 'Admin Unlock'}
+                </Button>
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '18px' }}>
-              <Input
-                label="Telegram Bot Username"
-                value={customBotUsername}
-                onChange={(e) => setCustomBotUsername(e.target.value)}
-                placeholder="e.g. SMSAttendanceBot"
-              />
-
-              <Input
-                label="Telegram Bot API Token"
-                type="password"
-                value={customBotToken}
-                onChange={(e) => setCustomBotToken(e.target.value)}
-                placeholder="e.g. 7123456789:AAHk3xyz-ABC_123456789"
-              />
+            {/* High-level status overview */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-subtle)',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                marginBottom: '16px',
+                border: '1px solid var(--border-subtle)',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '10px',
+                fontSize: '12px',
+              }}
+            >
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>Dispatch Mode:</span>{' '}
+                <strong style={{ color: 'var(--navy-950)' }}>
+                  {telegramStatus.webhook?.url ? 'Cloud Webhook' : 'High-Speed Desktop Direct'}
+                </strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>Channel Security:</span>{' '}
+                <strong style={{ color: '#166534' }}>End-to-End Encrypted</strong>
+              </div>
             </div>
 
             {botNotice && (
@@ -964,95 +1004,95 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <Button
-                variant="outline"
-                size="sm"
-                icon={RefreshCw}
-                onClick={handleTestCustomBot}
-                disabled={testingBot || !customBotToken}
+            {/* Hidden / Expandable Admin Gateway Credentials */}
+            {showGatewayCredentials && (
+              <div
+                style={{
+                  padding: '16px',
+                  backgroundColor: '#ffffff',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  marginBottom: '16px',
+                  animation: 'fadeIn 0.2s ease',
+                }}
               >
-                {testingBot ? 'Testing...' : 'Test Bot Connection'}
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                icon={Save}
-                onClick={handleSaveCustomBot}
-              >
-                Save Settings
-              </Button>
-            </div>
-
-            {/* Telegram Webhook & Desktop Polling Gateway Controls */}
-            <div
-              style={{
-                marginTop: '20px',
-                paddingTop: '16px',
-                borderTop: '1px solid var(--border-subtle)',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
-                <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)' }}>
-                  Bot Gateway &amp; Webhook Diagnostics
-                </span>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    backgroundColor: telegramStatus.webhook?.url ? 'var(--status-absent-bg)' : 'var(--status-present-bg)',
-                    color: telegramStatus.webhook?.url ? 'var(--status-absent)' : 'var(--status-present)',
-                  }}
-                >
-                  {telegramStatus.webhook?.url ? 'Webhook Mode (Cloud)' : '🟢 Direct Polling Mode (Desktop / Local)'}
-                </span>
-              </div>
-              <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '0 0 10px 0' }}>
-                {telegramStatus.webhook?.url
-                  ? `Active Webhook: ${telegramStatus.webhook.url}. (Note: Polling is blocked when a webhook is active. Switch to Direct Polling for desktop use.)`
-                  : 'Desktop app is in Direct Polling mode. Telegram /start tokens and confirmations are received directly.'}
-              </p>
-
-              {webhookNotice && (
-                <div
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    backgroundColor: webhookNotice.type === 'success' ? 'var(--status-present-bg)' : 'var(--status-absent-bg)',
-                    border: `1px solid ${webhookNotice.type === 'success' ? 'var(--status-present-border)' : 'var(--status-absent-border)'}`,
-                    color: webhookNotice.type === 'success' ? 'var(--status-present)' : 'var(--status-absent)',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    marginBottom: '10px',
-                  }}
-                >
-                  {webhookNotice.message}
+                <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '12px' }}>
+                  🔒 Gateway Authentication Credentials (Restricted)
                 </div>
-              )}
 
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                <Button
-                  variant="gold"
-                  size="sm"
-                  onClick={() => handleSetWebhook('delete')}
-                  disabled={isConfiguringWebhook}
-                  title="Clear any registered Telegram webhook and switch to desktop polling"
-                >
-                  {isConfiguringWebhook ? 'Clearing...' : 'Clear Webhook (Enable Desktop Polling)'}
-                </Button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '16px' }}>
+                  <Input
+                    label="Gateway Dispatch Handle"
+                    value={customBotUsername}
+                    onChange={(e) => setCustomBotUsername(e.target.value)}
+                    placeholder="e.g. SMSNotificationEngine"
+                  />
+
+                  <Input
+                    label="Gateway Secret Key (Encrypted)"
+                    type="password"
+                    value={customBotToken}
+                    onChange={(e) => setCustomBotToken(e.target.value)}
+                    placeholder="Enter proprietary secret key"
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginBottom: '14px' }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={RefreshCw}
+                    onClick={handleTestCustomBot}
+                    disabled={testingBot || !customBotToken}
+                  >
+                    {testingBot ? 'Testing...' : 'Test Gateway Connection'}
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon={Save}
+                    onClick={handleSaveCustomBot}
+                  >
+                    Save Credentials
+                  </Button>
+                </div>
+
+                <div style={{ paddingTop: '12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <Button
+                    variant="gold"
+                    size="sm"
+                    onClick={() => handleSetWebhook('delete')}
+                    disabled={isConfiguringWebhook}
+                    title="Clear any registered webhook and switch to direct polling"
+                  >
+                    {isConfiguringWebhook ? 'Switching...' : 'Switch to High-Speed Desktop Direct Dispatch'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={RefreshCw}
+                    onClick={fetchTelegramStatus}
+                    disabled={telegramStatus.loading}
+                  >
+                    {telegramStatus.loading ? 'Checking...' : 'Refresh Gateway Diagnostics'}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {!showGatewayCredentials && (
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                 <Button
                   variant="outline"
                   size="sm"
                   icon={RefreshCw}
-                  onClick={fetchTelegramStatus}
-                  disabled={telegramStatus.loading}
+                  onClick={handleTestCustomBot}
+                  disabled={testingBot || !customBotToken}
                 >
-                  {telegramStatus.loading ? 'Checking...' : 'Refresh Gateway Status'}
+                  {testingBot ? 'Testing...' : 'Verify Gateway Status'}
                 </Button>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

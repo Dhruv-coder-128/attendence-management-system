@@ -194,11 +194,12 @@ export default function FeesPage({ onRefreshCounts }) {
   // Filtered Students List
   const filteredStudents = useMemo(() => {
     return students.filter((s) => {
+      const search = searchTerm.toLowerCase().trim();
       const matchesSearch =
-        !searchTerm ||
-        s.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.admission_no?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        s.roll_no?.toLowerCase().includes(searchTerm.toLowerCase());
+        !search ||
+        (s.full_name && String(s.full_name).toLowerCase().includes(search)) ||
+        (s.admission_no != null && String(s.admission_no).toLowerCase().includes(search)) ||
+        (s.roll_no != null && String(s.roll_no).toLowerCase().includes(search));
 
       const batchId = s.batches?.id;
       const matchesBatch = selectedBatch === 'ALL' || batchId === selectedBatch;

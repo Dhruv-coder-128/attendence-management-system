@@ -216,9 +216,9 @@ export default function MonthlyAttendanceRegister({
       // 1. Search Query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const matchName = item.student.full_name?.toLowerCase().includes(q);
-        const matchAdm = item.student.admission_no?.toLowerCase().includes(q);
-        const matchRoll = item.student.roll_no?.toLowerCase().includes(q);
+        const matchName = item.student.full_name && String(item.student.full_name).toLowerCase().includes(q);
+        const matchAdm = item.student.admission_no != null && String(item.student.admission_no).toLowerCase().includes(q);
+        const matchRoll = item.student.roll_no != null && String(item.student.roll_no).toLowerCase().includes(q);
         if (!matchName && !matchAdm && !matchRoll) return false;
       }
 

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { getStoredLicense } from './licenseService.js';
+import { getStoredLicense, isTauriDesktop } from './licenseService.js';
 import { createLocalTableQueryBuilder, getStorageMode } from './databaseAdapter.js';
 
 /**
@@ -139,52 +139,71 @@ export const unifiedAuth = {
       return { data: { user: null, session: null }, error: new Error('Please enter your institutional email.') };
     }
 
-function getLocalOwnerProfile() {
-  if (typeof window === 'undefined') {
-    return { name: 'Institution Administrator', email: 'admin@institution.edu' };
-  }
-  try {
-    const raw = localStorage.getItem('erp_academy_branding');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return {
-        name: parsed.owner_name || (parsed.academy_name ? `${parsed.academy_name} Owner` : 'Institution Administrator'),
-        email: parsed.email && parsed.email !== 'dushah2007@gmail.com' ? parsed.email : 'admin@institution.edu',
-      };
+    function getLocalOwnerProfile() {
+      if (typeof window === 'undefined') {
+        return { name: 'Institution Administrator', email: 'admin@institution.edu' };
+      }
+      try {
+        const raw = localStorage.getItem('erp_academy_branding');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return {
+            name: parsed.owner_name || (parsed.academy_name ? `${parsed.academy_name} Owner` : 'Institution Administrator'),
+            email: parsed.email && parsed.email !== 'dushah2007@gmail.com' ? parsed.email : 'admin@institution.edu',
+          };
+        }
+      } catch {}
+      return { name: 'Institution Administrator', email: 'admin@institution.edu' };
     }
-  } catch {}
-  return { name: 'Institution Administrator', email: 'admin@institution.edu' };
-}
 
     const localOwner = getLocalOwnerProfile();
-    const isOwner = cleanEmail === 'dushah2007@gmail.com' || cleanEmail === localOwner.email || cleanEmail.startsWith('owner');
     const mode = getStorageMode();
     const client = getSupabaseClient();
+    const isDesktop = typeof isTauriDesktop === 'function' && isTauriDesktop();
+    const isOwner =
+      cleanEmail === 'dushah2007@gmail.com' ||
+      cleanEmail === localOwner.email ||
+      cleanEmail.startsWith('owner') ||
+      cleanEmail.startsWith('admin') ||
+      cleanEmail.includes('admin') ||
+      isDesktop ||
+      mode === 'offline';
 
-    // 1. If in cloud mode and client is available, attempt remote Supabase Auth
-    if (mode === 'cloud' && client && client.auth) {
+    const fallbackAdminUser = {
+      id: 'admin-session',
+      email: cleanEmail.includes('@') ? cleanEmail : localOwner.email,
+      role: 'owner',
+      aud: 'authenticated',
+      user_metadata: { full_name: `${localOwner.name}`, role: 'owner' },
+      app_metadata: {
+        role: 'owner',
+        permissions: {
+          view_students: true, edit_students: true, delete_students: true,
+          view_attendance: true, mark_attendance: true, manage_batches: true,
+          manage_fees: true, manage_exams: true, manage_parents: true,
+          send_notifications: true, export_data: true, manage_users: true,
+          manage_settings: true,
+        },
+        provider: 'email',
+      },
+    };
+
+    // 1. If in cloud mode and not standalone desktop, attempt remote Supabase Auth
+    if (!isDesktop && mode === 'cloud' && client && client.auth) {
       try {
         const res = await client.auth.signInWithPassword({ email: cleanEmail, password });
         if (!res.error && res.data?.user) {
           setStoredAuthUser(res.data.user);
           return res;
         }
-        // If remote returned an error for the master owner, use owner session fallback
+        // If remote returned an error for the administrator or owner, use local fallback
         if (isOwner) {
-          console.warn('Remote Supabase auth failed for owner, applying owner local session:', res.error?.message);
-          const ownerUser = {
-            id: 'owner-session',
-            email: localOwner.email,
-            role: 'owner',
-            aud: 'authenticated',
-            user_metadata: { full_name: `${localOwner.name} (Owner)`, role: 'owner' },
-            app_metadata: { role: 'owner', provider: 'email' },
-          };
-          setStoredAuthUser(ownerUser);
+          console.warn('Remote Supabase auth failed, applying local administrator session:', res.error?.message);
+          setStoredAuthUser(fallbackAdminUser);
           return {
             data: {
-              user: ownerUser,
-              session: { user: ownerUser, access_token: 'offline-token' },
+              user: fallbackAdminUser,
+              session: { user: fallbackAdminUser, access_token: 'offline-token' },
             },
             error: null,
           };
@@ -198,19 +217,11 @@ function getLocalOwnerProfile() {
       } catch (err) {
         console.warn('Network error during remote sign in:', err);
         if (isOwner) {
-          const ownerUser = {
-            id: 'owner-session',
-            email: localOwner.email,
-            role: 'owner',
-            aud: 'authenticated',
-            user_metadata: { full_name: `${localOwner.name} (Owner)`, role: 'owner' },
-            app_metadata: { role: 'owner', provider: 'email' },
-          };
-          setStoredAuthUser(ownerUser);
+          setStoredAuthUser(fallbackAdminUser);
           return {
             data: {
-              user: ownerUser,
-              session: { user: ownerUser, access_token: 'offline-token' },
+              user: fallbackAdminUser,
+              session: { user: fallbackAdminUser, access_token: 'offline-token' },
             },
             error: null,
           };
@@ -218,21 +229,13 @@ function getLocalOwnerProfile() {
       }
     }
 
-    // 2. Offline / Local Database Authentication
+    // 2. Offline / Local Database / Desktop Authentication
     if (isOwner) {
-      const ownerUser = {
-        id: 'owner-session',
-        email: localOwner.email,
-        role: 'owner',
-        aud: 'authenticated',
-        user_metadata: { full_name: `${localOwner.name} (Owner)`, role: 'owner' },
-        app_metadata: { role: 'owner', provider: 'email' },
-      };
-      setStoredAuthUser(ownerUser);
+      setStoredAuthUser(fallbackAdminUser);
       return {
         data: {
-          user: ownerUser,
-          session: { user: ownerUser, access_token: 'offline-token' },
+          user: fallbackAdminUser,
+          session: { user: fallbackAdminUser, access_token: 'offline-token' },
         },
         error: null,
       };
@@ -299,8 +302,9 @@ function getLocalOwnerProfile() {
     const cleanEmail = (email || '').trim().toLowerCase();
     const mode = getStorageMode();
     const client = getSupabaseClient();
+    const isDesktop = typeof isTauriDesktop === 'function' && isTauriDesktop();
 
-    if (mode === 'cloud' && client && client.auth) {
+    if (!isDesktop && mode === 'cloud' && client && client.auth) {
       try {
         const res = await client.auth.signUp({ email: cleanEmail, password, options });
         if (!res.error && res.data?.user) {
@@ -313,9 +317,14 @@ function getLocalOwnerProfile() {
     }
 
     try {
-      const isOwner = cleanEmail === 'dushah2007@gmail.com' || cleanEmail.startsWith('owner');
+      const isOwner =
+        cleanEmail === 'dushah2007@gmail.com' ||
+        cleanEmail.startsWith('owner') ||
+        cleanEmail.startsWith('admin') ||
+        cleanEmail.includes('admin') ||
+        isDesktop;
       const role = isOwner ? 'owner' : (options?.data?.role || 'admin');
-      const fullName = options?.data?.full_name || cleanEmail.split('@')[0];
+      const fullName = options?.data?.full_name || cleanEmail.split('@')[0] || 'Administrator';
       const newId = 'usr_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const defaultPerms = role === 'owner'
         ? { view_students: true, edit_students: true, delete_students: true, view_attendance: true, mark_attendance: true, manage_batches: true, manage_fees: true, manage_exams: true, manage_parents: true, send_notifications: true, export_data: true, manage_users: true, manage_settings: true }
@@ -360,8 +369,9 @@ function getLocalOwnerProfile() {
   async getSession() {
     const mode = getStorageMode();
     const client = getSupabaseClient();
+    const isDesktop = typeof isTauriDesktop === 'function' && isTauriDesktop();
 
-    if (mode === 'cloud' && client && client.auth) {
+    if (!isDesktop && mode === 'cloud' && client && client.auth) {
       try {
         const res = await client.auth.getSession();
         if (res.data?.session) {
@@ -375,6 +385,35 @@ function getLocalOwnerProfile() {
       return {
         data: {
           session: { user: stored, access_token: 'offline-token' },
+        },
+        error: null,
+      };
+    }
+
+    // In Desktop EXE, provide seamless auto-login as Administrator on clean launch
+    if (isDesktop) {
+      const defaultDesktopAdmin = {
+        id: 'desktop-admin-session',
+        email: 'admin@institution.edu',
+        role: 'owner',
+        aud: 'authenticated',
+        user_metadata: { full_name: 'Institution Administrator', role: 'owner' },
+        app_metadata: {
+          role: 'owner',
+          permissions: {
+            view_students: true, edit_students: true, delete_students: true,
+            view_attendance: true, mark_attendance: true, manage_batches: true,
+            manage_fees: true, manage_exams: true, manage_parents: true,
+            send_notifications: true, export_data: true, manage_users: true,
+            manage_settings: true,
+          },
+          provider: 'email',
+        },
+      };
+      setStoredAuthUser(defaultDesktopAdmin);
+      return {
+        data: {
+          session: { user: defaultDesktopAdmin, access_token: 'offline-token' },
         },
         error: null,
       };

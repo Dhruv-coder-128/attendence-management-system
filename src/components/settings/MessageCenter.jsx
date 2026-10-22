@@ -12,6 +12,7 @@ import {
   Award,
   CreditCard,
   Copy,
+  Cake,
 } from 'lucide-react';
 import Button from '../common/Button';
 import {
@@ -66,6 +67,7 @@ export default function MessageCenter() {
     { id: 'attendance_late', label: 'Late Arrival', icon: Clock, color: 'var(--status-late)' },
     { id: 'fee_reminder', label: 'Fee Reminder', icon: CreditCard, color: 'var(--gold-dark)' },
     { id: 'exam_result', label: 'Exam Evaluation', icon: Award, color: 'var(--navy-800)' },
+    { id: 'birthday_greeting', label: 'Birthday Wishes', icon: Cake, color: '#ec4899' },
   ];
 
   const currentTemplate = templates[activeTab] || DEFAULT_NOTIFICATION_TEMPLATES[activeTab];

@@ -186,6 +186,47 @@ export async function repairStudentParentLinkages(force = false) {
       }
     });
 
+    // Step D2: Detect and purge duplicate orphan parent records
+    // If multiple parents point to the same student or admission_no, keep the highest quality one
+    const parentIdsToDelete = [];
+    const studentToPrimaryParentMap = new Map();
+
+    parents.forEach((parent) => {
+      let sKey = parent.admission_no ? String(parent.admission_no).trim().toLowerCase() : null;
+      if (!sKey && parent.student_id) sKey = String(parent.student_id).trim().toLowerCase();
+      if (!sKey) {
+        const j = junctionsByParentId.get(parent.id)?.[0];
+        if (j && j.student_id) sKey = String(j.student_id).trim().toLowerCase();
+      }
+      if (!sKey && parent.phone) {
+        const pClean = String(parent.phone).replace(/[^0-9]/g, '');
+        if (pClean.length >= 7) sKey = 'ph_' + pClean.slice(-10);
+      }
+      if (!sKey) return;
+
+      if (!studentToPrimaryParentMap.has(sKey)) {
+        studentToPrimaryParentMap.set(sKey, parent);
+      } else {
+        const existing = studentToPrimaryParentMap.get(sKey);
+        const existingScore = (existing.telegram_chat_id ? 10 : 0) + (existing.is_verified ? 5 : 0) + (String(existing.id).startsWith('P_') ? 2 : 0);
+        const currentScore = (parent.telegram_chat_id ? 10 : 0) + (parent.is_verified ? 5 : 0) + (String(parent.id).startsWith('P_') ? 2 : 0);
+
+        if (currentScore > existingScore) {
+          parentIdsToDelete.push(existing.id);
+          studentToPrimaryParentMap.set(sKey, parent);
+        } else {
+          parentIdsToDelete.push(parent.id);
+        }
+      }
+    });
+
+    if (parentIdsToDelete.length > 0) {
+      for (const pId of parentIdsToDelete) {
+        await supabase.from('parents').delete().eq('id', pId);
+        await supabase.from('parent_students').delete().eq('parent_id', pId);
+      }
+    }
+
     // Step E: Persist deletions of stale / duplicate junctions
     if (junctionIdsToDelete.length > 0) {
       for (const jId of junctionIdsToDelete) {
@@ -195,7 +236,11 @@ export async function repairStudentParentLinkages(force = false) {
 
     // Step F: Persist insertion of missing genuine junctions
     if (newJunctionsToInsert.length > 0) {
-      await supabase.from('parent_students').insert(newJunctionsToInsert);
+      // Filter out any insertions for deleted parents
+      const validJunctions = newJunctionsToInsert.filter((j) => !parentIdsToDelete.includes(j.parent_id));
+      if (validJunctions.length > 0) {
+        await supabase.from('parent_students').insert(validJunctions);
+      }
     }
 
     // Step G: Persist parent and student updates

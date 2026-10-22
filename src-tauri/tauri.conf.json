@@ -2,10 +2,9 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "SMS - Student Management System",
   "version": "1.0.0",
-  "identifier": "com.sms.studentmanagementsystem",
+  "identifier": "com.sms.desktopapp",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
@@ -21,7 +20,10 @@
         "minHeight": 640,
         "resizable": true,
         "fullscreen": false,
-        "center": true
+        "center": true,
+        "visible": true,
+        "focus": true,
+        "decorations": true
       }
     ],
     "security": {

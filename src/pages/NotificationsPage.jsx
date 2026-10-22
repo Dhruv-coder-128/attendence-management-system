@@ -21,6 +21,7 @@ import {
   Copy,
   ExternalLink,
   Download,
+  Cake,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -29,19 +30,26 @@ import Modal from '../components/common/Modal';
 import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { sendBatchBroadcastNotification, getSchoolTelegramSettings } from '../lib/telegramClient';
+import { sendBatchBroadcastNotification, getSchoolTelegramSettings, isStudentBirthdayToday } from '../lib/telegramClient';
 import { getAcademySettings } from '../lib/academySettings';
 import { saveDataUrlWithPicker } from '../lib/fileSaveHelper';
+import { CANONICAL_STUDENTS } from '../data/canonicalSchoolData.js';
+import BirthdayWishModal from '../components/students/BirthdayWishModal';
 
 /**
  * Notifications and Telegram Alert Broadcast Manager
  * Features real database-backed Telegram dispatch audit logs + outbox announcements
  */
 export default function NotificationsPage({ notifications = [], onBroadcast, onRefreshCounts }) {
-  const [activeTab, setActiveTab] = useState('dispatchLogs'); // 'dispatchLogs' | 'broadcast'
+  const [activeTab, setActiveTab] = useState('dispatchLogs'); // 'dispatchLogs' | 'broadcast' | 'birthdays'
   const [dispatchLogs, setDispatchLogs] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(true);
   const [logFilter, setLogFilter] = useState('all'); // 'all' | 'delivered' | 'failed'
+
+  // Birthday Greeting Hub State
+  const [birthdayStudents, setBirthdayStudents] = useState([]);
+  const [activeBirthdayStudent, setActiveBirthdayStudent] = useState(null);
+  const [isBirthdayModalOpen, setIsBirthdayModalOpen] = useState(false);
 
   // Clear unread notifications badge immediately on page view
   useEffect(() => {
@@ -75,6 +83,11 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
   const [selectedNotice, setSelectedNotice] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [copiedNotice, setCopiedNotice] = useState(false);
+
+  // Live Message Preview State for Individual Dispatches
+  const [selectedDispatchMessage, setSelectedDispatchMessage] = useState(null);
+  const [isDispatchModalOpen, setIsDispatchModalOpen] = useState(false);
+  const [copiedDispatchText, setCopiedDispatchText] = useState(false);
 
   const telegramSettings = useMemo(() => getSchoolTelegramSettings(), []);
   const academySettings = useMemo(() => getAcademySettings(), []);
@@ -205,8 +218,35 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
     }
   };
 
+  const fetchBirthdayStudents = async () => {
+    try {
+      let list = [];
+      if (supabase && isSupabaseConfigured) {
+        const { data, error } = await supabase
+          .from('students')
+          .select('id, admission_no, full_name, roll_no, batch_id, dob, phone, contact_number, mobile, batches(name, code)')
+          .eq('status', 'active');
+        if (!error && data && data.length > 0) {
+          list = data.map((s) => ({
+            ...s,
+            batch_name: s.batches?.name || s.batches?.code || s.batch_id,
+          }));
+        }
+      }
+      if (!list.length) {
+        list = CANONICAL_STUDENTS;
+      }
+      const todayList = list.filter((s) => isStudentBirthdayToday(s.dob));
+      setBirthdayStudents(todayList);
+    } catch (err) {
+      console.error('Failed to load birthday students:', err);
+      setBirthdayStudents(CANONICAL_STUDENTS.filter((s) => isStudentBirthdayToday(s.dob)));
+    }
+  };
+
   useEffect(() => {
     fetchDispatchLogs();
+    fetchBirthdayStudents();
   }, []);
 
   const handleTemplateChange = (tpl) => {
@@ -229,6 +269,12 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
         'Dear Guardian, Friendly reminder that Term 1 tuition installment reconciliation date is 15-Oct-2026. Kindly disregard if already cleared.'
       );
       setAudience('Pending Fee Accounts');
+    } else if (tpl === 'birthday') {
+      setTitle('Birthday Celebration & Greetings');
+      setMessage(
+        'Happy Birthday! 🎂 Wishing you a wonderful year filled with learning, achievements, and joy. From all teachers and staff.'
+      );
+      setAudience('Birthday Celebrants & Guardians');
     } else {
       setTitle('General Academy Academic Notice');
       setMessage(
@@ -812,6 +858,39 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
         </span>
       ),
     },
+    {
+      header: 'Actions',
+      key: 'actions',
+      render: (item) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedDispatchMessage(item);
+              setIsDispatchModalOpen(true);
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              fontSize: '11px',
+              fontWeight: 600,
+              padding: '4px 9px',
+              borderRadius: '5px',
+              backgroundColor: '#eff6ff',
+              color: '#1d4ed8',
+              border: '1px solid #bfdbfe',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+            title="Preview formatted parent alert message"
+          >
+            <Eye size={12} />
+            <span>View Message</span>
+          </button>
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -1010,6 +1089,39 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
             {notifications.length}
           </span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('birthdays')}
+          style={{
+            padding: '10px 18px',
+            fontSize: '13px',
+            fontWeight: 600,
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'birthdays' ? '2px solid #ec4899' : '2px solid transparent',
+            color: activeTab === 'birthdays' ? '#be185d' : 'var(--text-muted)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <Cake size={16} color={activeTab === 'birthdays' ? '#ec4899' : 'var(--text-muted)'} />
+          <span>Birthday Celebrations</span>
+          <span
+            style={{
+              fontSize: '10px',
+              padding: '1px 6px',
+              borderRadius: '10px',
+              backgroundColor: '#fce7f3',
+              color: '#be185d',
+              fontWeight: 700,
+            }}
+          >
+            {birthdayStudents.length}
+          </span>
+        </button>
       </div>
 
       {activeTab === 'dispatchLogs' ? (
@@ -1078,7 +1190,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
             searchPlaceholder="Search by student, admission no, or guardian..."
           />
         </div>
-      ) : (
+      ) : activeTab === 'broadcast' ? (
         <div>
           <div
             style={{
@@ -1106,6 +1218,161 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
             data={notifications}
             searchPlaceholder="Search past broadcast dispatches..."
           />
+        </div>
+      ) : (
+        <div>
+          {/* Dedicated Birthday Celebrations & Wishes Hub */}
+          <div
+            style={{
+              marginBottom: '20px',
+              padding: '18px 24px',
+              background: 'linear-gradient(135deg, #fff1f2 0%, #fdf2f8 50%, #fce7f3 100%)',
+              border: '1px solid #fbcfe8',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '16px',
+              boxShadow: '0 4px 14px rgba(236, 72, 153, 0.08)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '12px',
+                  backgroundColor: '#ec4899',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 12px rgba(236, 72, 153, 0.3)',
+                }}
+              >
+                <Cake size={26} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#831843', margin: '0 0 4px 0' }}>
+                  Student Birthday Celebration Hub
+                </h3>
+                <p style={{ fontSize: '13px', color: '#9d174d', margin: 0 }}>
+                  {birthdayStudents.length > 0
+                    ? `🎉 ${birthdayStudents.length} student(s) have a birthday today! Dispatch personalized WhatsApp / Telegram wishes with 1-click.`
+                    : 'No birthdays today. Birthday alerts automatically activate when a student celebrates their special day.'}
+                </p>
+              </div>
+            </div>
+
+            {birthdayStudents.length > 0 && (
+              <div
+                style={{
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  color: '#be185d',
+                  backgroundColor: '#ffffff',
+                  padding: '6px 14px',
+                  borderRadius: '999px',
+                  border: '1px solid #f472b6',
+                }}
+              >
+                {birthdayStudents.length} Active Celebrant(s) Today
+              </div>
+            )}
+          </div>
+
+          {birthdayStudents.length > 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+              {birthdayStudents.map((st) => {
+                const phone = st.contact_number || st.phone || st.mobile || 'No contact';
+                return (
+                  <div
+                    key={st.id || st.admission_no}
+                    style={{
+                      backgroundColor: '#ffffff',
+                      borderRadius: '10px',
+                      border: '1px solid #fbcfe8',
+                      boxShadow: '0 2px 8px rgba(236, 72, 153, 0.06)',
+                      padding: '18px 20px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      gap: '14px',
+                    }}
+                  >
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: '999px',
+                            backgroundColor: '#fce7f3',
+                            color: '#be185d',
+                          }}
+                        >
+                          🎂 Happy Birthday!
+                        </span>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          Roll: <strong>{st.roll_no || '—'}</strong>
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '4px' }}>
+                        {st.full_name}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                        Cohort: <strong>{st.batch_name || st.batch_id || 'General'}</strong> &bull; Adm: <strong>{st.admission_no || '—'}</strong>
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Phone / WhatsApp: <strong style={{ color: '#0f172a' }}>{phone}</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <Button
+                        variant="gold"
+                        size="sm"
+                        icon={Sparkles}
+                        onClick={() => {
+                          setActiveBirthdayStudent(st);
+                          setIsBirthdayModalOpen(true);
+                        }}
+                        style={{
+                          flex: 1,
+                          backgroundColor: '#ec4899',
+                          borderColor: '#db2777',
+                          color: '#ffffff',
+                        }}
+                      >
+                        Wish {st.full_name?.split(' ')[0] || 'Student'}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div
+              style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '10px',
+                border: '1px solid var(--border-subtle)',
+                padding: '48px 24px',
+                textAlign: 'center',
+                color: 'var(--text-muted)',
+              }}
+            >
+              <Cake size={40} color="#ec4899" style={{ opacity: 0.6, margin: '0 auto 12px auto' }} />
+              <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--navy-900)', marginBottom: '6px' }}>
+                No Student Birthdays Today
+              </div>
+              <div style={{ fontSize: '13px', maxWidth: '420px', margin: '0 auto' }}>
+                Whenever a student celebrates a birthday, an alert banner will appear here and on your dashboard with 1-click greeting options!
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1196,7 +1463,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <label className="form-label">Template Preset</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
                   <button
                     type="button"
                     className={`btn btn-sm ${template === 'attendance' ? 'btn-primary' : 'btn-outline'}`}
@@ -1217,6 +1484,13 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
                     onClick={() => handleTemplateChange('fee')}
                   >
                     Fee Reminder
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${template === 'birthday' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => handleTemplateChange('birthday')}
+                  >
+                    🎂 Birthday Wish
                   </button>
                   <button
                     type="button"
@@ -2294,6 +2568,185 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
           </div>
         </Modal>
       )}
+
+      {/* Individual Attendance Dispatch Live Message Preview Modal */}
+      {isDispatchModalOpen && selectedDispatchMessage && (
+        <Modal
+          isOpen={isDispatchModalOpen}
+          onClose={() => {
+            setIsDispatchModalOpen(false);
+            setSelectedDispatchMessage(null);
+            setCopiedDispatchText(false);
+          }}
+          title="Parent Alert Message — Live Preview"
+          maxWidth="560px"
+        >
+          {(() => {
+            const item = selectedDispatchMessage;
+            const studentName = item.students?.full_name || 'Student';
+            const rollNo = item.students?.roll_no != null ? item.students.roll_no : 'N/A';
+            const admissionNo = item.students?.admission_no || 'N/A';
+            const batchName = item.batches?.name || item.batches?.code || 'Cohort';
+            const date = item.date || new Date().toISOString().split('T')[0];
+            const academyName = academySettings.academy_name || 'SMS Academy';
+            const parent = item.linked_guardian || item.students?.parent_students?.[0]?.parents;
+            const guardianName = parent?.full_name || item.students?.guardian_name || 'Guardian';
+            const guardianPhone = parent?.phone || item.students?.guardian_phone || '';
+            const chatId = parent?.telegram_chat_id || null;
+
+            let formattedText = '';
+            if (item.status === 'Present') {
+              formattedText = `📚 *Daily Attendance Notification — Present*\n\nDear Guardian,\nYour ward *${studentName}* (Roll No: *${rollNo}*) of batch *${batchName}* was marked *PRESENT* on *${date}* at ${item.time_in || '09:00'}.\n\n_${academyName}_`;
+            } else if (item.status === 'Late') {
+              formattedText = `⏰ *Daily Attendance Alert — Late Arrival*\n\nDear Guardian,\nYour ward *${studentName}* (Roll No: *${rollNo}*) of batch *${batchName}* arrived *LATE* on *${date}* at ${item.time_in || '09:30'}.\n\n_${academyName}_`;
+            } else {
+              formattedText = `⚠️ *Daily Attendance Alert — Absent*\n\nDear Guardian,\nYour ward *${studentName}* (Roll No: *${rollNo}*) of batch *${batchName}* was marked *ABSENT* on *${date}*.\nIf this was unexpected, please contact the academy office immediately.\n\n_${academyName}_`;
+            }
+
+            const waShareUrl = guardianPhone
+              ? `https://wa.me/${guardianPhone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(formattedText)}`
+              : null;
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Ward & Recipient Info Strip */}
+                <div
+                  style={{
+                    backgroundColor: '#f8fafc',
+                    borderRadius: '8px',
+                    padding: '12px 14px',
+                    border: '1px solid #e2e8f0',
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '10px',
+                    fontSize: '12px',
+                  }}
+                >
+                  <div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginBottom: '2px' }}>STUDENT WARD</div>
+                    <div style={{ fontWeight: 700, color: 'var(--navy-950)' }}>{studentName}</div>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                      Adm: {admissionNo} &bull; Roll: {rollNo} &bull; {batchName}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: '11px', marginBottom: '2px' }}>PARENT / GUARDIAN</div>
+                    <div style={{ fontWeight: 700, color: 'var(--navy-950)' }}>{guardianName}</div>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                      {guardianPhone || 'No phone'} {chatId ? `• TG: ${chatId}` : ''}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Smartphone / Chat Message Bubble */}
+                <div
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '16px',
+                    backgroundColor: '#e2e8f0',
+                    padding: '14px',
+                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)',
+                  }}
+                >
+                  <div
+                    style={{
+                      maxWidth: '90%',
+                      backgroundColor: '#ffffff',
+                      borderRadius: '12px',
+                      padding: '12px 14px',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+                      borderTopLeftRadius: '2px',
+                      position: 'relative',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: '#0284c7',
+                        marginBottom: '6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <span>{telegramSettings.botName || academyName}</span>
+                      <CheckCircle2 size={12} color="#0284c7" />
+                    </div>
+                    <div
+                      style={{
+                        fontSize: '12.5px',
+                        lineHeight: 1.5,
+                        color: '#0f172a',
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      {formattedText}
+                    </div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'flex-end',
+                        alignItems: 'center',
+                        gap: '4px',
+                        marginTop: '6px',
+                        fontSize: '10px',
+                        color: '#64748b',
+                      }}
+                    >
+                      <span>{item.time_in || '11:45 AM'}</span>
+                      <span style={{ color: '#0284c7', fontWeight: 700 }}>✓✓</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Modal Action Buttons */}
+                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={copiedDispatchText ? Check : Copy}
+                    onClick={() => {
+                      navigator.clipboard.writeText(formattedText);
+                      setCopiedDispatchText(true);
+                      setTimeout(() => setCopiedDispatchText(false), 2000);
+                    }}
+                  >
+                    {copiedDispatchText ? 'Copied!' : 'Copy Text'}
+                  </Button>
+                  {waShareUrl && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={ExternalLink}
+                      onClick={() => window.open(waShareUrl, '_blank')}
+                      style={{ borderColor: '#22c55e', color: '#15803d', backgroundColor: '#f0fdf4' }}
+                    >
+                      WhatsApp Parent
+                    </Button>
+                  )}
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      setIsDispatchModalOpen(false);
+                      setSelectedDispatchMessage(null);
+                    }}
+                  >
+                    Close Preview
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </Modal>
+      )}
+
+      <BirthdayWishModal
+        isOpen={isBirthdayModalOpen}
+        onClose={() => setIsBirthdayModalOpen(false)}
+        student={activeBirthdayStudent}
+      />
     </div>
   );
 }

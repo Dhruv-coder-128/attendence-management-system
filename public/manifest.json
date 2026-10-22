@@ -1,0 +1,19 @@
+{
+  "name": "SMS — Parent & Student Portal",
+  "short_name": "ParentPortal",
+  "description": "Mobile portal for parents to monitor live attendance, fee installments, marksheets, and daily class updates.",
+  "start_url": "/?portal=parent",
+  "display": "standalone",
+  "background_color": "#0a1424",
+  "theme_color": "#0a1424",
+  "orientation": "portrait",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

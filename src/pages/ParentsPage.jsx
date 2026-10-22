@@ -29,6 +29,7 @@ import {
   Pause,
   Square,
   Check,
+  Smartphone,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -38,6 +39,7 @@ import Input from '../components/common/Input';
 import Select from '../components/common/Select';
 import BulkImportModal from '../components/importer/BulkImportModal';
 import Pagination from '../components/common/Pagination';
+import ParentPortalPreviewModal from '../components/parent/ParentPortalPreviewModal';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { openExternalLink, copyToClipboard } from '../lib/externalOpener';
 import {
@@ -83,6 +85,7 @@ export default function ParentsPage({ onRefreshCounts }) {
   const [bulkInviteChannel, setBulkInviteChannel] = useState('telegram'); // 'telegram', 'whatsapp'
   const [isDispatchingInvites, setIsDispatchingInvites] = useState(false);
   const [bulkInviteResults, setBulkInviteResults] = useState(null);
+  const [previewModalData, setPreviewModalData] = useState(null);
 
   // Telegram Deep Link Modal State (Individual)
   const [telegramModalParent, setTelegramModalParent] = useState(null);
@@ -208,8 +211,26 @@ export default function ParentsPage({ onRefreshCounts }) {
 
       if (prErr) throw prErr;
 
+      // Deduplicate parents by unique student identity or phone to ensure strictly 100 clean guardians
+      const uniqueParentsMap = new Map();
+      (parentsData || []).forEach((p) => {
+        const studentWard = p.parent_students?.[0]?.students;
+        const sKey = studentWard ? (studentWard.admission_no || studentWard.id) : (p.admission_no || p.student_id);
+        const pKey = sKey ? `s_${String(sKey).trim().toLowerCase()}` : p.phone ? `p_${String(p.phone).replace(/[^0-9]/g, '').slice(-10)}` : p.id;
+
+        if (!uniqueParentsMap.has(pKey)) {
+          uniqueParentsMap.set(pKey, p);
+        } else {
+          const existing = uniqueParentsMap.get(pKey);
+          if (p.telegram_chat_id || (p.is_verified && !existing.is_verified)) {
+            uniqueParentsMap.set(pKey, p);
+          }
+        }
+      });
+      const cleanParents = Array.from(uniqueParentsMap.values());
+
       setStudents(studentsData || []);
-      setParents(parentsData || []);
+      setParents(cleanParents);
 
       // 3. Try to fetch invitations from parent_invitations table
       try {
@@ -1338,6 +1359,24 @@ export default function ParentsPage({ onRefreshCounts }) {
                           <Button
                             variant="outline"
                             size="sm"
+                            icon={Smartphone}
+                            onClick={() => {
+                              const linkedStudents = (parent.parent_students || []).map((ps) => ps.students).filter(Boolean);
+                              const primaryStudent = linkedStudents[0] || students[0] || null;
+                              setPreviewModalData({
+                                parent,
+                                student: primaryStudent,
+                                allStudents: linkedStudents,
+                              });
+                            }}
+                            title="Preview Parent Portal on Mobile"
+                            style={{ borderColor: '#0284c7', color: '#0369a1', backgroundColor: '#f0f9ff' }}
+                          >
+                            Portal
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
                             icon={Edit}
                             onClick={() => handleOpenEdit(parent)}
                             title="Edit Guardian"
@@ -2392,6 +2431,17 @@ export default function ParentsPage({ onRefreshCounts }) {
           showToast('Parent directory bulk import completed successfully!');
         }}
       />
+
+      {/* Parent Portal Mobile Preview Modal */}
+      {previewModalData && (
+        <ParentPortalPreviewModal
+          isOpen={Boolean(previewModalData)}
+          onClose={() => setPreviewModalData(null)}
+          parent={previewModalData.parent}
+          student={previewModalData.student}
+          allStudents={previewModalData.allStudents}
+        />
+      )}
     </div>
   );
 }

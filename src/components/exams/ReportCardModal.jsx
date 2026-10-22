@@ -25,9 +25,9 @@ export default function ReportCardModal({
   marksRecord,
   attendanceRate = null,
 }) {
-  if (!isOpen || !student) return null;
-
   const branding = useAcademySettings();
+
+  if (!isOpen || !student) return null;
 
   const handlePrint = () => {
     window.print();

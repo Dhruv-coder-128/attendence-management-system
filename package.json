@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
@@ -14,13 +14,21 @@
     "test:e2e": "node scripts/test-parent-flow-end-to-end.mjs",
     "tauri": "tauri",
     "build:desktop": "tauri build",
-    "dev:desktop": "tauri dev"
+    "dev:desktop": "tauri dev",
+    "build:apk": "npm run build && npx cap sync android",
+    "open:android": "npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
     "@supabase/supabase-js": "^2.117.3",
     "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-opener": "^2.7.2",
+    "html5-qrcode": "^2.3.8",
     "lucide-react": "^1.54.0",
+    "qrcode": "^1.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "xlsx": "^0.18.5"

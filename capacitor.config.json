@@ -1,0 +1,9 @@
+{
+  "appId": "com.sms.teacherattendance",
+  "appName": "SMS Attendance",
+  "webDir": "dist",
+  "server": {
+    "cleartext": true,
+    "androidScheme": "http"
+  }
+}

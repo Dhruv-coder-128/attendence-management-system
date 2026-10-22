@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      - feature/local-wifi-attendance-hub
+      - 'feature/**'
     paths:
       - 'src-tauri/**'
       - 'src/**'
