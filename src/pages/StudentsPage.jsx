@@ -44,6 +44,7 @@ export default function StudentsPage({ onRefreshCounts }) {
   const [students, setStudents] = useState([]);
   const [courses, setCourses] = useState([]);
   const [batches, setBatches] = useState([]);
+  const [parents, setParents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
@@ -86,6 +87,11 @@ export default function StudentsPage({ onRefreshCounts }) {
     blood_group: 'O+',
     status: 'active',
     address: '',
+    guardian_mode: 'existing',
+    guardian_id: '',
+    guardian_name: '',
+    guardian_phone: '',
+    guardian_relationship: 'Father',
   };
   const [formData, setFormData] = useState(initialFormState);
 
@@ -197,9 +203,16 @@ export default function StudentsPage({ onRefreshCounts }) {
         studentsData = data;
       }
 
+      // Fetch Parents for Guardian Association
+      const { data: parentsData } = await supabase
+        .from('parents')
+        .select('id, full_name, phone, relationship')
+        .order('full_name');
+
       setCourses(coursesData || []);
       setBatches(batchesData || []);
       setStudents(studentsData || []);
+      setParents(parentsData || []);
     } catch (err) {
       console.error('Error fetching student data:', err);
       setError(err.message || 'Failed to load students from Supabase database.');
@@ -401,6 +414,20 @@ export default function StudentsPage({ onRefreshCounts }) {
       return;
     }
 
+    if (!studentToEdit) {
+      if (formData.guardian_mode === 'existing') {
+        if (!formData.guardian_id) {
+          setModalError('Please select a guardian to link with this student.');
+          return;
+        }
+      } else {
+        if (!formData.guardian_name.trim() || !formData.guardian_phone.trim()) {
+          setModalError('Guardian full name and contact phone number are required.');
+          return;
+        }
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -433,13 +460,49 @@ export default function StudentsPage({ onRefreshCounts }) {
         setStudentToEdit(null);
       } else {
         // INSERT new student in Supabase
-        const { error: insertErr } = await supabase
+        const { data: newStudent, error: insertErr } = await supabase
           .from('students')
-          .insert([payload]);
+          .insert([payload])
+          .select()
+          .single();
 
         if (insertErr) throw insertErr;
 
-        showToast(`Student ${payload.full_name} enrolled successfully in Supabase!`);
+        // Associate Guardian in parent_students
+        let parentId = formData.guardian_id;
+        if (formData.guardian_mode === 'new') {
+          const { data: newParent, error: pErr } = await supabase
+            .from('parents')
+            .insert([{
+              full_name: formData.guardian_name.trim(),
+              phone: formData.guardian_phone.trim(),
+              relationship: formData.guardian_relationship || 'Father',
+              preferred_notification_channel: 'telegram',
+            }])
+            .select()
+            .single();
+
+          if (!pErr && newParent) {
+            parentId = newParent.id;
+          }
+        }
+
+        if (parentId && newStudent) {
+          try {
+            await supabase.from('parent_students').insert([{
+              parent_id: parentId,
+              student_id: newStudent.id,
+              relationship: formData.guardian_relationship || 'Father',
+              is_primary_contact: true,
+              contact_priority: 'primary',
+              alert_preference: 'all',
+            }]);
+          } catch (psErr) {
+            console.warn('Could not insert parent_students junction:', psErr.message);
+          }
+        }
+
+        showToast(`Student ${payload.full_name} enrolled and linked with guardian!`);
         setIsAddModalOpen(false);
       }
 
@@ -1303,7 +1366,105 @@ export default function StudentsPage({ onRefreshCounts }) {
             </div>
           </div>
 
-          {/* Section 4: Collapsible Optional Details */}
+          {/* Section: Guardian & Emergency Contact (Mandatory) */}
+          {!studentToEdit && (
+            <div>
+              <div
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  color: 'var(--navy-900)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  marginBottom: '10px',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  paddingBottom: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '6px',
+                }}
+              >
+                <span>4. Guardian &amp; Parent Association (Required *)</span>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, guardian_mode: 'existing' })}
+                    style={{
+                      fontSize: '11px',
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      border: '1px solid',
+                      cursor: 'pointer',
+                      backgroundColor: formData.guardian_mode === 'existing' ? 'var(--navy-900)' : '#f8fafc',
+                      color: formData.guardian_mode === 'existing' ? '#ffffff' : 'var(--text-muted)',
+                      borderColor: formData.guardian_mode === 'existing' ? 'var(--navy-900)' : '#cbd5e1',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Select Existing Guardian
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, guardian_mode: 'new' })}
+                    style={{
+                      fontSize: '11px',
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      border: '1px solid',
+                      cursor: 'pointer',
+                      backgroundColor: formData.guardian_mode === 'new' ? 'var(--navy-900)' : '#f8fafc',
+                      color: formData.guardian_mode === 'new' ? '#ffffff' : 'var(--text-muted)',
+                      borderColor: formData.guardian_mode === 'new' ? 'var(--navy-900)' : '#cbd5e1',
+                      fontWeight: 600,
+                    }}
+                  >
+                    + Add New Guardian
+                  </button>
+                </div>
+              </div>
+
+              {formData.guardian_mode === 'existing' ? (
+                <Select
+                  label="Select Registered Guardian *"
+                  value={formData.guardian_id}
+                  onChange={(e) => setFormData({ ...formData, guardian_id: e.target.value })}
+                  options={parents.map((p) => ({
+                    value: p.id,
+                    label: `${p.full_name} (${p.phone || 'No phone'}) — ${p.relationship || 'Guardian'}`,
+                  }))}
+                  placeholder={parents.length === 0 ? 'No guardians registered yet (click + Add New Guardian above)' : 'Choose a registered guardian...'}
+                  required
+                />
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                  <Input
+                    label="Guardian Full Name *"
+                    value={formData.guardian_name}
+                    onChange={(e) => setFormData({ ...formData, guardian_name: e.target.value })}
+                    placeholder="e.g. Ramesh Patel"
+                    required
+                  />
+                  <Input
+                    label="Guardian Phone Number *"
+                    value={formData.guardian_phone}
+                    onChange={(e) => setFormData({ ...formData, guardian_phone: e.target.value })}
+                    placeholder="+91 98765 43210"
+                    required
+                  />
+                  <Select
+                    label="Relationship"
+                    value={formData.guardian_relationship}
+                    onChange={(e) => setFormData({ ...formData, guardian_relationship: e.target.value })}
+                    options={['Father', 'Mother', 'Local Guardian', 'Guardian', 'Other']}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Section 5: Collapsible Optional Details */}
           <div style={{ borderTop: '1px dashed var(--border-subtle)', paddingTop: '10px' }}>
             <button
               type="button"

@@ -11,10 +11,11 @@ export default function Pagination({
   totalItems = 0,
   pageSize = 20,
   onPageChange,
+  onPageSizeChange,
 }) {
-  if (totalItems <= pageSize) return null;
+  if (totalItems <= pageSize && !onPageSizeChange) return null;
 
-  const startIdx = (currentPage - 1) * pageSize + 1;
+  const startIdx = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endIdx = Math.min(currentPage * pageSize, totalItems);
 
   // Generate page numbers with ellipsis if needed
@@ -40,7 +41,7 @@ export default function Pagination({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '14px 20px',
+        padding: '12px 20px',
         backgroundColor: '#ffffff',
         borderTop: '1px solid var(--border-subtle)',
         borderBottomLeftRadius: '14px',
@@ -49,9 +50,35 @@ export default function Pagination({
         gap: '12px',
       }}
     >
-      <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-        Showing <strong>{startIdx}</strong> to <strong>{endIdx}</strong> of{' '}
-        <strong>{totalItems}</strong> records (20 per page)
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+          Showing <strong>{startIdx}</strong> to <strong>{endIdx}</strong> of{' '}
+          <strong>{totalItems}</strong> records ({pageSize} per section)
+        </div>
+
+        {onPageSizeChange && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Section:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => onPageSizeChange(Number(e.target.value))}
+              style={{
+                padding: '3px 8px',
+                borderRadius: '6px',
+                border: '1px solid var(--border-subtle)',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--navy-950)',
+                backgroundColor: '#ffffff',
+                cursor: 'pointer',
+              }}
+            >
+              <option value={10}>10 records</option>
+              <option value={20}>20 records</option>
+              <option value={50}>50 records</option>
+            </select>
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

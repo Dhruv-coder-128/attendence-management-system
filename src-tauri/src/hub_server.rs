@@ -292,8 +292,8 @@ pub fn start_hub_server(app_data_dir: PathBuf, preferred_port: u16) -> (SharedHu
                     .and_then(|v| v.as_str())
                     .unwrap_or(adm);
 
-                // Prune non-canonical test student or empty keys
-                if !date.is_empty() && !canonical_adm.is_empty() && !canonical_adm.starts_with("SMS-2026-") {
+                // Prune empty keys or unmatched test student
+                if !date.is_empty() && !canonical_adm.is_empty() && (matched_student.is_some() || !canonical_adm.starts_with("SMS-2026-")) {
                     let key = format!("{}::{}", date, canonical_adm);
                     let mut normalized_rec = rec.clone();
                     if let Some(obj) = normalized_rec.as_object_mut() {
@@ -688,7 +688,7 @@ fn handle_get_action(
                         if !s_code.is_empty() && (s_code == target_id || s_code == clean_b) {
                             return true;
                         }
-                        if !s_name.is_empty() && !target_name.is_empty() && (s_name == target_name || s_name.contains(&target_name) || target_name.contains(&s_name)) {
+                        if !s_name.is_empty() && !target_name.is_empty() && s_name.replace(' ', "") == target_name.replace(' ', "") {
                             return true;
                         }
                         false
@@ -1017,6 +1017,7 @@ fn handle_post_action(
                         late += 1;
                         "Late"
                     }
+                    "Pending" => "Pending",
                     _ => {
                         absent += 1;
                         "Absent"
@@ -1057,7 +1058,7 @@ fn handle_post_action(
                     .and_then(|v| v.as_str())
                     .unwrap_or(adm);
 
-                if canonical_adm.starts_with("SMS-2026-") {
+                if matched_student.is_none() && canonical_adm.starts_with("SMS-2026-") {
                     continue;
                 }
 
@@ -1146,6 +1147,13 @@ fn handle_post_action(
                         continue;
                     }
                     let key = format!("{}::{}", date, adm);
+                    if let Some(existing) = guard.attendance.get(&key) {
+                        let existing_ts = existing.get("updated_at").and_then(|v| v.as_str()).unwrap_or("");
+                        let incoming_ts = item.get("updated_at").and_then(|v| v.as_str()).unwrap_or("");
+                        if !existing_ts.is_empty() && !incoming_ts.is_empty() && incoming_ts <= existing_ts {
+                            continue; // Do not overwrite newer or identical record
+                        }
+                    }
                     guard.attendance.insert(key, item.clone());
                     att_updated = true;
                 }

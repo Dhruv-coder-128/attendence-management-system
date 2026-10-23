@@ -159,11 +159,22 @@ export function useSchoolDatabaseSync() {
           headers['X-Hub-Token'] = hub.token;
         }
 
+        const enrichedBatches = (batches || []).map((b) => {
+          const count = (students || []).filter(
+            (s) => s.batch_id === b.id || s.batch_code === b.code
+          ).length;
+          return {
+            ...b,
+            student_count: count,
+            enrolled: count,
+          };
+        });
+
         const res = await fetch(`${hub.url}/api/local-hub?action=sync_school_data`, {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            batches: batches || [],
+            batches: enrichedBatches,
             students: enrichedStudents,
             courses: courses || [],
             attendance: enrichedAttendance,
@@ -223,20 +234,20 @@ export function useSchoolDatabaseSync() {
             const studentId = r.student_id || r.admission_no;
             const batchId = r.batch_id;
             const date = r.date || today;
-            const status = r.status || 'Present';
+            const status = r.status || 'Pending';
             const updatedAt = r.updated_at || '';
 
-            if (!studentId || !batchId) continue;
+            if (!studentId) continue;
 
-            const dedupeKey = `${batchId}::${date}::${studentId}`;
+            const dedupeKey = `${date}::${String(studentId).trim().toUpperCase()}`;
             const lastKnown = lastProcessedAttendanceMapRef.current.get(dedupeKey);
 
-            // Protection: Never downgrade local "Present" to "Absent" unless incoming record has a strictly newer timestamp!
-            if (lastKnown && lastKnown.status === 'Present' && status === 'Absent') {
+            // Unbiased timestamp authority: newer record always wins, regardless of status
+            if (lastKnown) {
               const localTs = new Date(lastKnown.updatedAt || 0).getTime();
               const incomingTs = new Date(updatedAt || 0).getTime();
               if (incomingTs <= localTs) {
-                continue; // Reject stale absent record
+                continue; // Stale or duplicate record, skip
               }
             }
 

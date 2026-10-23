@@ -16,6 +16,8 @@ export const DEFAULT_ACADEMY_SETTINGS = {
   academic_year: 'AY 2026-27 (Term 1)',
   min_attendance_threshold: 75,
   late_grace_minutes: 15,
+  auto_birthday_wish_enabled: false,
+  auto_birthday_wish_channel: 'both', // 'telegram' | 'whatsapp' | 'both'
 };
 
 /**
@@ -44,6 +46,8 @@ export function getStoredAcademySettings() {
     academic_year: localStorage.getItem('erp_academic_year') || DEFAULT_ACADEMY_SETTINGS.academic_year,
     min_attendance_threshold: Number(localStorage.getItem('erp_min_attendance')) || DEFAULT_ACADEMY_SETTINGS.min_attendance_threshold,
     late_grace_minutes: Number(localStorage.getItem('erp_late_grace')) || DEFAULT_ACADEMY_SETTINGS.late_grace_minutes,
+    auto_birthday_wish_enabled: localStorage.getItem('erp_auto_birthday_wish_enabled') === 'true',
+    auto_birthday_wish_channel: localStorage.getItem('erp_auto_birthday_wish_channel') || DEFAULT_ACADEMY_SETTINGS.auto_birthday_wish_channel,
   };
 }
 
@@ -62,6 +66,8 @@ export function saveSettingsToLocal(settings) {
     if (settings.academic_year) localStorage.setItem('erp_academic_year', settings.academic_year);
     if (settings.min_attendance_threshold) localStorage.setItem('erp_min_attendance', String(settings.min_attendance_threshold));
     if (settings.late_grace_minutes) localStorage.setItem('erp_late_grace', String(settings.late_grace_minutes));
+    if (settings.auto_birthday_wish_enabled !== undefined) localStorage.setItem('erp_auto_birthday_wish_enabled', String(settings.auto_birthday_wish_enabled));
+    if (settings.auto_birthday_wish_channel) localStorage.setItem('erp_auto_birthday_wish_channel', settings.auto_birthday_wish_channel);
 
     // Dispatch global event for instant logo and branding propagation
     window.dispatchEvent(new CustomEvent('sms_academy_settings_updated', { detail: settings }));

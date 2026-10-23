@@ -29,8 +29,6 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import SqlImportModal from '../components/importer/SqlImportModal';
 import MasterImportModal from '../components/importer/MasterImportModal';
 import BirthdayWishModal from '../components/students/BirthdayWishModal';
-import { downloadSampleTemplate, downloadAllInOneTemplate } from '../lib/importer/templateGenerator';
-import { CANONICAL_STUDENTS } from '../data/canonicalSchoolData.js';
 import { isStudentBirthdayToday } from '../lib/telegramClient.js';
 
 /**
@@ -90,7 +88,7 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
         .select('id, admission_no, roll_no, full_name, batch_id, dob, phone, contact_number, status', { count: 'exact' });
       if (sErr) throw sErr;
 
-      const studentList = studentsData && studentsData.length > 0 ? studentsData : CANONICAL_STUDENTS;
+      const studentList = studentsData || [];
       const bdays = studentList.filter(
         (s) => s.status !== 'inactive' && s.status !== 'suspended' && isStudentBirthdayToday(s.dob)
       );
@@ -113,7 +111,7 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
         .order('name');
       if (bErr) throw bErr;
 
-      // 3. Today's Attendance Records
+      // 3. Today's Attendance Records - Order by updated_at descending
       const { data: attendanceData, error: aErr } = await supabase
         .from('attendance')
         .select(`
@@ -125,22 +123,24 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
           time_in,
           remarks,
           telegram_notified,
+          created_at,
+          updated_at,
           students:student_id ( id, full_name, admission_no, roll_no ),
           batches:batch_id ( id, name, code )
         `)
         .eq('date', todayIso)
-        .order('created_at', { ascending: false });
+        .order('updated_at', { ascending: false });
       if (aErr) throw aErr;
 
       const records = attendanceData || [];
-      // Build canonical student lookup dictionary to resolve any student ID or admission_no
-      const canonicalStudentLookup = new Map();
-      (CANONICAL_STUDENTS || []).forEach((cs) => {
-        if (cs.admission_no) canonicalStudentLookup.set(cs.admission_no.trim().toUpperCase(), cs);
-        if (cs.id) canonicalStudentLookup.set(cs.id.trim().toUpperCase(), cs);
+      // Build dynamic student lookup dictionary from real database students
+      const liveStudentLookup = new Map();
+      (studentList || []).forEach((s) => {
+        if (s.admission_no) liveStudentLookup.set(String(s.admission_no).trim().toUpperCase(), s);
+        if (s.id) liveStudentLookup.set(String(s.id).trim().toUpperCase(), s);
       });
 
-      // Deduplicate attendance records: Strictly 1 state per student per date
+      // Deduplicate attendance records: Strictly 1 authoritative state per student per date
       const studentAttendanceMap = new Map();
       records.forEach((r) => {
         const rawAdm = (r.students?.admission_no || r.admission_no || '').trim().toUpperCase();
@@ -149,27 +149,28 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
         const rawName = (r.students?.full_name || r.full_name || '').trim().toLowerCase();
 
         // 1. Match authoritatively by Admission No or Student ID
-        let matched = (rawAdm ? canonicalStudentLookup.get(rawAdm) : null) || (rawId ? canonicalStudentLookup.get(rawId) : null);
+        let matched = (rawAdm ? liveStudentLookup.get(rawAdm) : null) || (rawId ? liveStudentLookup.get(rawId) : null);
 
         // 2. Fallback to name matching strictly scoped within the matching batch
         if (!matched && rawName) {
-          matched = (CANONICAL_STUDENTS || []).find((cs) => {
-            const batchMatch = !rawBatch || 
-              cs.batch_id.toUpperCase() === rawBatch || 
-              cs.batch_code.toUpperCase() === rawBatch;
-            return batchMatch && cs.full_name.trim().toLowerCase() === rawName;
+          matched = (studentList || []).find((s) => {
+            const sBatch = String(s.batch_id || '').toUpperCase();
+            const batchMatch = !rawBatch || sBatch === rawBatch;
+            return batchMatch && String(s.full_name || '').trim().toLowerCase() === rawName;
           });
-        }
-
-        // Discard extraneous test mock records (e.g. SMS-2026-2666)
-        if (rawAdm.startsWith('SMS-2026-') || (rawId && rawId.startsWith('SMS-2026-'))) {
-          return;
         }
 
         const studentKey = matched ? matched.admission_no : (rawAdm || rawId || null);
         if (!studentKey) return;
 
-        if (!studentAttendanceMap.has(studentKey)) {
+        // Timestamp Authority: Compare updated_at / created_at so newer records ALWAYS overwrite older records
+        const existing = studentAttendanceMap.get(studentKey);
+        const rTime = new Date(r.updated_at || r.created_at || r.time_in || 0).getTime();
+        const existingTime = existing
+          ? new Date(existing.updated_at || existing.created_at || existing.time_in || 0).getTime()
+          : -1;
+
+        if (!existing || rTime >= existingTime) {
           studentAttendanceMap.set(studentKey, {
             ...r,
             admission_no: matched ? matched.admission_no : (r.admission_no || studentKey),
@@ -182,7 +183,7 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
       const uniqueRecords = Array.from(studentAttendanceMap.values());
       const present = uniqueRecords.filter((r) => r.status === 'Present').length;
       const absent = uniqueRecords.filter((r) => r.status === 'Absent' || r.status === 'Late').length;
-      const totalEnrolled = studentCount || (CANONICAL_STUDENTS ? CANONICAL_STUDENTS.length : 100);
+      const totalEnrolled = studentList.length;
       const pending = Math.max(0, totalEnrolled - (present + absent));
 
       setStats({

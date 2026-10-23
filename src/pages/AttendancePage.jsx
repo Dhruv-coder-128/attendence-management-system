@@ -36,7 +36,6 @@ import TeacherAppConnectModal from '../components/attendance/TeacherAppConnectMo
 import { exportDailyRegisterToExcel } from '../lib/attendanceExporter';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { getActiveHubBaseUrl } from '../lib/useSchoolDatabaseSync';
-import { CANONICAL_BATCHES, getBatchStudents } from '../data/canonicalSchoolData.js';
 import {
   ensureDhruvShahTestStudent,
   TEST_STUDENT_NAME,
@@ -131,7 +130,7 @@ export default function AttendancePage({ onRefreshCounts }) {
 
       if (err) throw err;
 
-      const batchList = (data && data.length > 0) ? data : CANONICAL_BATCHES;
+      const batchList = data || [];
       setBatches(batchList);
 
       if (batchList.length > 0) {
@@ -147,9 +146,9 @@ export default function AttendancePage({ onRefreshCounts }) {
         setLoading(false);
       }
     } catch (err) {
-      console.error('Error fetching batches for attendance, using canonical cohorts:', err);
-      setBatches(CANONICAL_BATCHES);
-      setSelectedBatchId((prev) => prev || CANONICAL_BATCHES[0].id);
+      console.error('Error fetching batches for attendance:', err);
+      setBatches([]);
+      setSelectedBatchId('');
       setLoading(false);
     }
   };
@@ -258,6 +257,24 @@ export default function AttendancePage({ onRefreshCounts }) {
               });
 
               if (matchedStudent) {
+                // 1. User Action Shield: If user marked this student within the last 30s, DO NOT OVERWRITE!
+                const lastUserAction = Math.max(
+                  lastUserActionTimestampRef.current.get(matchedStudent.id) || 0,
+                  lastUserActionTimestampRef.current.get(matchedStudent.admission_no) || 0
+                );
+                if (Date.now() - lastUserAction < 30000) {
+                  return;
+                }
+
+                const existingLocal = map[matchedStudent.id];
+                if (existingLocal) {
+                  const existingLocalTime = new Date(existingLocal.updated_at || 0).getTime();
+                  const hrTime = new Date(hr.updated_at || 0).getTime();
+                  if (hrTime <= existingLocalTime) {
+                    return; // Skip older record from hub
+                  }
+                }
+
                 map[matchedStudent.id] = {
                   ...(map[matchedStudent.id] || {}),
                   student_id: matchedStudent.id,
@@ -375,22 +392,21 @@ export default function AttendancePage({ onRefreshCounts }) {
                   const targetKey = matchedStudent.id;
                   const currentRec = next[targetKey] || (matchedStudent.admission_no ? next[matchedStudent.admission_no] : null);
 
-                  // 1. User Action Shield: If user marked this student within the last 25s, DO NOT OVERWRITE!
+                  // 1. User Action Shield: If user marked this student within the last 30s, DO NOT OVERWRITE!
                   const lastUserAction = Math.max(
                     lastUserActionTimestampRef.current.get(matchedStudent.id) || 0,
                     lastUserActionTimestampRef.current.get(matchedStudent.admission_no) || 0
                   );
-                  if (Date.now() - lastUserAction < 25000) {
+                  if (Date.now() - lastUserAction < 30000) {
                     return;
                   }
 
-                  // 2. Status Protection: Never allow background polling to downgrade a "Present" status to "Absent"
-                  // unless incoming record has a strictly newer updated_at timestamp!
-                  if (currentRec && currentRec.status === 'Present' && r.status === 'Absent') {
+                  // 2. Unbiased Timestamp Authority: strictly newer record wins regardless of status (Absent, Late, Present)
+                  if (currentRec) {
                     const currentUpdated = new Date(currentRec.updated_at || 0).getTime();
                     const incomingUpdated = new Date(r.updated_at || 0).getTime();
                     if (incomingUpdated <= currentUpdated) {
-                      return; // Reject stale absent record
+                      return; // Reject older or identical timestamp
                     }
                   }
 

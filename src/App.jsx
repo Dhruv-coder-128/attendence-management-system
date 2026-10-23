@@ -12,6 +12,7 @@ const ParentsPage = lazy(() => import('./pages/ParentsPage'));
 const FeesPage = lazy(() => import('./pages/FeesPage'));
 const ExamsPage = lazy(() => import('./pages/ExamsPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const BulkImportPage = lazy(() => import('./pages/BulkImportPage'));
 const MasterAdminPortalPage = lazy(() => import('./pages/MasterAdminPortalPage'));
@@ -26,6 +27,7 @@ import TrialExpiredLockout from './components/license/TrialExpiredLockout';
 import { RefreshCw, GraduationCap } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { useSchoolDatabaseSync } from './lib/useSchoolDatabaseSync';
+import { checkAndDispatchBirthdayWishes } from './lib/birthdayAutoDispatcher';
 
 
 /**
@@ -285,6 +287,15 @@ export default function App() {
       refreshCounts();
     }
   }, [user, activePage, refreshCounts]);
+
+  // Automated Daily Birthday Greetings Dispatch (runs once daily upon application startup)
+  useEffect(() => {
+    if (user && !Capacitor.isNativePlatform()) {
+      checkAndDispatchBirthdayWishes().catch((err) => {
+        console.warn('Automated birthday greeting startup check note:', err);
+      });
+    }
+  }, [user]);
 
   // Secret Developer Portal Shortcut: Ctrl + Shift + D
   useEffect(() => {
@@ -551,6 +562,10 @@ export default function App() {
               onBroadcast={handleBroadcast}
               onRefreshCounts={refreshCounts}
             />
+          )}
+
+          {activePage === 'reports' && (
+            <ReportsPage />
           )}
 
           {activePage === 'import' && (
