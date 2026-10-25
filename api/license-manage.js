@@ -38,17 +38,30 @@ async function fetchLicensesResilient(serverDb) {
 
     if (cErr) throw cErr;
     return (cData || []).map((row) => {
+      let parsed = {};
       try {
-        return JSON.parse(row.description);
-      } catch {
-        return {
-          id: row.id,
-          license_key: row.code.replace(/^LIC:/, ''),
-          school_name: row.name,
-          status: row.is_active ? 'licensed' : 'suspended',
-          is_activated: true,
-        };
-      }
+        parsed = JSON.parse(row.description) || {};
+      } catch {}
+      const schoolName = parsed.school_name || parsed.schoolName || row.name?.replace(/\s*\[.*\]/, '').trim() || 'SMS Client School';
+      const cleanKey = parsed.license_key || parsed.licenseKey || row.code.replace(/^LIC:/, '');
+      const isLocked = Boolean(parsed.is_locked || parsed.isLocked || !row.is_active || parsed.status === 'suspended');
+      return {
+        id: parsed.id || row.id || `LIC-${cleanKey}`,
+        license_key: cleanKey,
+        school_name: schoolName,
+        contact_person: parsed.contact_person || parsed.contactPerson || 'Principal / Administrator',
+        phone: parsed.phone || parsed.contact_developer?.phone || '',
+        email: parsed.email || '',
+        status: isLocked ? 'suspended' : (parsed.status || 'trial_active'),
+        is_locked: isLocked,
+        is_timer_visible: parsed.is_timer_visible !== undefined ? parsed.is_timer_visible : (parsed.isTimerVisible !== false),
+        days_remaining: parsed.days_remaining !== undefined ? parsed.days_remaining : (parsed.daysRemaining !== undefined ? parsed.daysRemaining : 30),
+        trial_ends_at: parsed.trial_ends_at || parsed.trialEndsAt,
+        bound_device_id: parsed.bound_device_id || parsed.activated_device_id || row.activated_device_id || null,
+        bound_at: parsed.bound_at || parsed.activated_at || null,
+        notes: parsed.notes || '',
+        created_at: row.created_at,
+      };
     });
   }
 
@@ -264,6 +277,7 @@ export default async function handler(req, res) {
         const cleanKey = String(licenseKey).trim().toUpperCase();
         const updated = await updateLicenseStatusResilient(serverDb, cleanKey, {
           status: 'suspended',
+          is_locked: true,
           updated_at: new Date().toISOString(),
         });
 
@@ -275,30 +289,72 @@ export default async function handler(req, res) {
         const cleanKey = String(licenseKey).trim().toUpperCase();
         const updated = await updateLicenseStatusResilient(serverDb, cleanKey, {
           status: newStatus || 'trial_active',
+          is_locked: false,
           updated_at: new Date().toISOString(),
         });
 
         return res.status(200).json({ ok: true, message: `License ${cleanKey} unlocked successfully.`, license: updated });
       }
 
-      // 4. Update / Extend Days
-      if (action === 'set_days') {
+      // 4. Update / Extend / Adjust Days (Supports increase, decrease, and exact days)
+      if (action === 'set_days' || action === 'adjust_days') {
         const cleanKey = String(licenseKey).trim().toUpperCase();
-        const days = parseInt(durationDays, 10) || 0;
+        let days = 0;
+        if (action === 'adjust_days' && req.body?.deltaDays !== undefined) {
+          const currentDays = parseInt(req.body?.currentDays, 10) || 0;
+          days = Math.max(0, currentDays + parseInt(req.body?.deltaDays, 10));
+        } else {
+          days = Math.max(0, parseInt(durationDays, 10) || 0);
+        }
+
         const now = new Date();
         const newEndsAt = new Date(now.getTime() + days * 86400000).toISOString();
-        const computedStatus = days > 0 ? (days >= 365 ? 'licensed' : 'trial_active') : 'trial_expired';
+        const computedStatus = days >= 9000 ? 'licensed' : (days > 0 ? 'trial_active' : 'trial_expired');
+        const isLocked = days <= 0 && computedStatus !== 'licensed';
 
         const updated = await updateLicenseStatusResilient(serverDb, cleanKey, {
           status: computedStatus,
+          is_locked: isLocked,
+          days_remaining: days,
           trial_ends_at: newEndsAt,
           updated_at: now.toISOString(),
         });
 
-        return res.status(200).json({ ok: true, message: `License ${cleanKey} set to ${days} days.`, license: updated });
+        return res.status(200).json({ ok: true, message: `License ${cleanKey} set to ${days} days.`, license: updated, days });
       }
 
-      // 5. Delete school license
+      // 5. Toggle Floating Timer Capsule Visibility on Client EXE/APK
+      if (action === 'toggle_timer') {
+        const cleanKey = String(licenseKey).trim().toUpperCase();
+        const isTimerVisible = Boolean(req.body?.isTimerVisible);
+        const updated = await updateLicenseStatusResilient(serverDb, cleanKey, {
+          is_timer_visible: isTimerVisible,
+          updated_at: new Date().toISOString(),
+        });
+
+        return res.status(200).json({ ok: true, message: `Timer visibility for ${cleanKey} updated to ${isTimerVisible ? 'ON' : 'OFF'}.`, license: updated });
+      }
+
+      // 6. Reset Workstation Hardware Binding (Unbind device)
+      if (action === 'reset_device') {
+        const cleanKey = String(licenseKey).trim().toUpperCase();
+        const updated = await updateLicenseStatusResilient(serverDb, cleanKey, {
+          bound_device_id: null,
+          activated_device_id: null,
+          is_activated: false,
+          bound_at: null,
+          activated_at: null,
+          updated_at: new Date().toISOString(),
+        });
+
+        return res.status(200).json({
+          ok: true,
+          message: `Workstation binding for ${cleanKey} cleared successfully. School can now activate on a new computer.`,
+          license: updated,
+        });
+      }
+
+      // 7. Delete school license
       if (action === 'delete') {
         const cleanKey = String(licenseKey).trim().toUpperCase();
         await deleteLicenseResilient(serverDb, cleanKey);

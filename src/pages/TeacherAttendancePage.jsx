@@ -50,6 +50,8 @@ import {
 } from '../lib/localWifiHubService';
 import { useAcademySettings } from '../lib/academySettings';
 import { groupBatchesByStandard } from '../lib/classHierarchyHelper';
+import BirthdayWishModal from '../components/students/BirthdayWishModal';
+
 
 export const CANONICAL_BATCH_CODES = [];
 

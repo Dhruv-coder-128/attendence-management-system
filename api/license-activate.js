@@ -112,49 +112,78 @@ export default async function handler(req, res) {
     }
 
     // 3. First-time Activation: Start authoritative 30-day trial
-    if (!license.is_activated) {
-      const trialDurationDays = 30;
-      const trialEnds = new Date(now.getTime() + trialDurationDays * 24 * 60 * 60 * 1000);
+    const boundId = license.bound_device_id || license.activated_device_id;
+    if (!license.is_activated || !boundId) {
+      const trialDurationDays = license.days_remaining !== undefined ? license.days_remaining : 30;
+      const trialEnds = license.trial_ends_at ? new Date(license.trial_ends_at) : new Date(now.getTime() + trialDurationDays * 24 * 60 * 60 * 1000);
 
-      const { data: updated, error: updateErr } = await serverDb
-        .from('school_licenses')
-        .update({
-          is_activated: true,
-          trial_started_at: now.toISOString(),
-          trial_ends_at: trialEnds.toISOString(),
-          status: 'trial_active',
-          activated_device_id: deviceId || 'primary-device',
-          last_validated_at: now.toISOString(),
-          updated_at: now.toISOString(),
-        })
-        .eq('id', license.id)
-        .select()
-        .single();
+      const updatePayload = {
+        is_activated: true,
+        trial_started_at: license.trial_started_at || now.toISOString(),
+        trial_ends_at: trialEnds.toISOString(),
+        status: license.status === 'licensed' ? 'licensed' : 'trial_active',
+        activated_device_id: deviceId || 'primary-device',
+        bound_device_id: deviceId || 'primary-device',
+        last_validated_at: now.toISOString(),
+        updated_at: now.toISOString(),
+      };
 
-      if (updateErr) {
-        console.error('Error activating trial:', updateErr);
-        return res.status(500).json({ ok: false, error: 'Failed to record trial activation on server.' });
-      }
+      try {
+        await serverDb
+          .from('school_licenses')
+          .update(updatePayload)
+          .eq('id', license.id);
+      } catch {}
+
+      // Also persist to courses table description if courses fallback
+      try {
+        const { data: courseRow } = await serverDb
+          .from('courses')
+          .select('*')
+          .eq('code', 'LIC:' + cleanKey)
+          .maybeSingle();
+
+        if (courseRow) {
+          let descObj = {};
+          try { descObj = JSON.parse(courseRow.description) || {}; } catch {}
+          Object.assign(descObj, updatePayload);
+          await serverDb.from('courses').update({
+            description: JSON.stringify(descObj),
+            updated_at: now.toISOString(),
+          }).eq('code', 'LIC:' + cleanKey);
+        }
+      } catch {}
 
       return res.status(200).json({
         ok: true,
-        message: 'License activated successfully! Your 30-day trial has started.',
-        licenseId: updated.id,
-        schoolName: updated.school_name,
-        status: 'trial_active',
-        trialStartedAt: updated.trial_started_at,
-        trialEndsAt: updated.trial_ends_at,
+        message: 'License activated and bound to this workstation successfully!',
+        licenseId: license.id,
+        schoolName: license.school_name,
+        status: license.status === 'licensed' ? 'licensed' : 'trial_active',
+        trialStartedAt: updatePayload.trial_started_at,
+        trialEndsAt: updatePayload.trial_ends_at,
         daysRemaining: trialDurationDays,
+        boundDeviceId: deviceId || 'primary-device',
         serverTime: now.toISOString(),
         databaseConfig: {
-          supabaseUrl: updated.school_supabase_url,
-          supabaseAnonKey: updated.school_supabase_anon_key,
+          supabaseUrl: license.school_supabase_url,
+          supabaseAnonKey: license.school_supabase_anon_key,
         },
         developerContact,
       });
     }
 
-    // 4. Re-activation / Status Check for already-activated license
+    // 4. Single-Device Binding Enforcement: Reject activation if entered on a different machine
+    if (boundId && deviceId && boundId !== deviceId) {
+      return res.status(403).json({
+        ok: false,
+        status: 'device_mismatch',
+        error: `Single-Device License Policy: This license key is already bound to another workstation (${boundId}). It cannot be used on this computer. Contact developer (+91 8866039007) for license transfer or device authorization.`,
+        developerContact,
+      });
+    }
+
+    // 5. Re-activation / Status Check for already-activated license
     const trialEnds = license.trial_ends_at ? new Date(license.trial_ends_at) : null;
     const isExpired = license.status === 'trial_expired' || (trialEnds && now > trialEnds);
 

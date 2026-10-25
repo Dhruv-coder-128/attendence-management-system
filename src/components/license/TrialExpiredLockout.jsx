@@ -9,7 +9,14 @@ export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
   const license = getStoredLicense();
   const contactLinks = getContactDeveloperLinks(licenseStatus?.developerContact || license?.developerContact);
 
+  const isClonedOrMismatch =
+    licenseStatus?.status === 'cloned_copy_detected' ||
+    licenseStatus?.status === 'hardware_mismatch' ||
+    license?.status === 'cloned_copy_detected' ||
+    license?.status === 'hardware_mismatch';
+
   const isSuspendedOrRevoked =
+    isClonedOrMismatch ||
     licenseStatus?.status === 'suspended' ||
     licenseStatus?.status === 'revoked' ||
     licenseStatus?.status === 'locked' ||
@@ -45,7 +52,7 @@ export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
         {/* Top Header */}
         <div
           style={{
-            backgroundColor: isSuspendedOrRevoked ? '#7f1d1d' : '#991b1b',
+            backgroundColor: isClonedOrMismatch ? '#831843' : (isSuspendedOrRevoked ? '#7f1d1d' : '#991b1b'),
             color: '#ffffff',
             padding: '28px 24px',
             display: 'flex',
@@ -65,7 +72,7 @@ export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
               marginBottom: '12px',
             }}
           >
-            <Lock size={32} color="#ffffff" />
+            {isClonedOrMismatch ? <ShieldAlert size={32} color="#ffffff" /> : <Lock size={32} color="#ffffff" />}
           </div>
           <h2
             style={{
@@ -76,7 +83,9 @@ export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
               color: '#ffffff',
             }}
           >
-            {isSuspendedOrRevoked ? 'Access Suspended by Developer' : 'Evaluation Trial Concluded'}
+            {isClonedOrMismatch
+              ? 'Unauthorized Workstation Copy Detected'
+              : (isSuspendedOrRevoked ? 'Access Suspended by Developer' : 'Evaluation Trial Concluded')}
           </h2>
           <span style={{ fontSize: '13px', color: '#fecaca', letterSpacing: '0.3px' }}>
             {license?.schoolName ? `${license.schoolName} — ` : ''}SMS Student Management System
@@ -87,8 +96,8 @@ export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
         <div style={{ padding: '28px 24px' }}>
           <div
             style={{
-              backgroundColor: '#fef2f2',
-              border: '1px solid #fecaca',
+              backgroundColor: isClonedOrMismatch ? '#fdf2f8' : '#fef2f2',
+              border: `1px solid ${isClonedOrMismatch ? '#fbcfe8' : '#fecaca'}`,
               borderRadius: '8px',
               padding: '16px',
               marginBottom: '20px',
@@ -97,15 +106,17 @@ export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
             <p
               style={{
                 margin: 0,
-                fontSize: '15px',
+                fontSize: '14.5px',
                 fontWeight: 600,
-                color: '#991b1b',
+                color: isClonedOrMismatch ? '#9d174d' : '#991b1b',
                 lineHeight: 1.5,
               }}
             >
-              {isSuspendedOrRevoked
-                ? 'This school installation has been locked by the developer. Contact developer to resolve.'
-                : 'Your trial period has ended. Contact the developer to activate SMS.'}
+              {isClonedOrMismatch
+                ? 'SECURITY LOCKOUT: This software installation was cloned or copied from another computer. The license is strictly bound to the original authorized workstation. Contact Dhruv Shah (+91 8866039007) for license transfer.'
+                : (isSuspendedOrRevoked
+                  ? 'This school installation has been locked by the developer. Contact developer to resolve.'
+                  : 'Your trial period has ended. Contact the developer to activate SMS.')}
             </p>
           </div>
 

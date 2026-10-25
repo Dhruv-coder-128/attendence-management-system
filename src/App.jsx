@@ -100,10 +100,10 @@ export default function App() {
 
   useEffect(() => {
     checkLicense();
-    // Periodic license heartbeat check every 15s to immediately enforce remote SaaS lock or timer expiry
+    // Periodic license heartbeat check every 10s to immediately enforce remote SaaS lock or timer expiry
     const timer = setInterval(() => {
       checkLicense();
-    }, 15000);
+    }, 10000);
     return () => clearInterval(timer);
   }, [checkLicense]);
 
@@ -365,26 +365,6 @@ export default function App() {
     });
   };
 
-  // 0. Dedicated Native Mobile Mode / Teacher Attendance Portal
-  // If running inside Capacitor APK on mobile, or query ?portal=teacher, render teacher view immediately
-  const isTeacherApp =
-    Capacitor.isNativePlatform() ||
-    (typeof window !== 'undefined' &&
-      (window.location.search.includes('portal=teacher') || activePage === 'teacher-portal'));
-
-  if (isTeacherApp) {
-    return <TeacherAttendancePage />;
-  }
-
-  // 0.5. Parent Portal PWA Standalone Mode
-  const isParentPortal =
-    typeof window !== 'undefined' &&
-    (window.location.search.includes('portal=parent') || activePage === 'parent-portal');
-
-  if (isParentPortal) {
-    return <ParentPortalPage />;
-  }
-
   // 1. Loading Splash Screen
   if (authLoading) {
     return (
@@ -417,13 +397,15 @@ export default function App() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: '#cbd5e1' }}>
           <RefreshCw size={16} className="animate-spin" />
-          <span>Verifying Administrative Session...</span>
+          <span>Verifying Administrative Session &amp; License...</span>
         </div>
       </div>
     );
   }
 
-  // 2. Lockout screen if trial has expired, license is suspended/locked/revoked, or system clock was tampered
+  const isClientApp = isTauriDesktop() || Capacitor.isNativePlatform();
+
+  // 2. Lockout screen if trial has expired, license is suspended/locked/revoked, hardware mismatch, or clock tampered
   const isLockedOut =
     licenseStatus?.isTrialExpired ||
     licenseStatus?.isLocked ||
@@ -432,9 +414,11 @@ export default function App() {
     licenseStatus?.status === 'revoked' ||
     licenseStatus?.status === 'locked' ||
     licenseStatus?.status === 'clock_tampered' ||
+    licenseStatus?.status === 'cloned_copy_detected' ||
+    licenseStatus?.status === 'hardware_mismatch' ||
     (licenseStatus?.status === 'trial_active' && licenseStatus?.daysRemaining <= 0);
 
-  if (isLockedOut) {
+  if (isLockedOut && (isClientApp || activePage !== 'master-portal')) {
     return (
       <TrialExpiredLockout
         licenseStatus={licenseStatus}
@@ -446,22 +430,72 @@ export default function App() {
     );
   }
 
-  // 3. Forced activation modal for desktop app if completely unlicensed
-  if (isTauriDesktop() && licenseStatus?.status === 'unlicensed') {
+  // 3. Mandatory Non-Dismissible Activation Screen for Client Apps (Desktop EXE & Mobile APK)
+  // If the app is unlicensed, absolutely NO access to Dashboard or Teacher Portal is permitted.
+  if (isClientApp && licenseStatus?.status === 'unlicensed') {
     return (
-      <SchoolActivationModal
-        isOpen={true}
-        isForced={true}
-        onActivated={() => {
-          reinitializeSupabaseClient();
-          checkLicense();
-          refreshCounts();
-        }}
-      />
+      <div style={{ minHeight: '100vh', backgroundColor: 'var(--navy-950)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <SchoolActivationModal
+          isOpen={true}
+          isForced={true}
+          onActivated={() => {
+            reinitializeSupabaseClient();
+            checkLicense();
+            refreshCounts();
+          }}
+        />
+      </div>
     );
   }
 
-  // 4. Route Protection: If unauthenticated, render Login Page
+  // 4. Dedicated Native Mobile Mode / Teacher Attendance Portal
+  // (Only reached once license has been validated & confirmed active!)
+  const isTeacherApp =
+    Capacitor.isNativePlatform() ||
+    (typeof window !== 'undefined' &&
+      (window.location.search.includes('portal=teacher') || activePage === 'teacher-portal'));
+
+  if (isTeacherApp) {
+    return <TeacherAttendancePage />;
+  }
+
+  // 5. Parent Portal PWA Standalone Mode
+  const isParentPortal =
+    typeof window !== 'undefined' &&
+    (window.location.search.includes('portal=parent') || activePage === 'parent-portal');
+
+  if (isParentPortal) {
+    return <ParentPortalPage />;
+  }
+
+
+  // 4. Standalone SaaS Master Admin Portal (Pure Super Admin Console — Zero School ERP Sidebar or Clutter)
+  if (activePage === 'master-portal' && !isTauriDesktop()) {
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
+        <Suspense
+          fallback={
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#94a3b8' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                <RefreshCw size={28} style={{ animation: 'spin 1s linear infinite', color: '#0284c7' }} />
+                <span style={{ fontSize: '14px', fontWeight: 600, color: '#64748b' }}>
+                  Loading Master Admin Console...
+                </span>
+              </div>
+            </div>
+          }
+        >
+          <MasterAdminPortalPage
+            onNavigate={handleNavigate}
+            onPreviewSchool={() => setActivePage('dashboard')}
+            user={user}
+          />
+        </Suspense>
+      </div>
+    );
+  }
+
+  // 5. Route Protection: If unauthenticated in School ERP mode, render Login Page
   if (!user) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
@@ -486,15 +520,55 @@ export default function App() {
   }
 
   const storedLic = getStoredLicense();
-  const showTrialCapsule =
-    licenseStatus?.status === 'trial_active' ||
-    licenseStatus?.status === 'trial' ||
-    storedLic?.status === 'trial_active' ||
-    (storedLic?.daysRemaining !== undefined && storedLic?.daysRemaining <= 30);
+  const isTimerExplicitlyDisabled = licenseStatus?.isTimerVisible === false || storedLic?.isTimerVisible === false;
+  const isLicensedPaid = licenseStatus?.status === 'licensed' || storedLic?.status === 'licensed';
+  const showTrialCapsule = !isLockedOut && !isTimerExplicitlyDisabled && activePage !== 'master-portal' && (
+    (licenseStatus?.status === 'trial_active' || storedLic?.status === 'trial_active' || (storedLic?.daysRemaining !== undefined && storedLic?.daysRemaining <= 30 && storedLic?.daysRemaining > 0))
+    || (isLicensedPaid && (licenseStatus?.isTimerVisible === true || storedLic?.isTimerVisible === true))
+  );
 
-  // 5. Render Protected Administrative ERP Console
+  // 6. Render Protected Administrative ERP Console (For Desktop EXE, Android APK, or School Preview)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
+      {/* Return to Master Admin Bar (Only visible when previewing School ERP in web browser) */}
+      {!isTauriDesktop() && !Capacitor.isNativePlatform() && (
+        <div
+          style={{
+            backgroundColor: '#0f172a',
+            color: '#f8fafc',
+            padding: '8px 20px',
+            fontSize: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            zIndex: 9999,
+            borderBottom: '1px solid #1e293b',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ backgroundColor: '#0284c7', color: '#fff', padding: '2px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '11px' }}>
+              PREVIEW MODE
+            </span>
+            <span>You are previewing the School ERP Client as seen by Institutions.</span>
+          </div>
+          <button
+            onClick={() => setActivePage('master-portal')}
+            style={{
+              backgroundColor: '#38bdf8',
+              color: '#0f172a',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '4px 12px',
+              fontSize: '12px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            ← Return to Super Admin Console
+          </button>
+        </div>
+      )}
+
       {showTrialCapsule && (
         <DraggableTrialCapsule
           daysRemaining={licenseStatus?.daysRemaining || storedLic?.daysRemaining}
@@ -577,13 +651,6 @@ export default function App() {
               currentUserProfile={currentUserProfile}
               onOpenLicenseModal={() => setIsActivationModalOpen(true)}
               onNavigate={handleNavigate}
-            />
-          )}
-
-          {activePage === 'master-portal' && !isTauriDesktop() && (
-            <MasterAdminPortalPage
-              onNavigate={handleNavigate}
-              user={user}
             />
           )}
 
