@@ -15,7 +15,7 @@ import path from 'path';
 const ROOT_DIR = process.cwd();
 const RELEASE_APK_DIR = path.join(ROOT_DIR, 'release-apk');
 const RELEASE_EXE_DIR = path.join(ROOT_DIR, 'release-exe');
-const VERSION = 'v1.0.8';
+const VERSION = 'v1.0.9';
 
 console.log('====================================================');
 console.log(`Starting SMS Full Release Packaging Pipeline [${VERSION}]`);
@@ -35,7 +35,12 @@ execSync('npx cap sync android', { stdio: 'inherit', cwd: ROOT_DIR });
 
 // 4. Build Android Debug APK
 console.log('\n🤖 Step 3: Compiling Android APK (Gradle)...');
-execSync('cmd /c "cd android && gradlew.bat assembleDebug"', { stdio: 'inherit', cwd: ROOT_DIR });
+const jdk21Path = 'C:\\Users\\dusha\\.jdks\\jbr-21.0.11';
+const jbrPath = fs.existsSync(jdk21Path) ? jdk21Path : 'C:\\Program Files\\Android\\Android Studio\\jbr';
+const javaCmd = fs.existsSync(jbrPath)
+  ? `set "JAVA_HOME=${jbrPath}" && set "PATH=${jbrPath}\\bin;%PATH%" && cd android && gradlew.bat assembleDebug`
+  : 'cd android && gradlew.bat assembleDebug';
+execSync(`cmd /c "${javaCmd}"`, { stdio: 'inherit', cwd: ROOT_DIR });
 
 const builtApkPath = path.join(ROOT_DIR, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
 if (fs.existsSync(builtApkPath)) {

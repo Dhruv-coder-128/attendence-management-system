@@ -534,8 +534,20 @@ export async function validateLicense(options = {}) {
   const cached = getStoredLicense();
   const baseUrl = getApiBaseUrl();
 
-  // If running in desktop EXE or native mobile APK, license is strictly MANDATORY
-  const isEnforcedAppEnvironment = isTauriDesktop() || Capacitor.isNativePlatform();
+  // On native mobile APK, teachers take roll call over Wi-Fi and are never locked out
+  if (Capacitor.isNativePlatform()) {
+    return {
+      ok: true,
+      status: 'teacher_mobile_mode',
+      daysRemaining: 9999,
+      isTrialExpired: false,
+      isLocked: false,
+      developerContact: DEFAULT_DEV_CONTACT,
+    };
+  }
+
+  // If running in desktop Windows EXE, license is strictly MANDATORY
+  const isEnforcedAppEnvironment = isTauriDesktop();
 
   if (!cached || !cached.licenseKey) {
     if (!isEnforcedAppEnvironment && !options.requireLicense) {

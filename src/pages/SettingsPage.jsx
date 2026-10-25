@@ -23,13 +23,16 @@ import {
   EyeOff,
   Cake,
   MessageSquare,
+  Copy,
+  Calendar,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
 import UsersManagement from '../components/settings/UsersManagement';
 import MessageCenter from '../components/settings/MessageCenter';
 import { isSupabaseConfigured, checkSupabaseConnection, supabaseConfig } from '../lib/supabase';
-import { getStoredLicense, isTauriDesktop } from '../lib/licenseService';
+import { getStoredLicense, validateLicense, isTauriDesktop } from '../lib/licenseService';
+import { getHardwareFingerprint } from '../lib/hardwareFingerprint';
 import {
   getTelegramBotStatus,
   setupTelegramWebhook,
@@ -58,6 +61,39 @@ import { checkAndDispatchBirthdayWishes } from '../lib/birthdayAutoDispatcher';
  */
 export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, onNavigate }) {
   const storedLicense = getStoredLicense();
+
+  // Live Institutional License & Days State (for Marked Red Box card)
+  const [liveLicense, setLiveLicense] = useState(() => getStoredLicense());
+  const [machineHwid, setMachineHwid] = useState('');
+  const [isSyncingLicense, setIsSyncingLicense] = useState(false);
+  const [licenseSyncFeedback, setLicenseSyncFeedback] = useState('');
+
+  useEffect(() => {
+    getHardwareFingerprint().then((hw) => setMachineHwid(hw || ''));
+    validateLicense().then((res) => {
+      if (res?.ok) {
+        setLiveLicense(getStoredLicense());
+      }
+    });
+  }, []);
+
+  const handleManualSyncLicense = async () => {
+    setIsSyncingLicense(true);
+    setLicenseSyncFeedback('');
+    try {
+      const res = await validateLicense({ requireLicense: true });
+      if (res) {
+        const updated = getStoredLicense();
+        setLiveLicense(updated);
+        setLicenseSyncFeedback('✓ License status & remaining days synchronized with cloud');
+        setTimeout(() => setLicenseSyncFeedback(''), 4000);
+      }
+    } catch {
+      setLicenseSyncFeedback('Could not reach cloud license server');
+    } finally {
+      setIsSyncingLicense(false);
+    }
+  };
   const [instituteName, setInstituteName] = useState(DEFAULT_ACADEMY_SETTINGS.academy_name);
   const [campusName, setCampusName] = useState(DEFAULT_ACADEMY_SETTINGS.branch_name);
   const [address, setAddress] = useState(DEFAULT_ACADEMY_SETTINGS.address);
@@ -623,6 +659,199 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
                 onChange={(e) => setLateGracePeriod(e.target.value)}
                 helperText="After which student is marked Late"
               />
+            </div>
+          </div>
+
+          {/* Institutional License & Subscription Status Card (Marked Red Box) */}
+          <div className="erp-card" style={{ padding: '22px', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '8px',
+                    backgroundColor: 'var(--navy-900)',
+                    color: 'var(--gold-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <KeyRound size={20} />
+                </div>
+                <div>
+                  <h2
+                    style={{
+                      fontFamily: 'var(--font-heading)',
+                      fontSize: '15px',
+                      fontWeight: 700,
+                      color: 'var(--navy-950)',
+                      margin: 0,
+                    }}
+                  >
+                    Institutional License &amp; Validity
+                  </h2>
+                  <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: 0 }}>
+                    Commercial subscription entitlement, pending days &amp; device binding
+                  </p>
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              <div>
+                {(liveLicense?.daysRemaining || 0) >= 9000 || liveLicense?.status === 'licensed' ? (
+                  <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '12px', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <CheckCircle2 size={12} /> Full Commercial License
+                  </span>
+                ) : liveLicense?.status === 'trial_active' ? (
+                  <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '12px', backgroundColor: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    🟡 Evaluation Trial Active
+                  </span>
+                ) : (
+                  <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '12px', backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    🔴 License Inactive / Locked
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Days Remaining Big Display Banner */}
+            <div
+              style={{
+                background: (liveLicense?.daysRemaining || 0) >= 9000 || liveLicense?.status === 'licensed'
+                  ? 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'
+                  : 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)',
+                color: '#ffffff',
+                borderRadius: '8px',
+                padding: '16px 18px',
+                marginBottom: '14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#cbd5e1', fontWeight: 600 }}>
+                  Active Subscription Period
+                </div>
+                <div style={{ fontSize: '26px', fontWeight: 800, color: '#f8fafc', marginTop: '2px', display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                  {(liveLicense?.daysRemaining || 0) >= 9000 ? (
+                    <span style={{ color: '#4ade80' }}>Lifetime Access</span>
+                  ) : (
+                    <>
+                      <span>{liveLicense?.daysRemaining !== undefined ? liveLicense.daysRemaining : 30}</span>
+                      <span style={{ fontSize: '14px', fontWeight: 600, color: '#93c5fd' }}>Days Remaining</span>
+                    </>
+                  )}
+                </div>
+                <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '2px' }}>
+                  {liveLicense?.trialEndsAt ? `Valid until: ${new Date(liveLicense.trialEndsAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Evaluation period ongoing'}
+                </div>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleManualSyncLicense}
+                disabled={isSyncingLicense}
+                icon={RefreshCw}
+                style={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                  color: '#ffffff',
+                  borderColor: 'rgba(255, 255, 255, 0.25)',
+                  fontSize: '11.5px',
+                }}
+              >
+                {isSyncingLicense ? 'Syncing...' : 'Sync Cloud Status'}
+              </Button>
+            </div>
+
+            {licenseSyncFeedback && (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  backgroundColor: '#f0fdf4',
+                  color: '#166534',
+                  border: '1px solid #bbf7d0',
+                  fontSize: '11.5px',
+                  fontWeight: 600,
+                  marginBottom: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <CheckCircle2 size={14} />
+                <span>{licenseSyncFeedback}</span>
+              </div>
+            )}
+
+            {/* Key and Hardware Binding Metadata */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-subtle)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '6px',
+                padding: '12px',
+                fontSize: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--text-muted)' }}>License Key:</span>
+                <code style={{ fontWeight: 700, color: 'var(--navy-900)', fontFamily: 'monospace', backgroundColor: '#ffffff', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
+                  {liveLicense?.licenseKey || 'UNLICENSED'}
+                </code>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Bound Workstation ID:</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <code style={{ fontSize: '10.5px', color: '#1e40af', fontFamily: 'monospace', backgroundColor: '#eff6ff', padding: '2px 6px', borderRadius: '4px', border: '1px solid #bfdbfe' }} title={machineHwid}>
+                    {machineHwid ? (machineHwid.length > 22 ? machineHwid.slice(0, 20) + '…' : machineHwid) : 'Detecting...'}
+                  </code>
+                  {machineHwid && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(machineHwid);
+                        setLicenseSyncFeedback('✓ Copied Hardware ID to clipboard');
+                        setTimeout(() => setLicenseSyncFeedback(''), 3000);
+                      }}
+                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px', color: '#64748b' }}
+                      title="Copy Workstation ID"
+                    >
+                      <Copy size={12} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Anti-Piracy Lock:</span>
+                <span style={{ color: '#166534', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                  🔒 Single-Device Workstation Anchored
+                </span>
+              </div>
+            </div>
+
+            {/* Change / Renew License Key Button */}
+            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={KeyRound}
+                onClick={onOpenLicenseModal}
+                style={{ fontSize: '11.5px' }}
+              >
+                Change / Enter New License Key
+              </Button>
             </div>
           </div>
         </div>

@@ -403,22 +403,46 @@ export default function App() {
     );
   }
 
-  const isClientApp = isTauriDesktop() || Capacitor.isNativePlatform();
+  // 0. Dedicated Native Mobile Mode / Teacher Attendance Portal
+  // Teachers use mobile APK strictly for attendance roll-call over local Wi-Fi.
+  // Mobile APK NEVER shows licensing lockouts, trial expired screens, or floating timer capsules!
+  const isTeacherApp =
+    Capacitor.isNativePlatform() ||
+    (typeof window !== 'undefined' &&
+      (window.location.search.includes('portal=teacher') || activePage === 'teacher-portal'));
 
-  // 2. Lockout screen if trial has expired, license is suspended/locked/revoked, hardware mismatch, or clock tampered
+  if (isTeacherApp) {
+    return <TeacherAttendancePage />;
+  }
+
+  // 0.5. Parent Portal PWA Standalone Mode
+  const isParentPortal =
+    typeof window !== 'undefined' &&
+    (window.location.search.includes('portal=parent') || activePage === 'parent-portal');
+
+  if (isParentPortal) {
+    return <ParentPortalPage />;
+  }
+
+  const isDesktopExe = isTauriDesktop();
+
+  // 1. Lockout screen if trial has expired, license is suspended/locked/revoked, hardware mismatch, or clock tampered
+  // Exclusively enforced on School PC (Desktop Windows EXE)
   const isLockedOut =
-    licenseStatus?.isTrialExpired ||
-    licenseStatus?.isLocked ||
-    licenseStatus?.status === 'trial_expired' ||
-    licenseStatus?.status === 'suspended' ||
-    licenseStatus?.status === 'revoked' ||
-    licenseStatus?.status === 'locked' ||
-    licenseStatus?.status === 'clock_tampered' ||
-    licenseStatus?.status === 'cloned_copy_detected' ||
-    licenseStatus?.status === 'hardware_mismatch' ||
-    (licenseStatus?.status === 'trial_active' && licenseStatus?.daysRemaining <= 0);
+    isDesktopExe && (
+      licenseStatus?.isTrialExpired ||
+      licenseStatus?.isLocked ||
+      licenseStatus?.status === 'trial_expired' ||
+      licenseStatus?.status === 'suspended' ||
+      licenseStatus?.status === 'revoked' ||
+      licenseStatus?.status === 'locked' ||
+      licenseStatus?.status === 'clock_tampered' ||
+      licenseStatus?.status === 'cloned_copy_detected' ||
+      licenseStatus?.status === 'hardware_mismatch' ||
+      (licenseStatus?.status === 'trial_active' && (licenseStatus?.daysRemaining ?? 30) <= 0)
+    );
 
-  if (isLockedOut && (isClientApp || activePage !== 'master-portal')) {
+  if (isLockedOut) {
     return (
       <TrialExpiredLockout
         licenseStatus={licenseStatus}
@@ -430,9 +454,9 @@ export default function App() {
     );
   }
 
-  // 3. Mandatory Non-Dismissible Activation Screen for Client Apps (Desktop EXE & Mobile APK)
-  // If the app is unlicensed, absolutely NO access to Dashboard or Teacher Portal is permitted.
-  if (isClientApp && licenseStatus?.status === 'unlicensed') {
+  // 2. Mandatory Non-Dismissible Activation Screen for Desktop EXE
+  // If the PC app is unlicensed, absolutely NO access to Dashboard is permitted.
+  if (isDesktopExe && licenseStatus?.status === 'unlicensed') {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: 'var(--navy-950)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <SchoolActivationModal
@@ -448,28 +472,7 @@ export default function App() {
     );
   }
 
-  // 4. Dedicated Native Mobile Mode / Teacher Attendance Portal
-  // (Only reached once license has been validated & confirmed active!)
-  const isTeacherApp =
-    Capacitor.isNativePlatform() ||
-    (typeof window !== 'undefined' &&
-      (window.location.search.includes('portal=teacher') || activePage === 'teacher-portal'));
-
-  if (isTeacherApp) {
-    return <TeacherAttendancePage />;
-  }
-
-  // 5. Parent Portal PWA Standalone Mode
-  const isParentPortal =
-    typeof window !== 'undefined' &&
-    (window.location.search.includes('portal=parent') || activePage === 'parent-portal');
-
-  if (isParentPortal) {
-    return <ParentPortalPage />;
-  }
-
-
-  // 4. Standalone SaaS Master Admin Portal (Pure Super Admin Console — Zero School ERP Sidebar or Clutter)
+  // 3. Standalone SaaS Master Admin Portal (Pure Super Admin Console — Zero School ERP Sidebar or Clutter)
   if (activePage === 'master-portal' && !isTauriDesktop()) {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
@@ -495,16 +498,10 @@ export default function App() {
     );
   }
 
-  // 5. Route Protection: If unauthenticated in School ERP mode, render Login Page
+  // 4. Route Protection: If unauthenticated in School ERP mode, render Login Page
   if (!user) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
-        {licenseStatus?.status === 'trial_active' && (
-          <DraggableTrialCapsule
-            daysRemaining={licenseStatus?.daysRemaining}
-            onOpenActivation={() => setIsActivationModalOpen(true)}
-          />
-        )}
         <LoginPage onLoginSuccess={handleLoginSuccess} />
         <SchoolActivationModal
           isOpen={isActivationModalOpen}
@@ -521,13 +518,20 @@ export default function App() {
 
   const storedLic = getStoredLicense();
   const isTimerExplicitlyDisabled = licenseStatus?.isTimerVisible === false || storedLic?.isTimerVisible === false;
-  const isLicensedPaid = licenseStatus?.status === 'licensed' || storedLic?.status === 'licensed';
-  const showTrialCapsule = !isLockedOut && !isTimerExplicitlyDisabled && activePage !== 'master-portal' && (
-    (licenseStatus?.status === 'trial_active' || storedLic?.status === 'trial_active' || (storedLic?.daysRemaining !== undefined && storedLic?.daysRemaining <= 30 && storedLic?.daysRemaining > 0))
-    || (isLicensedPaid && (licenseStatus?.isTimerVisible === true || storedLic?.isTimerVisible === true))
-  );
+  const isLicensedPaid = licenseStatus?.status === 'licensed' || storedLic?.status === 'licensed' || (licenseStatus?.daysRemaining || storedLic?.daysRemaining || 0) >= 9000;
+  
+  // Floating timer capsule: ONLY shown on Desktop EXE during the initial 30-day evaluation trial.
+  // Once licensed/paid, or when trial ends, the floating pill completely disappears from the screen.
+  const showTrialCapsule =
+    isDesktopExe &&
+    !isLockedOut &&
+    !isTimerExplicitlyDisabled &&
+    !isLicensedPaid &&
+    (licenseStatus?.status === 'trial_active' || storedLic?.status === 'trial_active') &&
+    (licenseStatus?.daysRemaining || storedLic?.daysRemaining || 0) > 0 &&
+    (licenseStatus?.daysRemaining || storedLic?.daysRemaining || 0) <= 30;
 
-  // 6. Render Protected Administrative ERP Console (For Desktop EXE, Android APK, or School Preview)
+  // 5. Render Protected Administrative ERP Console (For Desktop EXE or School Preview)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
       {/* Return to Master Admin Bar (Only visible when previewing School ERP in web browser) */}
