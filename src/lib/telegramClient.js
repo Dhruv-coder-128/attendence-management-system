@@ -12,6 +12,7 @@ import { supabase } from './supabase.js';
  */
 
 export const TELEGRAM_BOT_USERNAME = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TELEGRAM_BOT_USERNAME) || 'SMSAttendanceBot';
+export const TELEGRAM_BOT_TOKEN = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TELEGRAM_BOT_TOKEN) || '';
 const TELEGRAM_SETTINGS_KEY = 'sms_school_telegram_settings';
 
 /**

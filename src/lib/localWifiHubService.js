@@ -162,10 +162,11 @@ export async function checkDeviceRegistration(_hubUrl = null) {
  * E.g., returns '192.168.0' or '192.168.43' or null.
  */
 async function detectLocalSubnetPrefix() {
-  if (typeof window === 'undefined' || typeof RTCPeerConnection === 'undefined') return null;
+  const PeerConnection = typeof window !== 'undefined' ? (window.RTCPeerConnection || window.webkitRTCPeerConnection) : null;
+  if (!PeerConnection) return null;
   return new Promise((resolve) => {
     try {
-      const pc = new RTCPeerConnection({ iceServers: [] });
+      const pc = new PeerConnection({ iceServers: [] });
       let resolved = false;
       const timer = setTimeout(() => {
         if (!resolved) {

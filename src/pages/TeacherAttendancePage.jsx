@@ -51,6 +51,7 @@ import {
 import { useAcademySettings } from '../lib/academySettings';
 import { groupBatchesByStandard } from '../lib/classHierarchyHelper';
 import BirthdayWishModal from '../components/students/BirthdayWishModal';
+import { isStudentBirthdayToday } from '../lib/telegramClient';
 
 
 export const CANONICAL_BATCH_CODES = [];

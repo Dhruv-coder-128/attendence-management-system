@@ -26,7 +26,8 @@ async function downloadCSV(csvContent, filename) {
   return await saveFileWithPicker(blob, filename);
 }
 
-async function saveWorkbook(workbook, filename) {
+async function saveWorkbook(workbook, filename, xlsxModule) {
+  const XLSX = xlsxModule || (await import('xlsx'));
   const wbout = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
   const blob = new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   return await saveFileWithPicker(blob, filename);
@@ -200,7 +201,7 @@ export async function exportMonthlyRegisterToExcel({
 
   const cleanBatch = (batch?.code || 'Batch').replace(/[^a-zA-Z0-9-_]/g, '_');
   const filename = `Attendance_Monthly_${cleanBatch}_${monthName}_${year}.xlsx`;
-  await saveWorkbook(workbook, filename);
+  await saveWorkbook(workbook, filename, XLSX);
 }
 
 /**
@@ -400,5 +401,5 @@ export async function exportDailyRegisterToExcel({
 
   const cleanBatch = (batch?.code || 'Batch').replace(/[^a-zA-Z0-9-_]/g, '_');
   const filename = `Attendance_Daily_${cleanBatch}_${date}.xlsx`;
-  await saveWorkbook(workbook, filename);
+  await saveWorkbook(workbook, filename, XLSX);
 }

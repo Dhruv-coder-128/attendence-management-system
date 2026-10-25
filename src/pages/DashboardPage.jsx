@@ -30,6 +30,7 @@ import SqlImportModal from '../components/importer/SqlImportModal';
 import MasterImportModal from '../components/importer/MasterImportModal';
 import BirthdayWishModal from '../components/students/BirthdayWishModal';
 import { isStudentBirthdayToday } from '../lib/telegramClient.js';
+import { downloadAllInOneTemplate } from '../lib/importer/templateGenerator';
 
 /**
  * Simplified Executive Dashboard

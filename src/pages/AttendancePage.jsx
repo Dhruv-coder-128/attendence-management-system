@@ -49,6 +49,7 @@ import {
   TELEGRAM_BOT_USERNAME,
   getWhatsAppShareUrl,
 } from '../lib/telegramClient';
+import { getBatchStudents } from '../data/canonicalSchoolData';
 
 /**
  * Daily Attendance Register — Real Supabase Database Connection
