@@ -1,52 +1,42 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  ShieldAlert,
-  ShieldCheck,
   KeyRound,
-  Users,
   Building,
   Plus,
   Clock,
   Trash2,
   CheckCircle2,
-  AlertCircle,
   Copy,
   ExternalLink,
   RefreshCw,
-  Send,
-  Database,
-  Bot,
   Lock,
   Unlock,
-  Calendar,
-  Sparkles,
   Phone,
   Mail,
   Edit,
-  Server,
-  HardDrive,
-  Wifi,
-  Smartphone,
-  Download,
-  Upload,
-  Check,
-  AlertTriangle,
-  Layers,
-  ArrowRight,
-  UserCheck,
-  UserX,
+  Sparkles,
+  ShieldAlert,
+  Calendar,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
 import Badge from '../components/common/Badge';
 import { supabase } from '../lib/supabase';
-import { getApiBaseUrl, isTauriDesktop, getStoredLicense, activateSchoolLicense } from '../lib/licenseService';
-import { resolveHubInfo } from '../lib/useSchoolDatabaseSync';
-import { CANONICAL_COURSES, CANONICAL_BATCHES, CANONICAL_STUDENTS } from '../data/canonicalSchoolData';
+import {
+  getApiBaseUrl,
+  activateSchoolLicense,
+  fetchCloudLicenses,
+  saveCloudLicense,
+  adjustCloudLicenseDays,
+  setCloudLicenseLock,
+  unbindCloudHardware,
+  deleteCloudLicense,
+} from '../lib/licenseService';
 
 const MASTER_DEV_PIN = '8866';
 const DEVELOPER_EMAIL = 'dushah2007@gmail.com';
 const STORAGE_REGISTRY_KEY = 'sms_saas_clients_registry';
+
 
 const DEFAULT_SAMPLE_CLIENTS = [
   {
@@ -57,13 +47,12 @@ const DEFAULT_SAMPLE_CLIENTS = [
     phone: '+91 9876543210',
     licenseKey: 'SMS-NOBLE-30D-89XK7',
     status: 'trial_active',
-    storageMode: 'offline',
-    daysRemaining: 28,
+    isLocked: false,
+    daysRemaining: 30,
+    isTimerVisible: true,
     trialStartedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     trialEndsAt: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString(),
-    totalStudents: 100,
-    botUsername: 'NobleAcademyBot',
-    notes: 'Primary Client Cohort (100 Students)',
+    notes: 'Primary Client Cohort',
   },
   {
     id: 'SMS-SCH-002',
@@ -73,12 +62,11 @@ const DEFAULT_SAMPLE_CLIENTS = [
     phone: '+91 9823456789',
     licenseKey: 'SMS-SARASWATI-1Y-3M4N9',
     status: 'licensed',
-    storageMode: 'offline',
+    isLocked: false,
     daysRemaining: 340,
+    isTimerVisible: false,
     trialStartedAt: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString(),
     trialEndsAt: new Date(Date.now() + 340 * 24 * 60 * 60 * 1000).toISOString(),
-    totalStudents: 100,
-    botUsername: 'SaraswatiVidhyalayBot',
     notes: 'Licensed Client Cohort',
   },
   {
@@ -89,26 +77,50 @@ const DEFAULT_SAMPLE_CLIENTS = [
     phone: '+91 9811223344',
     licenseKey: 'SMS-GREENVALLEY-TRIAL-01',
     status: 'trial_expired',
-    storageMode: 'cloud',
+    isLocked: true,
     daysRemaining: 0,
+    isTimerVisible: false,
     trialStartedAt: new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString(),
     trialEndsAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    totalStudents: 100,
-    botUsername: '',
     notes: 'Awaiting renewal fee payment',
+  },
+  {
+    id: 'SMS-SCH-004',
+    schoolName: 'Eklavya Global Academy',
+    contactPerson: 'Principal Joshi',
+    email: 'contact@eklavya.edu',
+    phone: '+91 9898112233',
+    licenseKey: 'SMS-EKLAVYAS-15D-PXQR',
+    status: 'trial_active',
+    isLocked: false,
+    daysRemaining: 15,
+    isTimerVisible: true,
+    notes: '15-day evaluation setup',
+  },
+  {
+    id: 'SMS-SCH-005',
+    schoolName: 'Noble Public School',
+    contactPerson: 'Headmaster Verma',
+    email: 'verma@nobleschool.in',
+    phone: '+91 9909012345',
+    licenseKey: 'SMA-NOBLE-2026',
+    status: 'licensed',
+    isLocked: false,
+    daysRemaining: 365,
+    isTimerVisible: false,
+    notes: 'Annual license batch',
   },
 ];
 
-export default function MasterAdminPortalPage({ onNavigate, user }) {
-  // Navigation tabs in Admin Control Center: 'licenses' | 'database' | 'attendance' | 'telegram' | 'diagnostics'
-  const [activeTab, setActiveTab] = useState('licenses');
-
-  // Security Access State
+export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, user }) {
+  // Security Access State (Auto-authenticates on local development machine or via Master Developer credentials)
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     if (typeof window !== 'undefined') {
       const savedAuth = sessionStorage.getItem('sms_master_portal_auth');
       if (savedAuth === 'true') return true;
       if (user?.email?.toLowerCase() === DEVELOPER_EMAIL) return true;
+      const host = window.location.hostname;
+      if (host === 'localhost' || host === '127.0.0.1') return true;
     }
     return false;
   });
@@ -123,7 +135,9 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
     setTimeout(() => setToastMessage(''), 4000);
   }, []);
 
-  // Action Loading spinner
+
+
+  // Action Loading State
   const [isActionLoading, setIsActionLoading] = useState(false);
 
   // Clients Registry State
@@ -136,7 +150,7 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
     }
   });
 
-  // Modal / Key Generator Form State
+  // Modal State: Generate New Client
   const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false);
   const [newSchoolName, setNewSchoolName] = useState('');
   const [newContactPerson, setNewContactPerson] = useState('');
@@ -144,47 +158,20 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
   const [newPhone, setNewPhone] = useState('');
   const [newDuration, setNewDuration] = useState('30');
   const [newCustomDays, setNewCustomDays] = useState('45');
-  const [newStorageMode, setNewStorageMode] = useState('offline');
-  const [newBotUsername, setNewBotUsername] = useState('');
 
-  // Edit Days Modal State
-  const [editingClient, setEditingClient] = useState(null);
-  const [manualDaysInput, setManualDaysInput] = useState('30');
-
-  // Full Client Edit Modal State
+  // Modal State: Full Client Edit
   const [isEditClientModalOpen, setIsEditClientModalOpen] = useState(false);
   const [editingClientData, setEditingClientData] = useState(null);
 
-  // Live Database Inspector Stats
-  const [dbStats, setDbStats] = useState({
-    totalStudents: 0,
-    totalBatches: 0,
-    totalCourses: 0,
-    todayAttendanceRecords: 0,
-    presentCount: 0,
-    absentCount: 0,
-    pendingCount: 0,
-    storageEngine: 'IndexedDB & SQLite (Offline Zero-Cloud)',
-  });
+  // Modal State: Set Exact Days
+  const [isCustomDaysModalOpen, setIsCustomDaysModalOpen] = useState(false);
+  const [customDaysTargetClient, setCustomDaysTargetClient] = useState(null);
+  const [customDaysInputValue, setCustomDaysInputValue] = useState('30');
 
-  // Wi-Fi Hub Diagnostics State
-  const [hubDiagnostics, setHubDiagnostics] = useState({
-    url: 'http://127.0.0.1:5173',
-    localIp: '127.0.0.1',
-    port: 5173,
-    otp: '---',
-    registeredDevicesCount: 0,
-    running: false,
-  });
+  // Modal State: License Created Success Dialog
+  const [createdSuccessData, setCreatedSuccessData] = useState(null);
 
-  // Telegram Config State
-  const [telegramConfig, setTelegramConfig] = useState({
-    botToken: localStorage.getItem('sms_admin_telegram_bot_token') || '',
-    chatId: localStorage.getItem('sms_admin_telegram_chat_id') || '',
-    broadcastPrefix: '🏫 Noble Academy Alerts:',
-  });
-
-  // Save clients to localStorage whenever updated
+  // Persist clients list
   const saveClients = (updatedList) => {
     setClients(updatedList);
     try {
@@ -205,63 +192,31 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
     }
   };
 
-  // Fetch Live Database Metrics
-  const fetchLiveStats = useCallback(async () => {
+  // Fetch Remote Cloud Licenses directly from Supabase Cloud
+  const loadRemoteLicenses = useCallback(async () => {
+    setIsActionLoading(true);
     try {
-      const todayIso = new Date().toISOString().split('T')[0];
-      const { count: sCount } = await supabase.from('students').select('id', { count: 'exact', head: true });
-      const { count: bCount } = await supabase.from('batches').select('id', { count: 'exact', head: true });
-      const { count: cCount } = await supabase.from('courses').select('id', { count: 'exact', head: true });
-      const { data: attData } = await supabase.from('attendance').select('id, status').eq('date', todayIso);
-
-      const records = attData || [];
-      const present = records.filter((r) => r.status === 'Present').length;
-      const absent = records.filter((r) => r.status === 'Absent' || r.status === 'Late').length;
-      const enrolled = sCount || 100;
-      const pending = Math.max(0, enrolled - (present + absent));
-
-      setDbStats({
-        totalStudents: enrolled,
-        totalBatches: bCount || 5,
-        totalCourses: cCount || 5,
-        todayAttendanceRecords: records.length,
-        presentCount: present,
-        absentCount: absent,
-        pendingCount: pending,
-        storageEngine: isTauriDesktop() ? 'Offline SQLite / IndexedDB Local Storage' : 'Supabase Cloud PostgreSQL',
-      });
-    } catch (err) {
-      console.warn('Failed to query DB inspector stats:', err);
-    }
-  }, []);
-
-  // Fetch Hub Diagnostics
-  const fetchHubDiagnostics = useCallback(async () => {
-    try {
-      const info = await resolveHubInfo(true);
-      if (info) {
-        setHubDiagnostics({
-          url: info.url || 'http://127.0.0.1:5173',
-          localIp: info.localIp || '127.0.0.1',
-          port: info.port || 5173,
-          otp: info.otp || '---',
-          registeredDevicesCount: info.registeredDevicesCount || 0,
-          running: info.running ?? true,
-        });
+      const cloudLicenses = await fetchCloudLicenses();
+      if (Array.isArray(cloudLicenses) && cloudLicenses.length > 0) {
+        setClients(cloudLicenses);
+        try {
+          localStorage.setItem(STORAGE_REGISTRY_KEY, JSON.stringify(cloudLicenses));
+        } catch {}
       }
     } catch (err) {
-      console.warn('Could not query hub info:', err);
+      console.warn('Could not query cloud licenses:', err);
+    } finally {
+      setIsActionLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetchLiveStats();
-      fetchHubDiagnostics();
+      loadRemoteLicenses();
     }
-  }, [isAuthenticated, fetchLiveStats, fetchHubDiagnostics]);
+  }, [isAuthenticated, loadRemoteLicenses]);
 
-  // Generates cryptographic license key (e.g. SMS-NOBLE-30D-89XK)
+  // Generate cryptographic license key
   const generateCryptographicKey = (schoolName, durationDays) => {
     const slug = schoolName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'SCH';
     const durCode = durationDays === 9999 ? 'LIFE' : `${durationDays}D`;
@@ -269,7 +224,8 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
     return `SMS-${slug}-${durCode}-${randomChars}`;
   };
 
-  const handleCreateNewClient = () => {
+  // 1. Create New School License
+  const handleCreateNewClient = async () => {
     if (!newSchoolName.trim()) {
       alert('School / Client Name is required.');
       return;
@@ -285,6 +241,7 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
     const generatedKey = generateCryptographicKey(newSchoolName, durationDays);
     const now = new Date();
     const trialEnds = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
+    const initialStatus = durationDays === 9999 ? 'licensed' : 'trial_active';
 
     const newClientObj = {
       id: `SMS-SCH-${String(clients.length + 1).padStart(3, '0')}`,
@@ -293,18 +250,29 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
       email: newEmail.trim(),
       phone: newPhone.trim(),
       licenseKey: generatedKey,
-      status: durationDays === 9999 ? 'licensed' : 'trial_active',
-      storageMode: newStorageMode,
+      status: initialStatus,
+      isLocked: false,
       daysRemaining: durationDays,
+      isTimerVisible: true,
       trialStartedAt: now.toISOString(),
       trialEndsAt: trialEnds.toISOString(),
-      totalStudents: 100,
-      botUsername: newBotUsername.trim().replace(/^@/, ''),
       notes: `Generated on ${now.toLocaleDateString()}`,
     };
 
-    const updated = [newClientObj, ...clients];
+    setIsActionLoading(true);
+    // Direct Authoritative Supabase Cloud Save
+    const saveRes = await saveCloudLicense(newClientObj);
+    setIsActionLoading(false);
+
+    const updated = [newClientObj, ...clients.filter(c => c.licenseKey !== generatedKey)];
     saveClients(updated);
+    setCreatedSuccessData(newClientObj);
+
+    if (saveRes.ok) {
+      showToast(`✓ Generated & saved cloud license for ${newClientObj.schoolName}: ${generatedKey}`);
+    } else {
+      showToast(`⚠️ License saved: ${saveRes.error || 'Cloud sync note'}`);
+    }
 
     // Reset Form
     setNewSchoolName('');
@@ -312,399 +280,235 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
     setNewEmail('');
     setNewPhone('');
     setNewDuration('30');
-    setNewBotUsername('');
     setIsNewClientModalOpen(false);
-
-    showToast(`✓ Generated license key for ${newClientObj.schoolName}: ${generatedKey}`);
   };
 
-  const handleExtendTrial = (clientId, extraDays) => {
+  // 2. Adjust Days (+days or -days)
+  const handleAdjustDays = async (clientId, deltaDays) => {
     const target = clients.find((c) => c.id === clientId);
+    if (!target) return;
+
+    setIsActionLoading(true);
+    const res = await adjustCloudLicenseDays(target.licenseKey, deltaDays, false);
+    setIsActionLoading(false);
+
+    const curRemaining = Math.max(0, target.daysRemaining || 0);
+    const newRemaining = res.ok && res.daysRemaining !== undefined
+      ? res.daysRemaining
+      : (deltaDays === 9999 ? 9999 : Math.max(0, curRemaining + deltaDays));
+    const newStatus = res.status || (newRemaining >= 9000 ? 'licensed' : (newRemaining > 0 ? 'trial_active' : 'trial_expired'));
+    const isLocked = newRemaining <= 0 && newStatus !== 'licensed';
+
     const updated = clients.map((c) => {
       if (c.id === clientId) {
-        const curRemaining = Math.max(0, c.daysRemaining || 0);
-        const newRemaining = extraDays === 9999 ? 9999 : curRemaining + extraDays;
-        const newEndsAt = new Date(Date.now() + newRemaining * 24 * 60 * 60 * 1000).toISOString();
         return {
           ...c,
           daysRemaining: newRemaining,
-          trialEndsAt: newEndsAt,
-          status: extraDays === 9999 ? 'licensed' : 'trial_active',
+          trialEndsAt: res.trialEndsAt || new Date(Date.now() + newRemaining * 86400000).toISOString(),
+          status: isLocked ? 'suspended' : newStatus,
+          isLocked,
         };
       }
       return c;
     });
     saveClients(updated);
+
+    const sign = deltaDays > 0 ? `+${deltaDays}` : `${deltaDays}`;
     showToast(
-      `✓ Extended ${target?.schoolName || 'school'} license by ${
-        extraDays === 9999 ? 'Lifetime' : `+${extraDays} days`
-      }`
+      deltaDays === 9999
+        ? `✓ ${target.schoolName} upgraded to Lifetime License in Cloud!`
+        : `✓ Adjusted ${target.schoolName} by ${sign} days in Cloud (Now ${newRemaining} days remaining)`
     );
   };
 
+  // 3. Set Exact Custom Days
+  const handleApplyCustomDays = async () => {
+    if (!customDaysTargetClient) return;
+    const exactDays = Math.max(0, parseInt(customDaysInputValue, 10) || 0);
+    const target = customDaysTargetClient;
+
+    setIsActionLoading(true);
+    const res = await adjustCloudLicenseDays(target.licenseKey, exactDays, true);
+    setIsActionLoading(false);
+
+    const newStatus = res.status || (exactDays >= 9000 ? 'licensed' : (exactDays > 0 ? 'trial_active' : 'trial_expired'));
+    const isLocked = exactDays <= 0 && newStatus !== 'licensed';
+
+    const updated = clients.map((c) => {
+      if (c.id === target.id) {
+        return {
+          ...c,
+          daysRemaining: exactDays,
+          trialEndsAt: res.trialEndsAt || new Date(Date.now() + exactDays * 86400000).toISOString(),
+          status: isLocked ? 'suspended' : newStatus,
+          isLocked,
+        };
+      }
+      return c;
+    });
+    saveClients(updated);
+
+    setIsCustomDaysModalOpen(false);
+    setCustomDaysTargetClient(null);
+    showToast(`✓ Set ${target.schoolName} exact cloud duration to ${exactDays} days`);
+  };
+
+  // 4. Remote Kill-Switch (Instant Lock / Unlock)
   const handleToggleSuspend = async (clientId) => {
     const target = clients.find((c) => c.id === clientId);
     if (!target) return;
 
-    const willSuspend = target.status !== 'suspended';
+    const willSuspend = target.status !== 'suspended' && !target.isLocked;
+    setIsActionLoading(true);
+    const res = await setCloudLicenseLock(target.licenseKey, willSuspend);
+    setIsActionLoading(false);
+
+    const updatedStatus = res.status || (willSuspend ? 'suspended' : (target.daysRemaining > 0 ? 'trial_active' : 'licensed'));
+
     const updated = clients.map((c) => {
       if (c.id === clientId) {
         return {
           ...c,
-          status: willSuspend
-            ? 'suspended'
-            : (c.daysRemaining > 0 ? 'trial_active' : 'trial_expired'),
+          status: updatedStatus,
+          isLocked: willSuspend,
         };
       }
       return c;
     });
     saveClients(updated);
 
-    // Instant Remote Kill-Switch Sync to Cloud Supabase
-    if (supabase) {
-      try {
-        const licCode = 'LIC:' + (target.licenseKey || target.id);
-        await supabase.from('courses').upsert({
-          id: 'lic_' + target.id.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase(),
-          code: licCode,
-          name: target.schoolName,
-          level: 'License',
-          description: JSON.stringify({
-            status: willSuspend ? 'suspended' : 'licensed',
-            isLocked: willSuspend,
-            schoolId: target.id,
-            schoolName: target.schoolName,
-            licenseKey: target.licenseKey,
-            daysRemaining: willSuspend ? 0 : (target.daysRemaining || 30),
-            lockedAt: willSuspend ? new Date().toISOString() : null,
-          }),
-          is_active: !willSuspend,
-        });
-      } catch (err) {
-        console.warn('Supabase remote lock sync error:', err);
-      }
-    }
-
-    // Also notify local hub if reachable
-    try {
-      fetch('http://127.0.0.1:5173/api/local-hub?action=set_lock_status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_locked: willSuspend }),
-      }).catch(() => {});
-    } catch {}
-
     showToast(
       willSuspend
-        ? `🔒 ${target.schoolName} is now LOCKED remotely! (EXE & App will lock immediately)`
-        : `✓ ${target.schoolName} UNLOCKED and restored successfully.`
+        ? `🔒 ${target.schoolName} is now LOCKED in Cloud! (Client EXE & APK will lock immediately)`
+        : `✓ ${target.schoolName} UNLOCKED and restored in Cloud successfully.`
     );
   };
 
-  const handleDeleteClient = (clientId) => {
-    if (!confirm('Are you sure you want to permanently remove this school from registry?')) return;
+  // 5. Toggle Trial Countdown Timer Capsule
+  const handleToggleTimerVisibility = async (clientId) => {
+    const target = clients.find((c) => c.id === clientId);
+    if (!target) return;
+
+    const currentVisible = target.isTimerVisible !== false;
+    const newVisible = !currentVisible;
+
+    const updated = clients.map((c) => {
+      if (c.id === clientId) {
+        return {
+          ...c,
+          isTimerVisible: newVisible,
+        };
+      }
+      return c;
+    });
+    saveClients(updated);
+
+    // Direct Supabase Sync
+    if (supabase) {
+      try {
+        await supabase.from('courses').upsert({
+          code: 'LIC:' + target.licenseKey,
+          name: `${target.schoolName} [${String(target.status || '').toUpperCase()}]`,
+          level: 'License',
+          description: JSON.stringify({
+            status: target.status,
+            isLocked: target.isLocked || target.status === 'suspended',
+            is_locked: target.isLocked || target.status === 'suspended',
+            school_name: target.schoolName,
+            schoolName: target.schoolName,
+            licenseKey: target.licenseKey,
+            days_remaining: target.daysRemaining,
+            is_timer_visible: newVisible,
+          }),
+          is_active: target.status !== 'suspended',
+        }, { onConflict: 'code' });
+      } catch (err) {}
+    }
+
+    showToast(
+      newVisible
+        ? `⏱️ Trial Countdown Capsule is now ON for ${target.schoolName} (Client displays live countdown)`
+        : `⏱️ Trial Countdown Capsule is now OFF for ${target.schoolName} (Client countdown hidden)`
+    );
+  };
+
+  // 6. Reset Workstation Hardware Binding (Unbind Device)
+  const handleResetDevice = async (clientId) => {
+    const target = clients.find((c) => c.id === clientId);
+    if (!target) return;
+    if (!confirm(`Are you sure you want to reset workstation binding for ${target.schoolName}?\n\nThis will allow the school to activate their license key on a new or formatted computer.`)) {
+      return;
+    }
+
+    setIsActionLoading(true);
+    await unbindCloudHardware(target.licenseKey);
+    setIsActionLoading(false);
+
+    const updated = clients.map((c) => {
+      if (c.id === clientId) {
+        return { ...c, boundDeviceId: null };
+      }
+      return c;
+    });
+    saveClients(updated);
+
+    showToast(`🔓 Workstation binding cleared in Cloud for ${target.schoolName}. Key can now be activated on a new PC.`);
+  };
+
+  // 7. Delete School Client
+  const handleDeleteClient = async (clientId) => {
+    const target = clients.find((c) => c.id === clientId);
+    if (!confirm(`Are you sure you want to permanently remove ${target?.schoolName || 'this school'} from cloud registry?`)) return;
+
+    setIsActionLoading(true);
+    if (target?.licenseKey) {
+      await deleteCloudLicense(target.licenseKey);
+    }
+    setIsActionLoading(false);
+
     const updated = clients.filter((c) => c.id !== clientId);
     saveClients(updated);
-    showToast('✓ Client removed from registry.');
+
+    showToast('✓ Client removed from cloud registry.');
   };
 
-  const handleApplyToThisPC = async (licenseKey) => {
-    await activateSchoolLicense(licenseKey);
-    showToast(`✓ Applied license ${licenseKey} directly to this workstation!`);
-  };
-
-  // Full Client Edit Save
+  // 8. Full Client Edit Save
   const handleSaveEditClient = () => {
     if (!editingClientData) return;
     const updated = clients.map((c) => (c.id === editingClientData.id ? editingClientData : c));
     saveClients(updated);
+
+    // Direct Supabase Sync
+    if (supabase) {
+      try {
+        supabase.from('courses').upsert({
+          code: 'LIC:' + editingClientData.licenseKey,
+          name: `${editingClientData.schoolName} [${String(editingClientData.status || '').toUpperCase()}]`,
+          level: 'License',
+          description: JSON.stringify({
+            status: editingClientData.status,
+            isLocked: editingClientData.isLocked || editingClientData.status === 'suspended',
+            is_locked: editingClientData.isLocked || editingClientData.status === 'suspended',
+            school_name: editingClientData.schoolName,
+            schoolName: editingClientData.schoolName,
+            contact_person: editingClientData.contactPerson,
+            phone: editingClientData.phone,
+            email: editingClientData.email,
+            licenseKey: editingClientData.licenseKey,
+            days_remaining: editingClientData.daysRemaining,
+            is_timer_visible: editingClientData.isTimerVisible !== false,
+          }),
+          is_active: editingClientData.status !== 'suspended',
+        }, { onConflict: 'code' }).then(() => {});
+      } catch (err) {}
+    }
+
     setIsEditClientModalOpen(false);
     setEditingClientData(null);
-    showToast('✓ Client settings updated successfully.');
+    showToast('✓ Client details updated successfully.');
   };
 
-  // =========================================================================
-  // CONTROL CENTER ACTIONS
-  // =========================================================================
-
-  // 1. Reseed 100 Canonical Students & 5 Batches
-  const handleReseedCanonical100 = async () => {
-    if (!confirm('Reseed database with 100 Canonical Students across 5 Batches (20 per batch)? This restores original school data.')) return;
-    setIsActionLoading(true);
-    try {
-      await supabase.from('courses').upsert(CANONICAL_COURSES);
-      await supabase.from('batches').upsert(CANONICAL_BATCHES);
-      await supabase.from('students').upsert(CANONICAL_STUDENTS);
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('sms-db-mutation', { detail: { tableName: 'students', count: 100 } })
-        );
-      }
-      showToast('✓ 100 Canonical Students & 5 Batches successfully reseeded into local database!');
-      await fetchLiveStats();
-    } catch (e) {
-      showToast('⚠️ Reseed error: ' + e.message);
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
-  // 2. Force Hub Synchronization
-  const handleForceHubSync = async () => {
-    setIsActionLoading(true);
-    try {
-      const hub = await resolveHubInfo(true);
-      const { data: batches } = await supabase.from('batches').select('*');
-      const { data: students } = await supabase.from('students').select('*');
-      const { data: courses } = await supabase.from('courses').select('*');
-      const todayIso = new Date().toISOString().split('T')[0];
-      const { data: attendance } = await supabase.from('attendance').select('*').eq('date', todayIso);
-
-      const headers = { 'Content-Type': 'application/json' };
-      if (hub.token) headers['X-Hub-Token'] = hub.token;
-
-      const res = await fetch(`${hub.url}/api/local-hub?action=sync_school_data`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          batches: batches || [],
-          students: students || [],
-          courses: courses || [],
-          attendance: attendance || [],
-          lastModified: new Date().toISOString(),
-        }),
-      });
-
-      if (res.ok) {
-        showToast(`✓ Wi-Fi Hub Synced! (${students?.length || 0} students, ${attendance?.length || 0} attendance records)`);
-      } else {
-        showToast('⚠️ Hub sync responded with status: ' + res.status);
-      }
-      await fetchHubDiagnostics();
-    } catch (e) {
-      showToast('⚠️ Hub sync error: ' + e.message);
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
-  // 3. Mark All 100 Students Present Today
-  const handleMasterMarkAllPresent = async () => {
-    if (!confirm('Mark all 100 students across all 5 batches as PRESENT today?')) return;
-    setIsActionLoading(true);
-    try {
-      const todayIso = new Date().toISOString().split('T')[0];
-      const records = (CANONICAL_STUDENTS || []).map((s) => ({
-        student_id: s.id,
-        admission_no: s.admission_no || s.id,
-        roll_no: s.roll_no || null,
-        batch_id: s.batch_id,
-        date: todayIso,
-        session_name: 'Regular',
-        status: 'Present',
-        time_in: '09:00',
-        remarks: 'Admin Master Override (Present)',
-        updated_at: new Date().toISOString(),
-      }));
-
-      await supabase.from('attendance').upsert(records, { onConflict: 'student_id,batch_id,date,session_name' });
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('sms-db-mutation', { detail: { tableName: 'attendance', count: records.length } })
-        );
-      }
-      showToast('✓ All 100 students marked Present today!');
-      await fetchLiveStats();
-    } catch (e) {
-      showToast('⚠️ Attendance override error: ' + e.message);
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
-  // 4. Mark All 100 Students Absent Today
-  const handleMasterMarkAllAbsent = async () => {
-    if (!confirm('Mark all 100 students across all 5 batches as ABSENT today?')) return;
-    setIsActionLoading(true);
-    try {
-      const todayIso = new Date().toISOString().split('T')[0];
-      const records = (CANONICAL_STUDENTS || []).map((s) => ({
-        student_id: s.id,
-        admission_no: s.admission_no || s.id,
-        roll_no: s.roll_no || null,
-        batch_id: s.batch_id,
-        date: todayIso,
-        session_name: 'Regular',
-        status: 'Absent',
-        time_in: '09:00',
-        remarks: 'Admin Master Override (Absent)',
-        updated_at: new Date().toISOString(),
-      }));
-
-      await supabase.from('attendance').upsert(records, { onConflict: 'student_id,batch_id,date,session_name' });
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('sms-db-mutation', { detail: { tableName: 'attendance', count: records.length } })
-        );
-      }
-      showToast('✓ All 100 students marked Absent today!');
-      await fetchLiveStats();
-    } catch (e) {
-      showToast('⚠️ Attendance override error: ' + e.message);
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
-  // 5. Reset All 100 to Pending (Unmarked)
-  const handleMasterResetToPending = async () => {
-    if (!confirm("Reset today's roll call to PENDING for all 100 students? (Clears today's marked attendance)")) return;
-    setIsActionLoading(true);
-    try {
-      const todayIso = new Date().toISOString().split('T')[0];
-      await supabase.from('attendance').delete().eq('date', todayIso);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('sms-db-mutation', { detail: { tableName: 'attendance', count: 0 } })
-        );
-      }
-      showToast("✓ Today's attendance reset! All 100 students are now Pending.");
-      await fetchLiveStats();
-    } catch (e) {
-      showToast('⚠️ Reset error: ' + e.message);
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
-  // 6. Export Full Database Backup (.smsdb)
-  const handleExportFullBackup = async () => {
-    try {
-      const { data: batches } = await supabase.from('batches').select('*');
-      const { data: students } = await supabase.from('students').select('*');
-      const { data: courses } = await supabase.from('courses').select('*');
-      const { data: attendance } = await supabase.from('attendance').select('*');
-
-      const backupObj = {
-        version: '2.1.0',
-        exportDate: new Date().toISOString(),
-        institution: 'SMS Student Management System',
-        data: {
-          batches: batches || [],
-          students: students || [],
-          courses: courses || [],
-          attendance: attendance || [],
-        },
-      };
-
-      const blob = new Blob([JSON.stringify(backupObj, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `SMS-School-Backup-${new Date().toISOString().split('T')[0]}.smsdb`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showToast('✓ Complete database backup (.smsdb) downloaded successfully!');
-    } catch (e) {
-      showToast('⚠️ Backup error: ' + e.message);
-    }
-  };
-
-  // 7. Restore Database from File
-  const handleRestoreFromFile = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setIsActionLoading(true);
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      const data = parsed.data || parsed;
-
-      if (Array.isArray(data.courses) && data.courses.length > 0) {
-        await supabase.from('courses').upsert(data.courses);
-      }
-      if (Array.isArray(data.batches) && data.batches.length > 0) {
-        await supabase.from('batches').upsert(data.batches);
-      }
-      if (Array.isArray(data.students) && data.students.length > 0) {
-        await supabase.from('students').upsert(data.students);
-      }
-      if (Array.isArray(data.attendance) && data.attendance.length > 0) {
-        await supabase.from('attendance').upsert(data.attendance);
-      }
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('sms-db-mutation', { detail: { tableName: 'all', count: 1 } })
-        );
-      }
-      showToast('✓ Database restored successfully from backup file!');
-      await fetchLiveStats();
-    } catch (e) {
-      showToast('⚠️ Restore failed: ' + e.message);
-    } finally {
-      setIsActionLoading(false);
-      event.target.value = '';
-    }
-  };
-
-  // 8. Regenerate Pairing OTP
-  const handleRegenerateOtp = async () => {
-    try {
-      const hub = await resolveHubInfo();
-      const res = await fetch(`${hub.url}/api/local-hub?action=regenerate_otp`);
-      if (res.ok) {
-        const data = await res.json();
-        setHubDiagnostics((prev) => ({ ...prev, otp: data.otp || '---' }));
-        showToast('✓ New 6-Digit Teacher Pairing Code generated: ' + data.otp);
-      }
-    } catch (e) {
-      showToast('⚠️ OTP regeneration error: ' + e.message);
-    }
-  };
-
-  // 9. Save Telegram Config
-  const handleSaveTelegram = () => {
-    try {
-      localStorage.setItem('sms_admin_telegram_bot_token', telegramConfig.botToken.trim());
-      localStorage.setItem('sms_admin_telegram_chat_id', telegramConfig.chatId.trim());
-      showToast('✓ Telegram bot credentials saved to workstation storage!');
-    } catch {}
-  };
-
-  // 10. Send Test Broadcast
-  const handleSendTestBroadcast = async () => {
-    if (!telegramConfig.botToken || !telegramConfig.chatId) {
-      alert('Please configure both Telegram Bot Token and Chat ID first.');
-      return;
-    }
-    setIsActionLoading(true);
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${telegramConfig.botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: telegramConfig.chatId,
-          text: `🔔 SMS School Hub Live Test\nAcademic Session: ${new Date().toLocaleDateString()}\nStatus: Admin Control Center Active\nWorkstation: Connected & Verified.`,
-        }),
-      });
-      if (res.ok) {
-        showToast('✓ Test Telegram notification dispatched successfully!');
-      } else {
-        const errData = await res.json();
-        showToast('⚠️ Telegram rejected message: ' + (errData.description || 'Check Bot Token/Chat ID'));
-      }
-    } catch (e) {
-      showToast('⚠️ Telegram dispatch error: ' + e.message);
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
-  // If Not Authenticated: Show Master Developer Security Gate
+  // Security Gate
   if (!isAuthenticated) {
     return (
       <div
@@ -712,91 +516,83 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          minHeight: '75vh',
+          minHeight: '80vh',
           padding: '20px',
         }}
       >
         <div
           className="erp-card"
           style={{
-            maxWidth: '440px',
+            maxWidth: '420px',
             width: '100%',
-            padding: '36px 30px',
-            borderRadius: '16px',
-            boxShadow: '0 20px 40px rgba(15, 23, 42, 0.12)',
+            padding: '32px',
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.1)',
             textAlign: 'center',
-            backgroundColor: '#ffffff',
-            border: '1px solid #e2e8f0',
           }}
         >
           <div
             style={{
-              width: '60px',
-              height: '60px',
-              borderRadius: '16px',
-              backgroundColor: '#eff6ff',
-              border: '1px solid #bfdbfe',
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              backgroundColor: 'var(--navy-900)',
+              color: '#ffffff',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              margin: '0 auto 18px auto',
+              margin: '0 auto 16px auto',
             }}
           >
-            <ShieldCheck size={32} color="#2563eb" />
+            <Lock size={28} />
           </div>
-
-          <h2 style={{ fontSize: '22px', fontWeight: 800, color: 'var(--navy-950)', margin: '0 0 8px 0' }}>
-            Admin Control Center
+          <h2 style={{ fontSize: '20px', fontWeight: 800, color: 'var(--navy-950)', margin: '0 0 8px 0' }}>
+            Master Developer Access
           </h2>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 24px 0', lineHeight: 1.5 }}>
-            Comprehensive administrative controls for <strong>School Management System</strong>. Enter your Master Developer Security PIN to unlock.
+          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '24px' }}>
+            Enter Master Developer Security PIN to open the Multi-School SaaS Fleet Management Console.
           </p>
 
           <form onSubmit={handlePinSubmit}>
-            <div style={{ marginBottom: '16px' }}>
+            <div style={{ marginBottom: '16px', textAlign: 'left' }}>
               <Input
-                label="Master Developer Security PIN"
+                label="Master PIN (Default 8866)"
                 type="password"
-                maxLength={8}
+                placeholder="Enter PIN"
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value)}
-                placeholder="Enter PIN (Default: 8866)"
                 autoFocus
               />
+              {pinError && (
+                <div style={{ fontSize: '12px', color: 'var(--status-absent)', marginTop: '6px' }}>
+                  {pinError}
+                </div>
+              )}
             </div>
 
-            {pinError && (
-              <div
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: '8px',
-                  backgroundColor: 'var(--status-absent-bg)',
-                  border: '1px solid var(--status-absent-border)',
-                  color: 'var(--status-absent)',
-                  fontSize: '12px',
-                  marginBottom: '16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  textAlign: 'left',
-                }}
-              >
-                <AlertCircle size={16} />
-                <span>{pinError}</span>
-              </div>
-            )}
-
-            <Button
-              type="submit"
-              variant="primary"
-              size="md"
-              icon={Unlock}
-              onClick={handlePinSubmit}
-              style={{ width: '100%', padding: '12px', fontSize: '14px', fontWeight: 700 }}
-            >
-              Unlock Admin Control Center
+            <Button variant="primary" type="submit" style={{ width: '100%' }}>
+              Unlock SaaS Fleet Console
             </Button>
           </form>
+
+          <div style={{ marginTop: '16px' }}>
+            <button
+              type="button"
+              onClick={() => {
+                if (onPreviewSchool) onPreviewSchool();
+                else if (onNavigate) onNavigate('dashboard');
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#64748b',
+                fontSize: '12px',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+              }}
+            >
+              Preview School ERP (Client View) →
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -804,12 +600,12 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
 
   // Dashboard Overview Counts
   const totalSchools = clients.length;
-  const activeSchools = clients.filter((c) => c.status === 'licensed' || c.status === 'trial_active').length;
-  const trialSchools = clients.filter((c) => c.status === 'trial_active').length;
-  const expiredSchools = clients.filter((c) => c.status === 'trial_expired' || c.status === 'suspended').length;
+  const activeSchools = clients.filter((c) => !c.isLocked && c.status === 'licensed').length;
+  const trialSchools = clients.filter((c) => !c.isLocked && c.status === 'trial_active').length;
+  const lockedSchools = clients.filter((c) => c.isLocked || c.status === 'suspended' || c.status === 'trial_expired').length;
 
   return (
-    <div style={{ paddingBottom: '60px' }}>
+    <div style={{ maxWidth: '1500px', margin: '0 auto', padding: '24px 32px 80px 32px' }}>
       {/* Toast Notification */}
       {toastMessage && (
         <div
@@ -837,10 +633,12 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
       )}
 
       {/* Header */}
-      <div className="page-header" style={{ marginBottom: '16px' }}>
+      <div className="page-header" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <h1 className="page-title">Admin Control Center</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <h1 className="page-title" style={{ fontSize: '24px', fontWeight: 800, margin: 0 }}>
+              SaaS Fleet Management Console
+            </h1>
             <span
               style={{
                 fontSize: '11px',
@@ -852,11 +650,24 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
                 border: '1px solid rgba(255, 255, 255, 0.2)',
               }}
             >
-              Super Admin Mode
+              Master Admin Mode
+            </span>
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '3px 10px',
+                borderRadius: '12px',
+                backgroundColor: '#f1f5f9',
+                color: '#475569',
+                border: '1px solid #cbd5e1',
+              }}
+            >
+              Developer: Dhruv Shah (+91 8866039007)
             </span>
           </div>
-          <p className="page-description">
-            Complete institutional administration: Client Licenses, Storage Engine, 100-Student Reseed, Hub Sync, and Master Attendance Overrides.
+          <p className="page-description" style={{ marginTop: '4px', marginBottom: 0 }}>
+            Central administration for 10–20 Client Schools: Instant Remote Kill-Switch, Exact Days Increase/Decrease, and Evaluation Timer Controls.
           </p>
         </div>
 
@@ -864,15 +675,30 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
           <Button
             variant="outline"
             size="sm"
+            icon={ExternalLink}
+            onClick={() => {
+              if (onPreviewSchool) {
+                onPreviewSchool();
+              } else if (onNavigate) {
+                onNavigate('dashboard');
+              }
+            }}
+            title="Preview School ERP as seen by Institutions"
+          >
+            Preview School ERP
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
             icon={RefreshCw}
             onClick={() => {
-              fetchLiveStats();
-              fetchHubDiagnostics();
-              showToast('✓ Admin Control Center refreshed!');
+              loadRemoteLicenses();
+              showToast('✓ Client Fleet data refreshed from cloud!');
             }}
             disabled={isActionLoading}
           >
-            Refresh
+            Refresh Cloud Data
           </Button>
 
           <Button
@@ -881,766 +707,583 @@ export default function MasterAdminPortalPage({ onNavigate, user }) {
             icon={Plus}
             onClick={() => setIsNewClientModalOpen(true)}
           >
-            + Generate License
+            + Generate School License
           </Button>
         </div>
       </div>
 
-      {/* Modern Navigation Tabs */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '6px',
-          padding: '6px',
-          backgroundColor: '#f1f5f9',
-          borderRadius: '12px',
-          marginBottom: '20px',
-          overflowX: 'auto',
-          border: '1px solid #e2e8f0',
-        }}
-      >
-        {[
-          { id: 'licenses', label: 'Client Licenses', icon: KeyRound },
-          { id: 'database', label: 'Database & Storage', icon: Database },
-          { id: 'attendance', label: 'Attendance Override', icon: Calendar },
-          { id: 'telegram', label: 'Telegram & Alerts', icon: Bot },
-          { id: 'diagnostics', label: 'Diagnostics & Wi-Fi Hub', icon: Server },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '8px 16px',
-                borderRadius: '8px',
-                fontSize: '13px',
-                fontWeight: isActive ? 700 : 600,
-                color: isActive ? '#ffffff' : '#64748b',
-                backgroundColor: isActive ? 'var(--navy-900)' : 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <Icon size={16} />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
+      {/* 4 Clean High-Level Overview Cards */}
+      <div className="stats-grid" style={{ marginBottom: '24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+        <div className="erp-card" style={{ padding: '18px 20px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Total Client Schools
+          </div>
+          <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--navy-950)', marginTop: '4px' }}>
+            {totalSchools}
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+            Registered institutions in fleet
+          </div>
+        </div>
+
+        <div className="erp-card" style={{ padding: '18px 20px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Active / Licensed
+          </div>
+          <div style={{ fontSize: '28px', fontWeight: 800, color: '#16a34a', marginTop: '4px' }}>
+            {activeSchools}
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+            Full commercial access active
+          </div>
+        </div>
+
+        <div className="erp-card" style={{ padding: '18px 20px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Evaluation / Trial Running
+          </div>
+          <div style={{ fontSize: '28px', fontWeight: 800, color: '#d97706', marginTop: '4px' }}>
+            {trialSchools}
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+            Trial countdown running
+          </div>
+        </div>
+
+        <div className="erp-card" style={{ padding: '18px 20px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Locked / Suspended
+          </div>
+          <div style={{ fontSize: '28px', fontWeight: 800, color: lockedSchools > 0 ? '#dc2626' : '#64748b', marginTop: '4px' }}>
+            {lockedSchools}
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+            Locked out by remote kill-switch
+          </div>
+        </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* TAB 1: CLIENT LICENSES & SAAS MANAGEMENT                                */}
-      {/* ========================================================================= */}
-      {activeTab === 'licenses' && (
-        <div>
-          {/* Overview Cards */}
-          <div className="stats-grid" style={{ marginBottom: '20px' }}>
-            <div className="erp-card" style={{ padding: '16px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Total Schools
-              </div>
-              <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--navy-950)', marginTop: '4px' }}>
-                {totalSchools}
-              </div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                Configured client registries
-              </div>
-            </div>
-
-            <div className="erp-card" style={{ padding: '16px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Active / Licensed
-              </div>
-              <div style={{ fontSize: '26px', fontWeight: 800, color: 'var(--status-present)', marginTop: '4px' }}>
-                {activeSchools}
-              </div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                Full institute access active
-              </div>
-            </div>
-
-            <div className="erp-card" style={{ padding: '16px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Free Evaluation
-              </div>
-              <div style={{ fontSize: '26px', fontWeight: 800, color: '#d97706', marginTop: '4px' }}>
-                {trialSchools}
-              </div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                Evaluation period running
-              </div>
-            </div>
-
-            <div className="erp-card" style={{ padding: '16px' }}>
-              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Expired / Suspended
-              </div>
-              <div style={{ fontSize: '26px', fontWeight: 800, color: expiredSchools > 0 ? 'var(--status-absent)' : 'var(--navy-700)', marginTop: '4px' }}>
-                {expiredSchools}
-              </div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                Locked out / fee due
-              </div>
-            </div>
-          </div>
-
-          {/* Client Registry Table */}
-          <div className="erp-card" style={{ padding: '0', overflow: 'hidden' }}>
-            <div
-              style={{
-                padding: '16px 20px',
-                backgroundColor: 'var(--bg-subtle)',
-                borderBottom: '1px solid var(--border-subtle)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Building size={18} color="var(--navy-900)" />
-                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--navy-950)' }}>
-                  School Licenses ({clients.length})
-                </h3>
-              </div>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                Direct activation &amp; control
-              </span>
-            </div>
-
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-                <thead style={{ backgroundColor: '#ffffff', borderBottom: '1px solid var(--border-subtle)' }}>
-                  <tr>
-                    <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>School &amp; Contact</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>License Key</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>Status</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>Days Left</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700, textAlign: 'right' }}>Controls</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {clients.map((client) => {
-                    const isExpired = client.status === 'trial_expired' || client.daysRemaining <= 0;
-                    const isSuspended = client.status === 'suspended';
-
-                    return (
-                      <tr key={client.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                        <td style={{ padding: '12px 16px' }}>
-                          <div style={{ fontWeight: 700, color: 'var(--navy-950)' }}>{client.schoolName}</div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', gap: '8px', marginTop: '2px' }}>
-                            <span>{client.contactPerson}</span>
-                            {client.phone && <span>&bull; {client.phone}</span>}
-                          </div>
-                        </td>
-
-                        <td style={{ padding: '12px 16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <code style={{ padding: '2px 6px', backgroundColor: '#f1f5f9', borderRadius: '4px', fontSize: '11px', fontWeight: 700 }}>
-                              {client.licenseKey}
-                            </code>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(client.licenseKey);
-                                showToast(`✓ Copied ${client.licenseKey} to clipboard`);
-                              }}
-                              style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px' }}
-                              title="Copy License Key"
-                            >
-                              <Copy size={13} color="#64748b" />
-                            </button>
-                          </div>
-                        </td>
-
-                        <td style={{ padding: '12px 16px' }}>
-                          {isSuspended ? (
-                            <Badge variant="absent">Suspended</Badge>
-                          ) : client.status === 'licensed' ? (
-                            <Badge variant="present">Full License</Badge>
-                          ) : isExpired ? (
-                            <Badge variant="absent">Expired</Badge>
-                          ) : (
-                            <Badge variant="late">Trial ({client.daysRemaining}d)</Badge>
-                          )}
-                        </td>
-
-                        <td style={{ padding: '12px 16px', fontWeight: 700, color: isExpired ? 'var(--status-absent)' : 'var(--navy-950)' }}>
-                          {client.daysRemaining >= 9000 ? 'Lifetime' : `${client.daysRemaining} days`}
-                        </td>
-
-                        <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              onClick={() => handleExtendTrial(client.id, 7)}
-                              title="Extend +7 Days"
-                            >
-                              +7d
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              onClick={() => handleExtendTrial(client.id, 30)}
-                              title="Extend +30 Days"
-                            >
-                              +30d
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              onClick={() => handleExtendTrial(client.id, 365)}
-                              title="Extend +1 Year"
-                            >
-                              +1yr
-                            </Button>
-                            <Button
-                              variant="primary"
-                              size="xs"
-                              onClick={() => handleExtendTrial(client.id, 9999)}
-                              title="Make Lifetime License"
-                            >
-                              Lifetime
-                            </Button>
-                            <Button
-                              variant={isSuspended ? 'success' : 'danger'}
-                              size="xs"
-                              onClick={() => handleToggleSuspend(client.id)}
-                            >
-                              {isSuspended ? 'Unlock' : 'Lock'}
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              icon={Sparkles}
-                              onClick={() => handleApplyToThisPC(client.licenseKey)}
-                              title="Apply this license to current PC"
-                            >
-                              Use
-                            </Button>
-                            <button
-                              onClick={() => handleDeleteClient(client.id)}
-                              style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '4px', color: '#94a3b8' }}
-                              title="Delete Client"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 2: DATABASE & STORAGE CONTROLS                                       */}
-      {/* ========================================================================= */}
-      {activeTab === 'database' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Live Database Inspector */}
-          <div className="erp-card" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <HardDrive size={20} color="var(--navy-900)" />
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--navy-950)' }}>
-                  Workstation Database Status
-                </h3>
-              </div>
-              <Badge variant="present">{dbStats.storageEngine}</Badge>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-              <div style={{ padding: '14px', borderRadius: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Total Enrolled</div>
-                <div style={{ fontSize: '24px', fontWeight: 800, color: '#0f172a', marginTop: '4px' }}>{dbStats.totalStudents}</div>
-                <div style={{ fontSize: '11px', color: '#10b981', marginTop: '2px' }}>Canonical Roster (100)</div>
-              </div>
-
-              <div style={{ padding: '14px', borderRadius: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Active Batches</div>
-                <div style={{ fontSize: '24px', fontWeight: 800, color: '#0f172a', marginTop: '4px' }}>{dbStats.totalBatches}</div>
-                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>5 Standard Cohorts</div>
-              </div>
-
-              <div style={{ padding: '14px', borderRadius: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Today Present</div>
-                <div style={{ fontSize: '24px', fontWeight: 800, color: '#059669', marginTop: '4px' }}>{dbStats.presentCount}</div>
-                <div style={{ fontSize: '11px', color: '#059669', marginTop: '2px' }}>Marked present today</div>
-              </div>
-
-              <div style={{ padding: '14px', borderRadius: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Today Absent</div>
-                <div style={{ fontSize: '24px', fontWeight: 800, color: '#dc2626', marginTop: '4px' }}>{dbStats.absentCount}</div>
-                <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px' }}>Marked absent or late</div>
-              </div>
-
-              <div style={{ padding: '14px', borderRadius: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Pending Roll Call</div>
-                <div style={{ fontSize: '24px', fontWeight: 800, color: '#d97706', marginTop: '4px' }}>{dbStats.pendingCount}</div>
-                <div style={{ fontSize: '11px', color: '#d97706', marginTop: '2px' }}>Unmarked students</div>
-              </div>
-            </div>
-
-            {/* Powerful Action Buttons Grid */}
-            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '18px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '12px' }}>
-                One-Click Administrative Actions
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
-                {/* 1. Reseed 100 Students */}
-                <div style={{ padding: '14px', border: '1px solid #cbd5e1', borderRadius: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '13px' }}>1-Click 100-Student Reseed</div>
-                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', lineHeight: 1.4 }}>
-                      Restores all 100 canonical students and 5 standard cohorts into local database.
-                    </div>
-                  </div>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    icon={Sparkles}
-                    onClick={handleReseedCanonical100}
-                    disabled={isActionLoading}
-                    style={{ marginTop: '12px' }}
-                  >
-                    Reseed 100 Students
-                  </Button>
-                </div>
-
-                {/* 2. Force Hub Sync */}
-                <div style={{ padding: '14px', border: '1px solid #cbd5e1', borderRadius: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '13px' }}>Force Local Wi-Fi Hub Sync</div>
-                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', lineHeight: 1.4 }}>
-                      Pushes latest students, cohorts, and today's attendance to the teacher mobile hub.
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    icon={Wifi}
-                    onClick={handleForceHubSync}
-                    disabled={isActionLoading}
-                    style={{ marginTop: '12px' }}
-                  >
-                    Force Push to Hub
-                  </Button>
-                </div>
-
-                {/* 3. Export Database Backup */}
-                <div style={{ padding: '14px', border: '1px solid #cbd5e1', borderRadius: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '13px' }}>Full Database Backup (.smsdb)</div>
-                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', lineHeight: 1.4 }}>
-                      Downloads complete school snapshot including students, batches, and attendance.
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    icon={Download}
-                    onClick={handleExportFullBackup}
-                    style={{ marginTop: '12px' }}
-                  >
-                    Export .smsdb Backup
-                  </Button>
-                </div>
-
-                {/* 4. Restore Database */}
-                <div style={{ padding: '14px', border: '1px solid #cbd5e1', borderRadius: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontWeight: 700, color: '#0f172a', fontSize: '13px' }}>Restore Database from Backup</div>
-                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', lineHeight: 1.4 }}>
-                      Select a previously downloaded .smsdb or JSON file to restore institute data.
-                    </div>
-                  </div>
-                  <label
-                    style={{
-                      marginTop: '12px',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '6px',
-                      padding: '8px 14px',
-                      borderRadius: '8px',
-                      backgroundColor: '#f8fafc',
-                      border: '1px solid #cbd5e1',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      color: '#0f172a',
-                    }}
-                  >
-                    <Upload size={14} />
-                    <span>Select Backup File</span>
-                    <input type="file" accept=".smsdb,.json" onChange={handleRestoreFromFile} style={{ display: 'none' }} />
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 3: ATTENDANCE MASTER OVERRIDE                                        */}
-      {/* ========================================================================= */}
-      {activeTab === 'attendance' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div className="erp-card" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Calendar size={20} color="var(--navy-900)" />
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--navy-950)' }}>
-                  Master Attendance Controls &amp; Overrides
-                </h3>
-              </div>
-              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
-                Instant school-wide roll call control
-              </span>
-            </div>
-
-            <div style={{ padding: '14px', borderRadius: '12px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', marginBottom: '18px' }}>
-              <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e40af', marginBottom: '4px' }}>
-                Active Session Invariant
-              </div>
-              <div style={{ fontSize: '12px', color: '#1e3a8a', lineHeight: 1.5 }}>
-                Total Enrolled (<strong>{dbStats.totalStudents}</strong>) = Present (<strong>{dbStats.presentCount}</strong>) + Absent (<strong>{dbStats.absentCount}</strong>) + Pending (<strong>{dbStats.pendingCount}</strong>).
-                Using these controls updates the database and immediately pushes to all connected teacher phones.
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
-              {/* Mark All Present */}
-              <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#166534', fontWeight: 800, fontSize: '14px' }}>
-                    <UserCheck size={18} />
-                    <span>Mark All 100 Students Present</span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#14532d', marginTop: '6px', lineHeight: 1.4 }}>
-                    Instantly sets status to Present for all 5 cohorts (11-COM, 12-COM, FY, SY, TY). Pending becomes 0.
-                  </div>
-                </div>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleMasterMarkAllPresent}
-                  disabled={isActionLoading}
-                  style={{ marginTop: '14px', backgroundColor: '#15803d', borderColor: '#166534' }}
-                >
-                  ✓ Force Mark All 100 Present
-                </Button>
-              </div>
-
-              {/* Mark All Absent */}
-              <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#991b1b', fontWeight: 800, fontSize: '14px' }}>
-                    <UserX size={18} />
-                    <span>Mark All 100 Students Absent</span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#7f1d1d', marginTop: '6px', lineHeight: 1.4 }}>
-                    Instantly sets status to Absent for all 5 cohorts (e.g. for unplanned institute closure or holiday).
-                  </div>
-                </div>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={handleMasterMarkAllAbsent}
-                  disabled={isActionLoading}
-                  style={{ marginTop: '14px' }}
-                >
-                  ✗ Force Mark All 100 Absent
-                </Button>
-              </div>
-
-              {/* Reset All to Pending */}
-              <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#92400e', fontWeight: 800, fontSize: '14px' }}>
-                    <Clock size={18} />
-                    <span>Reset All to Pending (Unmarked)</span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#78350f', marginTop: '6px', lineHeight: 1.4 }}>
-                    Wipes today's attendance records so teacher phones show fresh 20 Pending for each batch.
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleMasterResetToPending}
-                  disabled={isActionLoading}
-                  style={{ marginTop: '14px', borderColor: '#d97706', color: '#92400e' }}
-                >
-                  ↺ Reset All to Pending
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 4: TELEGRAM & BROADCAST CONFIG                                       */}
-      {/* ========================================================================= */}
-      {activeTab === 'telegram' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div className="erp-card" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-              <Bot size={20} color="var(--navy-900)" />
-              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--navy-950)' }}>
-                Telegram Bot &amp; Broadcast Setup
-              </h3>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '16px' }}>
-              <Input
-                label="Telegram Bot API Token"
-                type="password"
-                value={telegramConfig.botToken}
-                onChange={(e) => setTelegramConfig({ ...telegramConfig, botToken: e.target.value })}
-                placeholder="e.g. 7123456789:AAH..."
-              />
-              <Input
-                label="Admin Telegram Chat / Channel ID"
-                value={telegramConfig.chatId}
-                onChange={(e) => setTelegramConfig({ ...telegramConfig, chatId: e.target.value })}
-                placeholder="e.g. -100123456789 or @NobleSchoolAlerts"
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <Button
-                variant="primary"
-                size="sm"
-                icon={CheckCircle2}
-                onClick={handleSaveTelegram}
-              >
-                Save Bot Credentials
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                icon={Send}
-                onClick={handleSendTestBroadcast}
-                disabled={isActionLoading}
-              >
-                Send Test Broadcast
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 5: SYSTEM DIAGNOSTICS & LOCAL WI-FI HUB                              */}
-      {/* ========================================================================= */}
-      {activeTab === 'diagnostics' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div className="erp-card" style={{ padding: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Server size={20} color="var(--navy-900)" />
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: 'var(--navy-950)' }}>
-                  Local Wi-Fi Attendance Hub Diagnostics
-                </h3>
-              </div>
-              <Badge variant={hubDiagnostics.running ? 'present' : 'absent'}>
-                {hubDiagnostics.running ? 'Hub Active' : 'Offline'}
-              </Badge>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '20px' }}>
-              <div style={{ padding: '14px', borderRadius: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Local IP &amp; Port</div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', marginTop: '4px', fontFamily: 'monospace' }}>
-                  {hubDiagnostics.localIp}:{hubDiagnostics.port}
-                </div>
-                <div style={{ fontSize: '11px', color: '#0284c7', marginTop: '2px' }}>School Wi-Fi Server</div>
-              </div>
-
-              <div style={{ padding: '14px', borderRadius: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Connected Phones</div>
-                <div style={{ fontSize: '24px', fontWeight: 800, color: '#0f172a', marginTop: '4px' }}>
-                  {hubDiagnostics.registeredDevicesCount}
-                </div>
-                <div style={{ fontSize: '11px', color: '#10b981', marginTop: '2px' }}>Authorized Teacher Devices</div>
-              </div>
-
-              <div style={{ padding: '14px', borderRadius: '10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>6-Digit Pairing OTP</div>
-                <div style={{ fontSize: '24px', fontWeight: 800, color: '#2563eb', marginTop: '4px', letterSpacing: '2px' }}>
-                  {hubDiagnostics.otp}
-                </div>
-                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>One-time setup code</div>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <Button
-                variant="outline"
-                size="sm"
-                icon={RefreshCw}
-                onClick={handleRegenerateOtp}
-              >
-                Regenerate Pairing OTP
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                icon={Wifi}
-                onClick={handleForceHubSync}
-                disabled={isActionLoading}
-              >
-                Re-announce Hub on Subnet
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* MODAL: GENERATE NEW CLIENT LICENSE                                       */}
-      {/* ========================================================================= */}
-      {isNewClientModalOpen && (
+      {/* Master Client Fleet Table */}
+      <div className="erp-card" style={{ padding: '0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)' }}>
         <div
           style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 9999,
-            backgroundColor: 'rgba(15, 23, 42, 0.65)',
-            backdropFilter: 'blur(4px)',
+            padding: '16px 20px',
+            backgroundColor: 'var(--bg-subtle)',
+            borderBottom: '1px solid var(--border-subtle)',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            padding: '16px',
+            justifyContent: 'space-between',
           }}
         >
-          <div
-            className="erp-card"
-            style={{
-              maxWidth: '520px',
-              width: '100%',
-              backgroundColor: '#ffffff',
-              borderRadius: '16px',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              style={{
-                padding: '16px 20px',
-                backgroundColor: 'var(--navy-900)',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <KeyRound size={20} color="#38bdf8" />
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800 }}>
-                  Generate School License Key
-                </h3>
-              </div>
-              <button
-                onClick={() => setIsNewClientModalOpen(false)}
-                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '18px' }}
-              >
-                &times;
-              </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Building size={18} color="var(--navy-900)" />
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--navy-950)' }}>
+              Client Schools Registry ({clients.length})
+            </h3>
+          </div>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+            Real-Time Remote Kill-Switch &amp; Day Controls
+          </span>
+        </div>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+            <thead style={{ backgroundColor: '#ffffff', borderBottom: '1px solid var(--border-subtle)' }}>
+              <tr>
+                <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>School &amp; Contact</th>
+                <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>License Key</th>
+                <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>Status</th>
+                <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>Days Left</th>
+                <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>Adjust Days (+ / -)</th>
+                <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>Trial Timer</th>
+                <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>Remote Kill-Switch</th>
+                <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700, textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clients.map((client) => {
+                const isSuspended = client.isLocked || client.status === 'suspended';
+                const isExpired = client.status === 'trial_expired' || (!client.isLocked && client.daysRemaining <= 0 && client.status !== 'licensed');
+
+                return (
+                  <tr
+                    key={client.id}
+                    style={{
+                      borderBottom: '1px solid var(--border-subtle)',
+                      backgroundColor: isSuspended ? '#fef2f2' : '#ffffff',
+                      transition: 'background-color 0.15s ease',
+                    }}
+                  >
+                    {/* School & Contact */}
+                    <td style={{ padding: '14px 16px' }}>
+                      <div style={{ fontWeight: 800, color: 'var(--navy-950)', fontSize: '14px' }}>
+                        {client.schoolName}
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '3px' }}>
+                        <span>👤 {client.contactPerson}</span>
+                        {client.phone && <span>📞 {client.phone}</span>}
+                        {client.email && <span>✉️ {client.email}</span>}
+                      </div>
+                      {/* Workstation Hardware Binding Status */}
+                      <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {client.boundDeviceId ? (
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', padding: '2px 7px', fontSize: '10.5px' }}>
+                            <span style={{ fontWeight: 700, color: '#1e40af' }}>🔒 Bound:</span>
+                            <code style={{ fontSize: '10px', color: '#1e3a8a', fontFamily: 'monospace' }}>
+                              {client.boundDeviceId.length > 22 ? client.boundDeviceId.slice(0, 20) + '…' : client.boundDeviceId}
+                            </code>
+                            <button
+                              onClick={() => handleResetDevice(client.id)}
+                              style={{
+                                border: 'none',
+                                backgroundColor: '#dbeafe',
+                                color: '#1d4ed8',
+                                fontSize: '9.5px',
+                                fontWeight: 700,
+                                borderRadius: '3px',
+                                padding: '1px 5px',
+                                cursor: 'pointer',
+                                marginLeft: '4px',
+                              }}
+                              title="Reset Workstation Binding (Unbind to allow new PC)"
+                            >
+                              Reset Device
+                            </button>
+                          </div>
+                        ) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 7px', fontSize: '10.5px', fontWeight: 600, color: '#15803d' }}>
+                            🟢 Fresh / Unbound
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* License Key */}
+                    <td style={{ padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <code style={{ padding: '3px 7px', backgroundColor: '#f1f5f9', borderRadius: '5px', fontSize: '11.5px', fontWeight: 700, fontFamily: 'monospace' }}>
+                          {client.licenseKey}
+                        </code>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(client.licenseKey);
+                            showToast(`✓ Copied ${client.licenseKey} to clipboard`);
+                          }}
+                          style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '3px' }}
+                          title="Copy License Key"
+                        >
+                          <Copy size={13} color="#64748b" />
+                        </button>
+                      </div>
+                    </td>
+
+                    {/* Status Badge */}
+                    <td style={{ padding: '14px 16px' }}>
+                      {isSuspended ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 700, backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5' }}>
+                          🔒 Locked / Suspended
+                        </span>
+                      ) : client.status === 'licensed' || client.daysRemaining >= 9000 ? (
+                        <Badge variant="present">Full License</Badge>
+                      ) : isExpired ? (
+                        <Badge variant="absent">Expired</Badge>
+                      ) : (
+                        <Badge variant="late">Trial Active</Badge>
+                      )}
+                    </td>
+
+                    {/* Days Left */}
+                    <td style={{ padding: '14px 16px', fontWeight: 800, color: isSuspended || isExpired ? '#dc2626' : 'var(--navy-950)' }}>
+                      {client.daysRemaining >= 9000 ? (
+                        <span style={{ color: '#16a34a' }}>Lifetime</span>
+                      ) : (
+                        `${client.daysRemaining} days`
+                      )}
+                    </td>
+
+                    {/* Adjust Days (+ / -) */}
+                    <td style={{ padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                        <button
+                          onClick={() => handleAdjustDays(client.id, 7)}
+                          style={{ padding: '3px 7px', fontSize: '11px', fontWeight: 700, borderRadius: '4px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', cursor: 'pointer' }}
+                          title="Add 7 Days"
+                        >
+                          +7d
+                        </button>
+                        <button
+                          onClick={() => handleAdjustDays(client.id, 30)}
+                          style={{ padding: '3px 7px', fontSize: '11px', fontWeight: 700, borderRadius: '4px', border: '1px solid #cbd5e1', backgroundColor: '#f8fafc', cursor: 'pointer' }}
+                          title="Add 30 Days"
+                        >
+                          +30d
+                        </button>
+                        <button
+                          onClick={() => handleAdjustDays(client.id, -1)}
+                          style={{ padding: '3px 7px', fontSize: '11px', fontWeight: 700, borderRadius: '4px', border: '1px solid #fecaca', backgroundColor: '#fff1f2', color: '#b91c1c', cursor: 'pointer' }}
+                          title="Subtract 1 Day"
+                        >
+                          -1d
+                        </button>
+                        <button
+                          onClick={() => handleAdjustDays(client.id, -7)}
+                          style={{ padding: '3px 7px', fontSize: '11px', fontWeight: 700, borderRadius: '4px', border: '1px solid #fecaca', backgroundColor: '#fff1f2', color: '#b91c1c', cursor: 'pointer' }}
+                          title="Subtract 7 Days"
+                        >
+                          -7d
+                        </button>
+                        <button
+                          onClick={() => handleAdjustDays(client.id, 9999)}
+                          style={{ padding: '3px 7px', fontSize: '11px', fontWeight: 700, borderRadius: '4px', border: '1px solid #86efac', backgroundColor: '#f0fdf4', color: '#15803d', cursor: 'pointer' }}
+                          title="Make Lifetime License"
+                        >
+                          Life
+                        </button>
+                        <button
+                          onClick={() => {
+                            setCustomDaysTargetClient(client);
+                            setCustomDaysInputValue(String(client.daysRemaining || 30));
+                            setIsCustomDaysModalOpen(true);
+                          }}
+                          style={{ padding: '3px 7px', fontSize: '11px', fontWeight: 600, borderRadius: '4px', border: '1px solid #cbd5e1', backgroundColor: '#ffffff', color: '#475569', cursor: 'pointer' }}
+                          title="Set Exact Custom Days"
+                        >
+                          Set...
+                        </button>
+                      </div>
+                    </td>
+
+                    {/* Trial Timer Capsule */}
+                    <td style={{ padding: '14px 16px' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleTimerVisibility(client.id)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '4px 10px',
+                          borderRadius: '20px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          border: client.isTimerVisible !== false ? '1px solid #86efac' : '1px solid #cbd5e1',
+                          backgroundColor: client.isTimerVisible !== false ? '#f0fdf4' : '#f8fafc',
+                          color: client.isTimerVisible !== false ? '#15803d' : '#64748b',
+                          transition: 'all 0.15s ease',
+                        }}
+                        title={client.isTimerVisible !== false ? 'Click to hide timer capsule on client EXE/APK' : 'Click to show timer capsule on client EXE/APK'}
+                      >
+                        <Clock size={12} color={client.isTimerVisible !== false ? '#16a34a' : '#94a3b8'} />
+                        <span>{client.isTimerVisible !== false ? 'Timer: ON' : 'Timer: OFF'}</span>
+                      </button>
+                    </td>
+
+                    {/* Remote Kill-Switch */}
+                    <td style={{ padding: '14px 16px' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleSuspend(client.id)}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '6px 14px',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          border: 'none',
+                          backgroundColor: isSuspended ? '#16a34a' : '#dc2626',
+                          color: '#ffffff',
+                          boxShadow: isSuspended ? '0 2px 6px rgba(22, 163, 74, 0.3)' : '0 2px 6px rgba(220, 38, 38, 0.3)',
+                          transition: 'all 0.15s ease',
+                        }}
+                        title={isSuspended ? 'Click to Unlock this school' : 'Click to Lock this school (Closes EXE & APK immediately)'}
+                      >
+                        {isSuspended ? (
+                          <>
+                            <Unlock size={14} />
+                            <span>Unlock Client</span>
+                          </>
+                        ) : (
+                          <>
+                            <Lock size={14} />
+                            <span>Lock Client</span>
+                          </>
+                        )}
+                      </button>
+                    </td>
+
+                    {/* Actions */}
+                    <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                        <button
+                          onClick={() => {
+                            setEditingClientData({ ...client });
+                            setIsEditClientModalOpen(true);
+                          }}
+                          style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '4px', color: '#64748b' }}
+                          title="Edit School Details"
+                        >
+                          <Edit size={15} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClient(client.id)}
+                          style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '4px', color: '#ef4444' }}
+                          title="Delete School from Registry"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* MODAL 1: Generate New License */}
+      {isNewClientModalOpen && (
+        <div className="modal-backdrop">
+          <div className="modal-dialog" style={{ maxWidth: '500px' }}>
+            <div style={{ backgroundColor: 'var(--navy-900)', padding: '18px 20px', color: '#ffffff', borderRadius: '10px 10px 0 0' }}>
+              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700 }}>Generate School Client License</h3>
+              <p style={{ margin: '3px 0 0 0', fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)' }}>
+                Issue a cryptographic license key for a new school or tuition center.
+              </p>
             </div>
-
-            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <Input
-                label="School / Institution Name *"
-                value={newSchoolName}
-                onChange={(e) => setNewSchoolName(e.target.value)}
-                placeholder="e.g. Modern High School"
-                required
-              />
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div className="modal-body" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 <Input
-                  label="Contact Person"
+                  label="School / Institution Name *"
+                  placeholder="e.g. Saraswati Vidhyalay"
+                  value={newSchoolName}
+                  onChange={(e) => setNewSchoolName(e.target.value)}
+                  autoFocus
+                />
+                <Input
+                  label="Contact Person Name"
+                  placeholder="e.g. Principal Sharma"
                   value={newContactPerson}
                   onChange={(e) => setNewContactPerson(e.target.value)}
-                  placeholder="e.g. Principal Sharma"
                 />
                 <Input
-                  label="Phone / WhatsApp"
+                  label="Phone / Mobile Number"
+                  placeholder="e.g. +91 9876543210"
                   value={newPhone}
                   onChange={(e) => setNewPhone(e.target.value)}
-                  placeholder="+91 9876543210"
                 />
-              </div>
-
-              <Input
-                label="Administrator Email"
-                type="email"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                placeholder="admin@school.org"
-              />
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--navy-900)', marginBottom: '6px' }}>
-                  License Validity Duration
-                </label>
-                <select
-                  value={newDuration}
-                  onChange={(e) => setNewDuration(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #cbd5e1',
-                    fontSize: '13px',
-                    color: '#0f172a',
-                    backgroundColor: '#ffffff',
-                    outline: 'none',
-                  }}
-                >
-                  <option value="15">15 Days Free Trial</option>
-                  <option value="30">30 Days Standard Evaluation</option>
-                  <option value="60">60 Days Extended Pilot</option>
-                  <option value="365">1 Year Full Commercial License</option>
-                  <option value="lifetime">Lifetime Perpetual Access</option>
-                </select>
+                <Input
+                  label="Institutional Email"
+                  placeholder="e.g. principal@school.edu"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                />
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)', marginBottom: '4px' }}>
+                    Initial License Duration
+                  </label>
+                  <select
+                    value={newDuration}
+                    onChange={(e) => setNewDuration(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px' }}
+                  >
+                    <option value="15">15 Days Free Trial</option>
+                    <option value="30">30 Days Standard Evaluation</option>
+                    <option value="60">60 Days Extended Trial</option>
+                    <option value="365">1 Year Commercial License</option>
+                    <option value="lifetime">Lifetime License</option>
+                    <option value="custom">Custom Days...</option>
+                  </select>
+                </div>
+                {newDuration === 'custom' && (
+                  <Input
+                    label="Custom Days Count"
+                    type="number"
+                    value={newCustomDays}
+                    onChange={(e) => setNewCustomDays(e.target.value)}
+                  />
+                )}
               </div>
             </div>
-
-            <div
-              style={{
-                padding: '14px 20px',
-                backgroundColor: '#f8fafc',
-                borderTop: '1px solid #e2e8f0',
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '8px',
-              }}
-            >
+            <div className="modal-footer" style={{ padding: '14px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
               <Button variant="outline" size="sm" onClick={() => setIsNewClientModalOpen(false)}>
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" icon={KeyRound} onClick={handleCreateNewClient}>
-                Create License Key
+              <Button variant="primary" size="sm" onClick={handleCreateNewClient}>
+                Generate &amp; Activate License
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: Edit Client Details */}
+      {isEditClientModalOpen && editingClientData && (
+        <div className="modal-backdrop">
+          <div className="modal-dialog" style={{ maxWidth: '500px' }}>
+            <div style={{ backgroundColor: 'var(--navy-900)', padding: '18px 20px', color: '#ffffff', borderRadius: '10px 10px 0 0' }}>
+              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 700 }}>Edit School Details</h3>
+              <p style={{ margin: '3px 0 0 0', fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)' }}>
+                Update school contact information in the central registry.
+              </p>
+            </div>
+            <div className="modal-body" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <Input
+                  label="School / Institution Name"
+                  value={editingClientData.schoolName || ''}
+                  onChange={(e) => setEditingClientData({ ...editingClientData, schoolName: e.target.value })}
+                />
+                <Input
+                  label="Contact Person"
+                  value={editingClientData.contactPerson || ''}
+                  onChange={(e) => setEditingClientData({ ...editingClientData, contactPerson: e.target.value })}
+                />
+                <Input
+                  label="Phone Number"
+                  value={editingClientData.phone || ''}
+                  onChange={(e) => setEditingClientData({ ...editingClientData, phone: e.target.value })}
+                />
+                <Input
+                  label="Email"
+                  value={editingClientData.email || ''}
+                  onChange={(e) => setEditingClientData({ ...editingClientData, email: e.target.value })}
+                />
+                <Input
+                  label="Internal Notes"
+                  value={editingClientData.notes || ''}
+                  onChange={(e) => setEditingClientData({ ...editingClientData, notes: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="modal-footer" style={{ padding: '14px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <Button variant="outline" size="sm" onClick={() => setIsEditClientModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleSaveEditClient}>
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: Set Exact Custom Days */}
+      {isCustomDaysModalOpen && customDaysTargetClient && (
+        <div className="modal-backdrop">
+          <div className="modal-dialog" style={{ maxWidth: '400px' }}>
+            <div style={{ backgroundColor: 'var(--navy-900)', padding: '16px 20px', color: '#ffffff', borderRadius: '10px 10px 0 0' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700 }}>Set Exact Days Remaining</h3>
+              <p style={{ margin: '3px 0 0 0', fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)' }}>
+                {customDaysTargetClient.schoolName}
+              </p>
+            </div>
+            <div className="modal-body" style={{ padding: '20px' }}>
+              <Input
+                label="Days Remaining (e.g. 15, 30, 45, 90, 365)"
+                type="number"
+                min="0"
+                max="9999"
+                value={customDaysInputValue}
+                onChange={(e) => setCustomDaysInputValue(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="modal-footer" style={{ padding: '12px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <Button variant="outline" size="sm" onClick={() => setIsCustomDaysModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleApplyCustomDays}>
+                Apply Days
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: Generated License Ready & 1-Click WhatsApp Share */}
+      {createdSuccessData && (
+        <div className="modal-backdrop" style={{ zIndex: 10000 }}>
+          <div className="modal-dialog" style={{ maxWidth: '520px', borderRadius: '12px', overflow: 'hidden' }}>
+            <div style={{ backgroundColor: '#0f172a', padding: '20px 24px', color: '#ffffff', borderBottom: '1px solid #1e293b' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '8px', backgroundColor: '#22c55e20', border: '1px solid #22c55e40', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#22c55e' }}>
+                  <CheckCircle2 size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#f8fafc' }}>
+                    License Generated &amp; Synced to Cloud!
+                  </h3>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#94a3b8' }}>
+                    {createdSuccessData.schoolName} is ready to activate on Desktop EXE or Mobile APK.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ padding: '24px', backgroundColor: '#ffffff' }}>
+              <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px', marginBottom: '16px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>
+                  School License Key
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px' }}>
+                  <code style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '0.05em' }}>
+                    {createdSuccessData.licenseKey}
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={Copy}
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdSuccessData.licenseKey);
+                      showToast(`✓ Copied ${createdSuccessData.licenseKey}`);
+                    }}
+                  >
+                    Copy Key
+                  </Button>
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '8px' }}>
+                  Duration: <b>{createdSuccessData.daysRemaining >= 9000 ? 'Lifetime' : `${createdSuccessData.daysRemaining} Days`}</b> | Workstations: <b>1 Authorized Device (Anti-Copy Locked)</b>
+                </div>
+              </div>
+
+              {/* Ready-to-Send WhatsApp Text Box */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>
+                  Ready-to-Send Client Message (WhatsApp / Email):
+                </label>
+                <textarea
+                  readOnly
+                  rows={6}
+                  style={{ width: '100%', padding: '10px 12px', fontSize: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#f1f5f9', color: '#334155', fontFamily: 'monospace', resize: 'none' }}
+                  value={`🏫 SMS — Student Management System\n\nDear ${createdSuccessData.contactPerson || 'School Administrator'},\nHere is your official activation license key for ${createdSuccessData.schoolName}:\n\n🔑 License Key: ${createdSuccessData.licenseKey}\n📅 Validity: ${createdSuccessData.daysRemaining >= 9000 ? 'Lifetime License' : `${createdSuccessData.daysRemaining} Days Evaluation`}\n🔒 Workstation Policy: 1 Device Binding (Locked to your primary PC/phone)\n\nInstructions: Launch SMS Desktop or Android APK. Enter this License Key when prompted to activate.\n\nTechnical Support: Dhruv Shah (+91 8866039007)`}
+                />
+              </div>
+            </div>
+
+            <div style={{ padding: '14px 24px', backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCreatedSuccessData(null)}
+              >
+                Done
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={Copy}
+                onClick={() => {
+                  const msg = `🏫 SMS — Student Management System\n\nDear ${createdSuccessData.contactPerson || 'School Administrator'},\nHere is your official activation license key for ${createdSuccessData.schoolName}:\n\n🔑 License Key: ${createdSuccessData.licenseKey}\n📅 Validity: ${createdSuccessData.daysRemaining >= 9000 ? 'Lifetime License' : `${createdSuccessData.daysRemaining} Days Evaluation`}\n🔒 Workstation Policy: 1 Device Binding (Locked to your primary PC/phone)\n\nInstructions: Launch SMS Desktop or Android APK. Enter this License Key when prompted to activate.\n\nTechnical Support: Dhruv Shah (+91 8866039007)`;
+                  navigator.clipboard.writeText(msg);
+                  showToast('✓ Copied complete client WhatsApp message to clipboard!');
+                }}
+              >
+                Copy Full WhatsApp Message
               </Button>
             </div>
           </div>

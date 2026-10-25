@@ -12,11 +12,9 @@ dist
 dist-ssr
 *.local
 src-tauri/target/
-*.exe
-*.zip
-*.apk
-release-exe/
-release-apk/
+# Binary releases
+!release-exe/
+!release-apk/
 
 # Editor directories and files
 .vscode/*

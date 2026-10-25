@@ -10,95 +10,15 @@
  */
 
 import { saveFileWithPicker } from './fileSaveHelper.js';
-import {
-  CANONICAL_COURSES,
-  CANONICAL_BATCHES,
-  CANONICAL_STUDENTS,
-  CANONICAL_PARENTS,
-  CANONICAL_PARENT_STUDENTS,
-} from '../data/canonicalSchoolData.js';
 
 const DB_NAME = 'sms_offline_db';
 const DB_VERSION = 1;
 const STORAGE_MODE_KEY = 'sms_storage_mode';
-const ROSTER_MIGRATION_KEY = 'sms_roster_dataset_v7';
-
-let rosterMigrationPromise = null;
 
 async function ensureAuthoritativeRosterMigration() {
-  if (typeof window === 'undefined' || !window.indexedDB) return;
-  if (localStorage.getItem(ROSTER_MIGRATION_KEY) === 'true') return;
-
-  if (!rosterMigrationPromise) {
-    rosterMigrationPromise = (async () => {
-      try {
-        const db = await openOfflineDB();
-        const tx = db.transaction(['batches', 'students', 'courses', 'parents', 'parent_students', 'attendance'], 'readwrite');
-        
-        // Clear old stale/scrambled batches, students, and duplicate parents
-        tx.objectStore('batches').clear();
-        tx.objectStore('students').clear();
-        tx.objectStore('parents').clear();
-        tx.objectStore('parent_students').clear();
-        
-        const bStore = tx.objectStore('batches');
-        CANONICAL_BATCHES.forEach((b) => bStore.put(b));
-
-        const sStore = tx.objectStore('students');
-        CANONICAL_STUDENTS.forEach((s) => sStore.put(s));
-
-        if (CANONICAL_COURSES && CANONICAL_COURSES.length > 0) {
-          const cStore = tx.objectStore('courses');
-          CANONICAL_COURSES.forEach((c) => cStore.put(c));
-        }
-
-        if (CANONICAL_PARENTS && CANONICAL_PARENTS.length > 0) {
-          const pStore = tx.objectStore('parents');
-          CANONICAL_PARENTS.forEach((p) => pStore.put(p));
-        }
-
-        if (CANONICAL_PARENT_STUDENTS && CANONICAL_PARENT_STUDENTS.length > 0) {
-          const psStore = tx.objectStore('parent_students');
-          CANONICAL_PARENT_STUDENTS.forEach((ps) => psStore.put(ps));
-        }
-
-        // Authoritatively seed all 100 students as Present for today to ensure 0 Pending
-        const attStore = tx.objectStore('attendance');
-        const todayIso = new Date().toISOString().split('T')[0];
-        const nowTime = '23:04';
-        const nowIso = new Date().toISOString();
-        CANONICAL_STUDENTS.forEach((s) => {
-          attStore.put({
-            id: `att_${todayIso}_${s.admission_no}`,
-            student_id: s.id,
-            admission_no: s.admission_no,
-            roll_no: s.roll_no,
-            full_name: s.full_name,
-            batch_id: s.batch_id,
-            batch_code: s.batch_code,
-            date: todayIso,
-            session_name: 'Regular',
-            status: 'Present',
-            time_in: nowTime,
-            remarks: 'Canonical Initial Roll Call',
-            created_at: nowIso,
-            updated_at: nowIso,
-          });
-        });
-
-        await new Promise((resolve, reject) => {
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-        });
-
-        localStorage.setItem(ROSTER_MIGRATION_KEY, 'true');
-        console.log('[SMS Database Engine] Migrated to authoritative 100-student roster v6 with 100% Present seed.');
-      } catch (err) {
-        console.warn('[SMS Database Engine] Migration warning:', err);
-      }
-    })();
-  }
-  return rosterMigrationPromise;
+  // Pure dynamic mode: User and imported database data is authoritative.
+  // Never clear or overwrite live database tables with hardcoded mock records.
+  return Promise.resolve();
 }
 
 const ALL_TABLES = [
@@ -200,18 +120,7 @@ async function getAllFromStore(tableName) {
     const store = tx.objectStore(tableName);
     const req = store.getAll();
     req.onsuccess = () => {
-      const results = req.result || [];
-      if (results.length === 0) {
-        if (tableName === 'batches' && CANONICAL_BATCHES.length > 0) {
-          putRecordsInStore('batches', CANONICAL_BATCHES).catch(() => {});
-          return resolve(CANONICAL_BATCHES);
-        }
-        if (tableName === 'students' && CANONICAL_STUDENTS.length > 0) {
-          putRecordsInStore('students', CANONICAL_STUDENTS).catch(() => {});
-          return resolve(CANONICAL_STUDENTS);
-        }
-      }
-      resolve(results);
+      resolve(req.result || []);
     };
     req.onerror = () => reject(req.error);
   });
@@ -232,12 +141,11 @@ async function putRecordsInStore(tableName, records) {
 
     list.forEach((rec) => {
       const item = { ...rec };
-      if (!item.id || item.id.startsWith('id_') || item.id.startsWith('local_')) {
+      if (!item.id) {
         if (tableName === 'attendance') {
-          const sId = item.admission_no || item.student_id || 'unk';
-          const bId = item.batch_id || item.batch_code || 'all';
+          const sId = String(item.admission_no || item.student_id || 'unk').trim();
           const d = item.date || new Date().toISOString().split('T')[0];
-          item.id = `att_${bId}_${d}_${sId}`;
+          item.id = `att_${d}_${sId}`;
         } else {
           item.id = generateLocalId();
         }
@@ -245,7 +153,7 @@ async function putRecordsInStore(tableName, records) {
       if (!item.created_at) {
         item.created_at = new Date().toISOString();
       }
-      item.updated_at = new Date().toISOString();
+      item.updated_at = item.updated_at || new Date().toISOString();
       store.put(item);
     });
 
@@ -434,26 +342,42 @@ async function executeLocalQuery(state) {
     // 1. Handle INSERT / UPSERT
     if (state.operation === 'insert' || state.operation === 'upsert') {
       const items = Array.isArray(state.payload) ? state.payload : [state.payload];
+      const duplicateIdsToDelete = [];
       
       const inserted = items.map((item) => {
         let existingId = item.id;
         let existingRecord = null;
 
-        if (!existingId && state.operation === 'upsert') {
+        if (state.operation === 'upsert' && state.tableName === 'attendance') {
+          const itemAdm = String(item.admission_no || item.student_id || '').trim().toLowerCase();
+          const itemDate = item.date;
+          
+          // Match by date + admission_no / student_id regardless of incoming id
+          const matches = rows.filter((r) => {
+            if (r.date !== itemDate) return false;
+            if (existingId && r.id === existingId) return true;
+            const rAdm = String(r.admission_no || r.student_id || '').trim().toLowerCase();
+            return (
+              (r.student_id && item.student_id && r.student_id === item.student_id) ||
+              (itemAdm && rAdm && itemAdm === rAdm) ||
+              (r.admission_no && item.student_id && String(r.admission_no).trim().toLowerCase() === String(item.student_id).trim().toLowerCase()) ||
+              (r.student_id && item.admission_no && String(r.student_id).trim().toLowerCase() === String(item.admission_no).trim().toLowerCase())
+            );
+          });
+
+          if (matches.length > 0) {
+            existingRecord = matches[0];
+            existingId = existingRecord.id;
+            // Any additional matching rows are obsolete duplicates that must be pruned
+            for (let i = 1; i < matches.length; i++) {
+              if (matches[i].id && matches[i].id !== existingId) {
+                duplicateIdsToDelete.push(matches[i].id);
+              }
+            }
+          }
+        } else if (!existingId && state.operation === 'upsert') {
           // Look up existing record by natural unique keys
-          if (state.tableName === 'attendance') {
-            const itemAdm = String(item.admission_no || item.student_id || '').trim().toLowerCase();
-            existingRecord = rows.find((r) => {
-              if (r.date !== item.date) return false;
-              const rAdm = String(r.admission_no || r.student_id || '').trim().toLowerCase();
-              return (
-                (r.student_id && item.student_id && r.student_id === item.student_id) ||
-                (itemAdm && rAdm && itemAdm === rAdm) ||
-                (r.admission_no && item.student_id && String(r.admission_no).trim().toLowerCase() === String(item.student_id).trim().toLowerCase()) ||
-                (r.student_id && item.admission_no && String(r.student_id).trim().toLowerCase() === String(item.admission_no).trim().toLowerCase())
-              );
-            });
-          } else if (state.tableName === 'courses') {
+          if (state.tableName === 'courses') {
             existingRecord = rows.find((r) => r.code === item.code);
           } else if (state.tableName === 'batches') {
             existingRecord = rows.find((r) => r.code === item.code);
@@ -487,11 +411,15 @@ async function executeLocalQuery(state) {
         return {
           ...(existingRecord || {}),
           ...item,
-          id: existingId || generateLocalId(),
+          id: existingId || (state.tableName === 'attendance' ? `att_${item.date || ''}_${String(item.admission_no || item.student_id || 'unk').trim()}` : generateLocalId()),
           created_at: existingRecord?.created_at || item.created_at || new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          updated_at: item.updated_at || new Date().toISOString(),
         };
       });
+
+      if (duplicateIdsToDelete.length > 0) {
+        await deleteRecordsFromStore(state.tableName, duplicateIdsToDelete);
+      }
 
       await putRecordsInStore(state.tableName, inserted);
 
@@ -590,8 +518,12 @@ async function executeLocalQuery(state) {
     // Sorting
     if (state.sortCol) {
       filtered.sort((a, b) => {
-        const valA = a[state.sortCol];
-        const valB = b[state.sortCol];
+        let valA = a[state.sortCol];
+        let valB = b[state.sortCol];
+        if (state.sortCol === 'updated_at' || state.sortCol === 'created_at') {
+          valA = new Date(a.updated_at || a.created_at || a.time_in || 0).getTime();
+          valB = new Date(b.updated_at || b.created_at || b.time_in || 0).getTime();
+        }
         if (valA === valB) return 0;
         if (valA === null || valA === undefined) return 1;
         if (valB === null || valB === undefined) return -1;

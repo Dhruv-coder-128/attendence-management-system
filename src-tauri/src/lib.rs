@@ -84,6 +84,58 @@ fn get_hub_attendance(
     }))
 }
 
+#[tauri::command]
+fn get_hardware_device_id() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        use std::process::Command;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let output = Command::new("reg")
+            .args(["query", "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Cryptography", "/v", "MachineGuid"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
+
+        if let Ok(out) = output {
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines() {
+                if line.contains("MachineGuid") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if let Some(guid) = parts.last() {
+                        if guid.len() >= 16 {
+                            return Ok(format!("HW-WIN-{}", guid.trim().to_uppercase()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Persistent hardware token in APPDATA
+    let app_data_dir = std::env::var("APPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir())
+        .join("com.sms.studentmanagementsystem");
+    let _ = std::fs::create_dir_all(&app_data_dir);
+    let hwid_file = app_data_dir.join(".hardware_id");
+
+    if let Ok(existing) = std::fs::read_to_string(&hwid_file) {
+        let trimmed = existing.trim().to_string();
+        if !trimmed.is_empty() {
+            return Ok(trimmed);
+        }
+    }
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(123456789);
+    let new_token = format!("HW-TOKEN-{:016X}", timestamp);
+    let _ = std::fs::write(&hwid_file, &new_token);
+    Ok(new_token)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -123,7 +175,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_hub_server_info,
             sync_school_data_to_hub,
-            get_hub_attendance
+            get_hub_attendance,
+            get_hardware_device_id
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

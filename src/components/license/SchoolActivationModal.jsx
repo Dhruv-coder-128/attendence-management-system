@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { KeyRound, ShieldCheck, AlertCircle, Building2, ExternalLink, Mail, Phone, MessageSquare, CheckCircle2, Database, Copy, Check, ArrowLeft } from 'lucide-react';
 import { activateSchoolLicense, configureCustomSchoolDatabase, getContactDeveloperLinks, getStoredLicense, isTauriDesktop } from '../../lib/licenseService';
+import { getHardwareFingerprint } from '../../lib/hardwareFingerprint';
 import { reinitializeSupabaseClient } from '../../lib/supabase';
 import { openExternalLink, copyToClipboard } from '../../lib/externalOpener';
 
@@ -10,6 +11,11 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
   const [licenseKey, setLicenseKey] = useState(currentLicense?.licenseKey || '');
   const [isChangingKey, setIsChangingKey] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
+  const [currentHwid, setCurrentHwid] = useState('');
+
+  useEffect(() => {
+    getHardwareFingerprint().then((id) => setCurrentHwid(id)).catch(() => {});
+  }, []);
   
   // Custom Supabase Database fields
   const [schoolName, setSchoolName] = useState(currentLicense?.schoolName || '');
@@ -255,27 +261,15 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                   gap: '8px'
                 }}>
                   <div style={{ overflow: 'hidden' }}>
-                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 500 }}>Active License Key</div>
-                    <div style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '13px', fontWeight: 700, color: '#0f172a', letterSpacing: '0.5px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                      {currentLicense?.licenseKey || 'N/A'}
+                    <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Workstation Security &amp; Binding</div>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                      <span>🔒 Workstation Authenticated &amp; Bound</span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (currentLicense?.licenseKey) {
-                        await copyToClipboard(currentLicense.licenseKey);
-                        setCopiedKey(true);
-                        setTimeout(() => setCopiedKey(false), 2000);
-                      }
-                    }}
-                    className="btn btn-outline"
-                    style={{ padding: '5px 9px', fontSize: '11px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px' }}
-                    title="Copy License Key"
-                  >
-                    {copiedKey ? <Check size={13} color="#16a34a" /> : <Copy size={13} />}
-                    <span>{copiedKey ? 'Copied' : 'Copy'}</span>
-                  </button>
+                  <span style={{ fontSize: '11px', color: '#059669', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#ecfdf5', padding: '3px 8px', borderRadius: '12px', border: '1px solid #a7f3d0' }}>
+                    <CheckCircle2 size={13} color="#10b981" />
+                    Single-Device Verified
+                  </span>
                 </div>
               </div>
 
@@ -290,26 +284,6 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                 >
                   <CheckCircle2 size={16} />
                   Continue to System
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsChangingKey(true);
-                    setError('');
-                  }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--text-muted, #64748b)',
-                    fontSize: '12px',
-                    textDecoration: 'underline',
-                    cursor: 'pointer',
-                    padding: '4px 0',
-                    textAlign: 'center'
-                  }}
-                >
-                  Enter or switch to a different license key
                 </button>
               </div>
             </div>
@@ -384,8 +358,16 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                   />
                 </div>
                 <p style={{ margin: '6px 0 0 0', fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                  A unique 30-day evaluation trial begins on first activation.
+                  A unique evaluation trial begins on first activation.
                 </p>
+                {currentHwid && (
+                  <div style={{ marginTop: '8px', padding: '6px 10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Workstation Hardware ID:</span>
+                    <code style={{ fontSize: '10.5px', color: '#1e3a8a', backgroundColor: '#eff6ff', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                      {currentHwid}
+                    </code>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>

@@ -7,6 +7,8 @@
  */
 
 import { supabase, isSupabaseConfigured } from './supabase.js';
+import { Capacitor } from '@capacitor/core';
+import { getHardwareFingerprint } from './hardwareFingerprint.js';
 
 const STORAGE_KEY = 'sms_school_license';
 const DEFAULT_DEV_CONTACT = {
@@ -15,6 +17,36 @@ const DEFAULT_DEV_CONTACT = {
   phone: '+91 8866039007',
   whatsapp: '+91 8866039007',
 };
+
+export const SYSTEM_VERIFIER_EMAIL = 'client-license-sync@sms-system.internal';
+export const SYSTEM_VERIFIER_PASS = 'SmsLicenseSync2026!SecureKey';
+
+/**
+ * Ensures a valid Supabase authenticated session exists for querying license state.
+ * Specifically checks that the active user is the authorized verifier or developer.
+ */
+export async function ensureLicensingAuth(client) {
+  if (!client || !client.auth) return false;
+  try {
+    const { data: sess } = await client.auth.getSession();
+    const userEmail = (sess?.session?.user?.email || '').toLowerCase();
+    if (userEmail === SYSTEM_VERIFIER_EMAIL.toLowerCase() || userEmail === 'dushah2007@gmail.com') {
+      return true;
+    }
+    const { error } = await client.auth.signInWithPassword({
+      email: SYSTEM_VERIFIER_EMAIL,
+      password: SYSTEM_VERIFIER_PASS,
+    });
+    if (error) {
+      console.warn('Licensing auth signIn error:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Licensing auth exception:', err);
+    return false;
+  }
+}
 
 /**
  * Detects if currently executing inside the Tauri Windows Desktop wrapper
@@ -29,15 +61,15 @@ export function isTauriDesktop() {
 }
 
 /**
- * Production HTTPS server URL for desktop app to reach serverless licensing APIs
+ * Production HTTPS server URL for desktop app and Android app to reach serverless licensing APIs
  */
 export function getApiBaseUrl() {
   if (typeof window === 'undefined') return '';
   const envUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_PRODUCTION_API_URL) || '';
   if (envUrl) return envUrl.replace(/\/+$/, '');
 
-  // If in desktop app, connect to deployed production Vercel HTTPS domain
-  if (isTauriDesktop()) {
+  // If in desktop app or native mobile APK, connect to deployed production Vercel HTTPS domain
+  if (isTauriDesktop() || Capacitor.isNativePlatform()) {
     return 'https://attendance-management-system-lovat.vercel.app';
   }
 
@@ -89,7 +121,228 @@ export function clearStoredLicense() {
 }
 
 /**
- * Activates a school license with the server and initializes the 30-day trial
+ * -------------------------------------------------------------
+ * Authoritative SaaS Cloud License Management (Supabase Direct)
+ * Used by MasterAdminPortalPage for zero-latency, 100% reliable cloud sync
+ * -------------------------------------------------------------
+ */
+
+export async function fetchCloudLicenses() {
+  if (!supabase || !isSupabaseConfigured) return [];
+  try {
+    await ensureLicensingAuth(supabase);
+    const { data, error } = await supabase
+      .from('courses')
+      .select('*')
+      .like('code', 'LIC:%')
+      .order('created_at', { ascending: false });
+
+    if (error || !data) return [];
+
+    return data.map((row, idx) => {
+      let parsed = {};
+      try { parsed = JSON.parse(row.description) || {}; } catch {}
+      const cleanKey = parsed.license_key || parsed.licenseKey || row.code.replace(/^LIC:/, '');
+      const schoolName = parsed.school_name || parsed.schoolName || row.name?.replace(/\s*\[.*\]/, '').trim() || 'SMS Client School';
+      const isLocked = Boolean(parsed.is_locked || parsed.isLocked || !row.is_active || parsed.status === 'suspended');
+      const daysRemaining = parsed.days_remaining !== undefined ? parsed.days_remaining : (parsed.daysRemaining !== undefined ? parsed.daysRemaining : 30);
+      const isTimerVisible = parsed.is_timer_visible !== undefined ? parsed.is_timer_visible : (parsed.isTimerVisible !== false);
+
+      return {
+        id: parsed.id || row.id || `SMS-SCH-${String(idx + 1).padStart(3, '0')}`,
+        schoolName,
+        contactPerson: parsed.contact_person || parsed.contactPerson || 'Principal / Administrator',
+        email: parsed.email || '',
+        phone: parsed.phone || '',
+        licenseKey: cleanKey,
+        status: isLocked ? 'suspended' : (parsed.status || 'trial_active'),
+        isLocked,
+        isTimerVisible,
+        daysRemaining,
+        trialStartedAt: parsed.trial_started_at || parsed.trialStartedAt || row.created_at,
+        trialEndsAt: parsed.trial_ends_at || parsed.trialEndsAt,
+        boundDeviceId: parsed.bound_device_id || parsed.activated_device_id || null,
+        notes: parsed.notes || '',
+        createdAt: row.created_at,
+      };
+    });
+  } catch (err) {
+    console.warn('fetchCloudLicenses error:', err);
+    return [];
+  }
+}
+
+export async function saveCloudLicense(clientObj) {
+  if (!supabase || !isSupabaseConfigured || !clientObj?.licenseKey) return { ok: false, error: 'Database unconfigured' };
+  try {
+    await ensureLicensingAuth(supabase);
+    const cleanKey = String(clientObj.licenseKey).trim().toUpperCase();
+    const isLocked = Boolean(clientObj.isLocked || clientObj.status === 'suspended');
+    const status = isLocked ? 'suspended' : (clientObj.status || (clientObj.daysRemaining > 0 ? 'trial_active' : 'trial_expired'));
+    const schoolName = clientObj.schoolName?.trim() || 'SMS Client School';
+
+    const payload = {
+      id: clientObj.id || `LIC-${cleanKey}`,
+      license_key: cleanKey,
+      licenseKey: cleanKey,
+      school_name: schoolName,
+      schoolName: schoolName,
+      contact_person: clientObj.contactPerson || 'Principal / Administrator',
+      email: clientObj.email || '',
+      phone: clientObj.phone || '',
+      status,
+      is_locked: isLocked,
+      isLocked: isLocked,
+      days_remaining: clientObj.daysRemaining !== undefined ? clientObj.daysRemaining : 30,
+      daysRemaining: clientObj.daysRemaining !== undefined ? clientObj.daysRemaining : 30,
+      trial_started_at: clientObj.trialStartedAt || new Date().toISOString(),
+      trial_ends_at: clientObj.trialEndsAt || new Date(Date.now() + (clientObj.daysRemaining || 30) * 86400000).toISOString(),
+      is_timer_visible: clientObj.isTimerVisible !== false,
+      bound_device_id: clientObj.boundDeviceId || null,
+      notes: clientObj.notes || '',
+      updated_at: new Date().toISOString(),
+    };
+
+    const courseName = `${schoolName} [${status.toUpperCase()}]`;
+
+    const { error } = await supabase.from('courses').upsert({
+      code: 'LIC:' + cleanKey,
+      name: courseName,
+      level: 'License',
+      description: JSON.stringify(payload),
+      is_active: !isLocked,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'code' });
+
+    if (error) throw error;
+    return { ok: true, data: payload };
+  } catch (err) {
+    console.error('saveCloudLicense error:', err);
+    return { ok: false, error: err.message };
+  }
+}
+
+export async function adjustCloudLicenseDays(licenseKey, deltaOrExactDays, isExact = false) {
+  if (!supabase || !isSupabaseConfigured || !licenseKey) return { ok: false };
+  try {
+    await ensureLicensingAuth(supabase);
+    const cleanKey = String(licenseKey).trim().toUpperCase();
+    const { data: row } = await supabase.from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
+    if (!row) return { ok: false, error: 'License not found in cloud' };
+
+    let desc = {};
+    try { desc = JSON.parse(row.description) || {}; } catch {}
+
+    const curDays = parseInt(desc.days_remaining ?? desc.daysRemaining ?? 30, 10);
+    const newDays = isExact
+      ? Math.max(0, parseInt(deltaOrExactDays, 10))
+      : (deltaOrExactDays === 9999 ? 9999 : Math.max(0, curDays + parseInt(deltaOrExactDays, 10)));
+
+    const now = new Date();
+    const newEndsAt = new Date(now.getTime() + newDays * 86400000).toISOString();
+    const computedStatus = newDays >= 9000 ? 'licensed' : (newDays > 0 ? 'trial_active' : 'trial_expired');
+    const isLocked = newDays <= 0 && computedStatus !== 'licensed';
+
+    desc.days_remaining = newDays;
+    desc.daysRemaining = newDays;
+    desc.trial_ends_at = newEndsAt;
+    desc.status = isLocked ? 'suspended' : computedStatus;
+    desc.is_locked = isLocked;
+    desc.isLocked = isLocked;
+    desc.updated_at = now.toISOString();
+
+    const courseName = `${desc.school_name || 'SMS Client School'} [${desc.status.toUpperCase()}]`;
+
+    await supabase.from('courses').update({
+      name: courseName,
+      description: JSON.stringify(desc),
+      is_active: !isLocked,
+      updated_at: now.toISOString(),
+    }).eq('code', 'LIC:' + cleanKey);
+
+    return { ok: true, daysRemaining: newDays, status: desc.status, trialEndsAt: newEndsAt };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+export async function setCloudLicenseLock(licenseKey, willLock) {
+  if (!supabase || !isSupabaseConfigured || !licenseKey) return { ok: false };
+  try {
+    await ensureLicensingAuth(supabase);
+    const cleanKey = String(licenseKey).trim().toUpperCase();
+    const { data: row } = await supabase.from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
+    if (!row) return { ok: false, error: 'License not found in cloud' };
+
+    let desc = {};
+    try { desc = JSON.parse(row.description) || {}; } catch {}
+
+    const days = parseInt(desc.days_remaining ?? desc.daysRemaining ?? 30, 10);
+    const newStatus = willLock ? 'suspended' : (days > 0 ? 'trial_active' : 'trial_expired');
+
+    desc.is_locked = Boolean(willLock);
+    desc.isLocked = Boolean(willLock);
+    desc.status = newStatus;
+    desc.updated_at = new Date().toISOString();
+
+    const courseName = `${desc.school_name || 'SMS Client School'} [${newStatus.toUpperCase()}]`;
+
+    await supabase.from('courses').update({
+      name: courseName,
+      description: JSON.stringify(desc),
+      is_active: !willLock,
+      updated_at: new Date().toISOString(),
+    }).eq('code', 'LIC:' + cleanKey);
+
+    return { ok: true, isLocked: Boolean(willLock), status: newStatus };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+export async function unbindCloudHardware(licenseKey) {
+  if (!supabase || !isSupabaseConfigured || !licenseKey) return { ok: false };
+  try {
+    await ensureLicensingAuth(supabase);
+    const cleanKey = String(licenseKey).trim().toUpperCase();
+    const { data: row } = await supabase.from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
+    if (!row) return { ok: false, error: 'License not found' };
+
+    let desc = {};
+    try { desc = JSON.parse(row.description) || {}; } catch {}
+
+    desc.bound_device_id = null;
+    desc.activated_device_id = null;
+    desc.is_activated = false;
+    desc.bound_at = null;
+    desc.updated_at = new Date().toISOString();
+
+    await supabase.from('courses').update({
+      description: JSON.stringify(desc),
+      updated_at: new Date().toISOString(),
+    }).eq('code', 'LIC:' + cleanKey);
+
+    return { ok: true, message: 'Workstation binding cleared. School can now activate on a new computer.' };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+export async function deleteCloudLicense(licenseKey) {
+  if (!supabase || !isSupabaseConfigured || !licenseKey) return { ok: false };
+  try {
+    await ensureLicensingAuth(supabase);
+    const cleanKey = String(licenseKey).trim().toUpperCase();
+    await supabase.from('courses').delete().eq('code', 'LIC:' + cleanKey);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Activates a school license with the server and initializes the trial/subscription.
+ * Enforces Single-Device Hardware Binding: Once activated, key is permanently bound to the physical machine ID.
  */
 export async function activateSchoolLicense(licenseKey) {
   if (!licenseKey || !licenseKey.trim()) {
@@ -97,9 +350,86 @@ export async function activateSchoolLicense(licenseKey) {
   }
 
   const cleanKey = licenseKey.trim().toUpperCase();
+  const hwid = await getHardwareFingerprint();
   const baseUrl = getApiBaseUrl();
 
-  // 1. Try server-side validation if baseUrl is defined
+  // 1. Direct authoritative check & binding via Supabase database
+  if (supabase && isSupabaseConfigured) {
+    try {
+      await ensureLicensingAuth(supabase);
+      const licCode = 'LIC:' + cleanKey;
+      const { data: licRow } = await supabase
+        .from('courses')
+        .select('*')
+        .eq('code', licCode)
+        .maybeSingle();
+
+      if (licRow) {
+        let licInfo = {};
+        try { licInfo = JSON.parse(licRow.description) || {}; } catch {}
+
+        // Check if suspended
+        const isSuspended = licInfo.is_locked || licInfo.status === 'suspended' || !licRow.is_active;
+        if (isSuspended) {
+          return {
+            ok: false,
+            error: 'This school license has been locked / suspended by the developer. Please contact Dhruv Shah (+91 8866039007).',
+          };
+        }
+
+        // Single-Device Hardware Binding Check
+        const boundId = licInfo.bound_device_id || licInfo.activated_device_id;
+        if (boundId && boundId !== hwid) {
+          return {
+            ok: false,
+            error: `Single-Device License Policy: This license key is already permanently bound to another workstation (${boundId}). It cannot be activated on this computer. Contact Dhruv Shah (+91 8866039007) for workstation authorization or license reset.`,
+          };
+        }
+
+        // First-time activation: bind this workstation ID to cloud
+        if (!boundId) {
+          licInfo.bound_device_id = hwid;
+          licInfo.activated_device_id = hwid;
+          licInfo.bound_at = new Date().toISOString();
+          licInfo.is_activated = true;
+
+          try {
+            await supabase.from('courses').update({
+              description: JSON.stringify(licInfo),
+              updated_at: new Date().toISOString(),
+            }).eq('code', licCode);
+          } catch (updateErr) {
+            console.warn('Could not persist cloud device binding:', updateErr);
+          }
+        }
+
+        const schoolName = licInfo.school_name || licInfo.schoolName || licRow.name?.replace(/\s*\[.*\]/, '').trim() || 'SMS Academy';
+        const daysRemaining = licInfo.days_remaining !== undefined ? licInfo.days_remaining : 30;
+        const status = licInfo.status || 'trial_active';
+
+        const activeLicenseData = {
+          licenseKey: cleanKey,
+          licenseId: `LIC-${cleanKey}`,
+          schoolName,
+          status,
+          daysRemaining,
+          boundDeviceId: hwid,
+          trialStartedAt: licInfo.trial_started_at || new Date().toISOString(),
+          trialEndsAt: licInfo.trial_ends_at,
+          isTimerVisible: licInfo.is_timer_visible !== false,
+          developerContact: DEFAULT_DEV_CONTACT,
+          lastServerSync: new Date().toISOString(),
+        };
+
+        saveStoredLicense(activeLicenseData);
+        return { ok: true, data: activeLicenseData };
+      }
+    } catch (dbErr) {
+      console.warn('Direct Supabase activation query error:', dbErr);
+    }
+  }
+
+  // 2. Try server-side validation via /api/license-activate (if deployed)
   let serverData = null;
   if (baseUrl) {
     try {
@@ -108,7 +438,7 @@ export async function activateSchoolLicense(licenseKey) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           licenseKey: cleanKey,
-          deviceId: isTauriDesktop() ? 'windows-desktop-app' : 'web-browser',
+          deviceId: hwid,
         }),
       });
       if (res.ok) {
@@ -128,6 +458,7 @@ export async function activateSchoolLicense(licenseKey) {
       trialStartedAt: serverData.trialStartedAt,
       trialEndsAt: serverData.trialEndsAt,
       daysRemaining: serverData.daysRemaining,
+      boundDeviceId: hwid,
       databaseConfig: serverData.databaseConfig,
       developerContact: serverData.developerContact || DEFAULT_DEV_CONTACT,
       lastServerSync: serverData.serverTime || new Date().toISOString(),
@@ -135,41 +466,30 @@ export async function activateSchoolLicense(licenseKey) {
     return { ok: true, data: serverData };
   }
 
-  // 2. 100% Reliable Standalone Activation for ANY license key provided by developer
-  // (e.g. SMA-NOBLE-2026, SMS-TRIAL-2026, SMS-MASTER-2026, etc.)
-  const isMasterOrPro = cleanKey.includes('MASTER') || cleanKey.includes('PRO') || cleanKey.includes('FULL') || cleanKey.includes('OWNER') || cleanKey.includes('ADMIN');
-  
-  // Extract a clean human-readable institution name from the license key
-  let schoolName = 'SMS Academy';
-  const parts = cleanKey.split(/[-_]/).filter(p => !['SMS', 'SMA', 'SCH', 'LIC', 'TRIAL', '2025', '2026', '2027', 'PRO', 'MASTER'].includes(p));
-  if (parts.length > 0) {
-    const raw = parts.join(' ');
-    schoolName = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase() + ' Academy';
-  } else if (cleanKey.includes('TRIAL')) {
-    schoolName = 'SMS Central School';
+  // 3. Master Developer Emergency Override Key Only
+  const isMasterDevKey = cleanKey === 'SMS-MASTER-DEV-2026' || cleanKey === 'SMS-DEVELOPER-8866';
+  if (isMasterDevKey) {
+    const masterData = {
+      licenseKey: cleanKey,
+      licenseId: `LIC-${cleanKey}`,
+      schoolName: 'SMS Developer Master Console',
+      status: 'licensed',
+      trialStartedAt: new Date().toISOString(),
+      trialEndsAt: new Date(Date.now() + 3650 * 86400000).toISOString(),
+      daysRemaining: 9999,
+      boundDeviceId: hwid,
+      developerContact: DEFAULT_DEV_CONTACT,
+      lastServerSync: new Date().toISOString(),
+    };
+    saveStoredLicense(masterData);
+    return { ok: true, data: masterData };
   }
 
-  const now = new Date();
-  const trialEnds = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-
-  const fallbackData = {
-    licenseKey: cleanKey,
-    licenseId: `LIC-${cleanKey}`,
-    schoolName,
-    status: isMasterOrPro ? 'licensed' : 'trial_active',
-    trialStartedAt: now.toISOString(),
-    trialEndsAt: trialEnds.toISOString(),
-    daysRemaining: isMasterOrPro ? 9999 : 30,
-    databaseConfig: {
-      supabaseUrl: 'https://uugvudqbwoyywzbjrfol.supabase.co',
-      supabaseAnonKey: 'sb_publishable_pd2n3DRFhFgn79-SW6FEPw_vqRz2Jut',
-    },
-    developerContact: DEFAULT_DEV_CONTACT,
-    lastServerSync: now.toISOString(),
+  // Key was neither found in the cloud nor a recognized master key
+  return {
+    ok: false,
+    error: 'Invalid license key. This key was not found in the SMS central registry. Please contact Dhruv Shah (+91 8866039007) to obtain a valid license key.',
   };
-
-  saveStoredLicense(fallbackData);
-  return { ok: true, data: fallbackData };
 }
 
 /**
@@ -208,37 +528,57 @@ export function configureCustomSchoolDatabase({ schoolName, supabaseUrl, supabas
 
 /**
  * Validates the school license with the server.
- * Enforces server-authoritative timestamps and detects system clock manipulation.
+ * Enforces server-authoritative timestamps, hardware device binding, and anti-cloning locks.
  */
 export async function validateLicense(options = {}) {
   const cached = getStoredLicense();
   const baseUrl = getApiBaseUrl();
 
-  // If running in web mode and no explicit school license configured,
-  // allow standard single-tenant fallback to environment variables
-  if (!isTauriDesktop() && !cached) {
-    return {
-      ok: true,
-      status: 'web_env_mode',
-      daysRemaining: 9999,
-      isTrialExpired: false,
-      developerContact: DEFAULT_DEV_CONTACT,
-    };
-  }
+  // If running in desktop EXE or native mobile APK, license is strictly MANDATORY
+  const isEnforcedAppEnvironment = isTauriDesktop() || Capacitor.isNativePlatform();
 
   if (!cached || !cached.licenseKey) {
+    if (!isEnforcedAppEnvironment && !options.requireLicense) {
+      return {
+        ok: true,
+        status: 'web_env_mode',
+        daysRemaining: 9999,
+        isTrialExpired: false,
+        developerContact: DEFAULT_DEV_CONTACT,
+      };
+    }
+
     return {
       ok: false,
       status: 'unlicensed',
       isTrialExpired: false,
-      error: 'No active school license found. Please enter your school license key to activate.',
+      isLocked: true,
+      error: 'No active school license found. Please enter your School License Key to activate.',
       developerContact: DEFAULT_DEV_CONTACT,
+    };
+  }
+
+  const currentHwid = await getHardwareFingerprint();
+
+  // 0. Anti-Cloning / Anti-Copy Hardware Mismatch Check (Local Storage Protection)
+  // If the app folder or storage was copied from PC 1 to PC 2:
+  if (cached.boundDeviceId && currentHwid && cached.boundDeviceId !== currentHwid) {
+    return {
+      ok: false,
+      status: 'cloned_copy_detected',
+      isTrialExpired: true,
+      isLocked: true,
+      error: `SECURITY LOCKOUT: Cloned or copied software installation detected! This software was copied from another computer. The license is strictly tied to the original authorized workstation (${cached.boundDeviceId}). Contact Dhruv Shah (+91 8866039007) to authorize this computer.`,
+      developerContact: DEFAULT_DEV_CONTACT,
+      currentHwid,
+      boundDeviceId: cached.boundDeviceId,
     };
   }
 
   // 1. Direct authoritative check via Supabase database (Real-Time Cloud & Desktop Enforcement)
   if (supabase && isSupabaseConfigured) {
     try {
+      await ensureLicensingAuth(supabase);
       const licCode = 'LIC:' + cached.licenseKey;
       const { data: licRow } = await supabase
         .from('courses')
@@ -254,8 +594,48 @@ export async function validateLicense(options = {}) {
           licInfo = { status: licRow.is_active ? 'licensed' : 'suspended' };
         }
 
+        // Anti-Cloning Cloud Check: If cloud has a bound device that differs from this machine
+        const cloudBoundId = licInfo?.bound_device_id || licInfo?.activated_device_id;
+        if (cloudBoundId && currentHwid && cloudBoundId !== currentHwid) {
+          saveStoredLicense({
+            ...cached,
+            status: 'hardware_mismatch',
+            isLocked: true,
+            daysRemaining: 0,
+          });
+          return {
+            ok: false,
+            status: 'hardware_mismatch',
+            isTrialExpired: true,
+            isLocked: true,
+            error: `SECURITY LOCKOUT: Workstation mismatch. This license is bound to another computer in the cloud database (${cloudBoundId}). Contact Dhruv Shah (+91 8866039007).`,
+            developerContact: DEFAULT_DEV_CONTACT,
+            currentHwid,
+            cloudBoundId,
+          };
+        }
+
+        // Auto-bind unanchored legacy licenses to current hardware ID
+        if (!cloudBoundId && currentHwid) {
+          licInfo.bound_device_id = currentHwid;
+          licInfo.activated_device_id = currentHwid;
+          licInfo.bound_at = new Date().toISOString();
+          supabase.from('courses').update({
+            description: JSON.stringify(licInfo),
+            updated_at: new Date().toISOString(),
+          }).eq('code', licCode).then(() => {}).catch(() => {});
+        }
+
         const effectiveStatus = licInfo?.status || (licRow.is_active ? 'licensed' : 'suspended');
-        if (effectiveStatus === 'suspended' || effectiveStatus === 'revoked' || effectiveStatus === 'locked' || licRow.is_active === false) {
+        const isSuspended =
+          effectiveStatus === 'suspended' ||
+          effectiveStatus === 'revoked' ||
+          effectiveStatus === 'locked' ||
+          licInfo?.is_locked === true ||
+          licInfo?.isLocked === true ||
+          licRow.is_active === false;
+
+        if (isSuspended) {
           saveStoredLicense({
             ...cached,
             status: 'suspended',
@@ -271,6 +651,55 @@ export async function validateLicense(options = {}) {
             developerContact: DEFAULT_DEV_CONTACT,
           };
         }
+
+        // Active license updates from cloud (real-time remote lock/unlock and timer visibility)
+        const isTimerVisible = licInfo?.is_timer_visible !== undefined
+          ? Boolean(licInfo.is_timer_visible)
+          : (effectiveStatus === 'trial_active');
+
+        const daysRem = licInfo?.days_remaining ?? licInfo?.daysRemaining ?? cached.daysRemaining ?? 30;
+        const trialEnds = licInfo?.trial_ends_at || licInfo?.trialEndsAt || cached.trialEndsAt;
+
+        // Check if trial days ran out
+        if (daysRem <= 0 && effectiveStatus !== 'licensed') {
+          saveStoredLicense({
+            ...cached,
+            status: 'trial_expired',
+            daysRemaining: 0,
+            isLocked: true,
+            isTimerVisible: false,
+          });
+          return {
+            ok: false,
+            status: 'trial_expired',
+            isTrialExpired: true,
+            isLocked: true,
+            error: '30-Day Evaluation Period has ended. Please contact developer for a full commercial license.',
+            developerContact: DEFAULT_DEV_CONTACT,
+          };
+        }
+
+        saveStoredLicense({
+          ...cached,
+          status: effectiveStatus,
+          isLocked: false,
+          isTimerVisible,
+          daysRemaining: daysRem,
+          trialEndsAt: trialEnds,
+          boundDeviceId: cloudBoundId || currentHwid || cached.boundDeviceId,
+        });
+
+        return {
+          ok: true,
+          status: effectiveStatus,
+          schoolName: licInfo?.school_name || licInfo?.schoolName || licRow.name?.replace(/\s*\[.*\]/, '') || cached.schoolName,
+          daysRemaining: daysRem,
+          isTimerVisible,
+          isTrialExpired: false,
+          isLocked: false,
+          trialEndsAt: trialEnds,
+          developerContact: DEFAULT_DEV_CONTACT,
+        };
       }
     } catch (dbErr) {
       console.warn('Direct Supabase license check warning:', dbErr);
@@ -291,6 +720,10 @@ export async function validateLicense(options = {}) {
     const data = await res.json();
 
     if (data.ok) {
+      const isTimerVisible = data.isTimerVisible !== undefined
+        ? Boolean(data.isTimerVisible)
+        : (data.status === 'trial_active');
+
       saveStoredLicense({
         ...cached,
         status: data.status,
@@ -301,6 +734,8 @@ export async function validateLicense(options = {}) {
         developerContact: data.developerContact || cached.developerContact || DEFAULT_DEV_CONTACT,
         lastServerSync: data.serverTime || new Date().toISOString(),
         gracePeriodHours: data.gracePeriodHours || 24,
+        isTimerVisible,
+        isLocked: false,
       });
 
       return {
@@ -308,7 +743,9 @@ export async function validateLicense(options = {}) {
         status: data.status,
         schoolName: data.schoolName,
         daysRemaining: data.daysRemaining,
+        isTimerVisible,
         isTrialExpired: false,
+        isLocked: false,
         trialEndsAt: data.trialEndsAt,
         developerContact: data.developerContact || DEFAULT_DEV_CONTACT,
       };
@@ -360,6 +797,20 @@ export async function validateLicense(options = {}) {
     };
   } catch (netErr) {
     console.warn('Licensing server unreachable, evaluating secure offline lease:', netErr.message);
+
+    const currentHwid = await getHardwareFingerprint();
+
+    // 0. Offline Anti-Cloning Check: Ensure offline workstation matches bound hardware
+    if (cached.boundDeviceId && currentHwid && cached.boundDeviceId !== currentHwid) {
+      return {
+        ok: false,
+        status: 'cloned_copy_detected',
+        isTrialExpired: true,
+        isLocked: true,
+        error: `SECURITY LOCKOUT: Cloned copy detected! This offline software was copied from another computer. The license is bound to (${cached.boundDeviceId}). Contact Dhruv Shah (+91 8866039007).`,
+        developerContact: cached.developerContact || DEFAULT_DEV_CONTACT,
+      };
+    }
 
     const nowMs = Date.now();
 

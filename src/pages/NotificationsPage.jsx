@@ -33,7 +33,6 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { sendBatchBroadcastNotification, getSchoolTelegramSettings, isStudentBirthdayToday } from '../lib/telegramClient';
 import { getAcademySettings } from '../lib/academySettings';
 import { saveDataUrlWithPicker } from '../lib/fileSaveHelper';
-import { CANONICAL_STUDENTS } from '../data/canonicalSchoolData.js';
 import BirthdayWishModal from '../components/students/BirthdayWishModal';
 
 /**
@@ -234,13 +233,13 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
         }
       }
       if (!list.length) {
-        list = CANONICAL_STUDENTS;
+        list = [];
       }
       const todayList = list.filter((s) => isStudentBirthdayToday(s.dob));
       setBirthdayStudents(todayList);
     } catch (err) {
       console.error('Failed to load birthday students:', err);
-      setBirthdayStudents(CANONICAL_STUDENTS.filter((s) => isStudentBirthdayToday(s.dob)));
+      setBirthdayStudents([]);
     }
   };
 

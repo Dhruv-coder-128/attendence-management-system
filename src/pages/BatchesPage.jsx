@@ -25,6 +25,7 @@ import BulkImportModal from '../components/importer/BulkImportModal';
 import Pagination from '../components/common/Pagination';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { autoDistributeMisassignedStudents, repairBatchCourseLinkages } from '../lib/batchRepairService';
+import { extractStandardAndSection } from '../lib/classHierarchyHelper';
 
 /**
  * Courses & Batches Management Page — Real Supabase Integration
@@ -54,6 +55,7 @@ export default function BatchesPage({ onRefreshCounts }) {
   const initialForm = {
     code: '',
     name: '',
+    section: 'A',
     course_id: '',
     academic_year: '2026-27',
     shift: 'Morning',
@@ -165,9 +167,11 @@ export default function BatchesPage({ onRefreshCounts }) {
   const handleOpenEdit = (batch) => {
     setModalError('');
     setBatchToEdit(batch);
+    const { section } = extractStandardAndSection(batch);
     setFormData({
       code: batch.code || '',
       name: batch.name || '',
+      section: batch.section || section || 'A',
       course_id: batch.course_id || (courses[0]?.id || ''),
       academic_year: batch.academic_year || '2026-27',
       shift: batch.shift || 'Morning',
@@ -485,11 +489,12 @@ export default function BatchesPage({ onRefreshCounts }) {
               ) : (
                 paginatedBatches.map((batch) => {
                   const enrolledCount = batch.students?.[0]?.count || 0;
+                  const { section } = extractStandardAndSection(batch);
 
                   return (
                     <tr key={batch.id}>
                       <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                           <span
                             style={{
                               fontFamily: 'var(--font-mono)',
@@ -502,6 +507,19 @@ export default function BatchesPage({ onRefreshCounts }) {
                             }}
                           >
                             {batch.code}
+                          </span>
+                          <span
+                            style={{
+                              backgroundColor: '#e0e7ff',
+                              color: '#4338ca',
+                              padding: '2px 6px',
+                              borderRadius: '3px',
+                              fontSize: '10px',
+                              fontWeight: 800,
+                              fontFamily: 'var(--font-mono)',
+                            }}
+                          >
+                            Div {section}
                           </span>
                           <span style={{ fontWeight: 600, color: 'var(--navy-950)' }}>
                             {batch.name}
@@ -634,19 +652,25 @@ export default function BatchesPage({ onRefreshCounts }) {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '12px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '130px 100px 1fr', gap: '12px' }}>
             <Input
               label="Batch Code"
               value={formData.code}
               onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-              placeholder="FYBCA-A"
+              placeholder="11COM-A"
               required
+            />
+            <Select
+              label="Division / Sec"
+              value={formData.section || 'A'}
+              onChange={(e) => setFormData({ ...formData, section: e.target.value })}
+              options={['A', 'B', 'C', 'D', 'E', 'F']}
             />
             <Input
               label="Batch Name"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="FY-BCA Morning Batch A"
+              placeholder="11th Commerce — Division A"
               required
             />
           </div>

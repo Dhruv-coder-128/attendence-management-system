@@ -15,6 +15,7 @@ import {
   Shield,
   ShieldAlert,
   FileSpreadsheet,
+  BarChart3,
 } from 'lucide-react';
 import { hasPermission } from '../../lib/authService';
 import { useAcademySettings } from '../../lib/academySettings';
@@ -138,6 +139,13 @@ export default function Sidebar({
       icon: Bell,
       badge: counts.notifications > 0 ? String(counts.notifications) : null,
       permission: 'send_notifications',
+    },
+    {
+      id: 'reports',
+      label: 'Reports & Analytics',
+      icon: BarChart3,
+      badge: 'Hub',
+      permission: null,
     },
     {
       id: 'import',

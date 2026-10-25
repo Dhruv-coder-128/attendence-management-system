@@ -13,12 +13,6 @@ import os from 'os';
 import fs from 'fs';
 import path from 'path';
 import { createClient } from '@supabase/supabase-js';
-import {
-  CANONICAL_BATCHES,
-  CANONICAL_STUDENTS,
-  getBatchStudents,
-  getBatchById,
-} from '../src/data/canonicalSchoolData.js';
 
 // Cache for in-memory / local session attendance store when completely offline
 const memoryAttendanceStore = new Map();
@@ -31,8 +25,8 @@ const SCHOOL_DATABASE_FILE = path.resolve(process.cwd(), 'src/data/school_databa
 
 // Live in-memory cache of the school database
 let liveSchoolDb = {
-  batches: CANONICAL_BATCHES,
-  students: CANONICAL_STUDENTS,
+  batches: [],
+  students: [],
   courses: [],
   attendance: {},
   lastModified: new Date().toISOString(),
@@ -46,8 +40,8 @@ function loadSchoolDatabase() {
       if (parsed && Array.isArray(parsed.batches) && Array.isArray(parsed.students)) {
         liveSchoolDb = {
           ...parsed,
-          batches: parsed.batches.length > 0 ? parsed.batches : CANONICAL_BATCHES,
-          students: parsed.students.length > 0 ? parsed.students : CANONICAL_STUDENTS,
+          batches: parsed.batches,
+          students: parsed.students,
         };
         return;
       }
@@ -58,8 +52,8 @@ function loadSchoolDatabase() {
 
   // Default fallback if file does not exist yet
   liveSchoolDb = {
-    batches: CANONICAL_BATCHES,
-    students: CANONICAL_STUDENTS,
+    batches: [],
+    students: [],
     courses: [],
     attendance: {},
     lastModified: new Date().toISOString(),
@@ -162,7 +156,7 @@ export function getLocalNetworkIp() {
 function resolveBatchInfo(batchId, batches) {
   if (!batchId) return null;
   const clean = String(batchId).trim().toUpperCase();
-  const list = Array.isArray(batches) && batches.length > 0 ? batches : CANONICAL_BATCHES;
+  const list = Array.isArray(batches) ? batches : [];
   return (
     list.find(
       (b) =>
@@ -258,9 +252,7 @@ export default async function handler(req, res) {
 
   // 2. BATCHES: Returns academic cohorts from the live synchronized school database
   if (action === 'batches') {
-    const rawBatches = liveSchoolDb.batches && liveSchoolDb.batches.length > 0
-      ? liveSchoolDb.batches
-      : CANONICAL_BATCHES;
+    const rawBatches = Array.isArray(liveSchoolDb.batches) ? liveSchoolDb.batches : [];
 
     const batches = rawBatches.map((b) => {
       const bId = String(b.id || '').toUpperCase();
@@ -297,7 +289,7 @@ export default async function handler(req, res) {
       if (sBatchId && (sBatchId === targetId || sBatchId === cleanRaw)) return true;
       if (targetCode && (sBatchId === targetCode || sBatchCode === targetCode)) return true;
       if (sBatchCode && (sBatchCode === targetId || sBatchCode === cleanRaw)) return true;
-      if (sBatchName && targetName && (sBatchName === targetName || sBatchName.includes(targetName) || targetName.includes(sBatchName))) {
+      if (sBatchName && targetName && sBatchName.trim().replace(/\s+/g, ' ') === targetName.trim().replace(/\s+/g, ' ')) {
         return true;
       }
       return false;
@@ -423,10 +415,10 @@ export default async function handler(req, res) {
         admission_no: r.admission_no || match?.admission_no || r.student_id,
         roll_no: r.roll_no || match?.roll_no || null,
         full_name: r.full_name || match?.full_name || '',
-        status: r.status || 'Present',
+        status: r.status || 'Pending',
         remarks: r.remarks || '',
         time_in: r.time_in || new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
-        updated_at: lastSyncTimestamp,
+        updated_at: r.updated_at || lastSyncTimestamp,
       };
     });
 

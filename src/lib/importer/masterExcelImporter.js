@@ -146,9 +146,20 @@ export async function parseMasterSpreadsheet(file) {
       findValue(normalizedRow, ['coursename', 'course', 'stream', 'standard', 'class', 'grade']) ||
       'Standard Course';
 
-    const batchName =
-      findValue(normalizedRow, ['batchname', 'batch', 'division', 'section', 'sec', 'div', 'cohort']) ||
-      'General Batch';
+    const explicitSection = findValue(normalizedRow, ['sectiondivision', 'section', 'division', 'sec', 'div', 'classdivision']);
+
+    let batchName =
+      findValue(normalizedRow, ['batchname', 'batch', 'cohort']) || '';
+
+    if (!batchName) {
+      if (explicitSection) {
+        batchName = `${courseName} — Division ${explicitSection.toUpperCase()}`;
+      } else {
+        batchName = findValue(normalizedRow, ['division', 'section', 'sec', 'div']) || 'General Batch';
+      }
+    } else if (explicitSection && !batchName.toLowerCase().includes(explicitSection.toLowerCase())) {
+      batchName = `${batchName} (Div ${explicitSection.toUpperCase()})`;
+    }
 
     const batchTiming =
       findValue(normalizedRow, ['batchtiming', 'timing', 'schedule', 'time', 'shift']) ||

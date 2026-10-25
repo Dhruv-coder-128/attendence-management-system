@@ -29,6 +29,7 @@ import { openExternalLink } from '../../lib/externalOpener';
  * directly via WhatsApp, Telegram Bot, or Clipboard.
  */
 export default function BirthdayWishModal({ isOpen, onClose, student, onSent }) {
+  const [channel, setChannel] = useState('whatsapp'); // 'whatsapp' | 'telegram'
   const [message, setMessage] = useState('');
   const [copied, setCopied] = useState(false);
   const [isSendingTelegram, setIsSendingTelegram] = useState(false);
@@ -63,6 +64,7 @@ export default function BirthdayWishModal({ isOpen, onClose, student, onSent }) 
   if (!isOpen || !student) return null;
 
   const targetPhone = student.contact_number || student.phone || student.mobile || '';
+  const parentChatId = student.parent_students?.[0]?.parents?.telegram_chat_id || student.telegram_chat_id || null;
 
   const handleCopy = async () => {
     try {
@@ -87,6 +89,33 @@ export default function BirthdayWishModal({ isOpen, onClose, student, onSent }) 
     const waUrl = formatStudentBirthdayWhatsAppUrl(targetPhone, message);
     openExternalLink(waUrl);
     if (onSent) onSent('whatsapp');
+  };
+
+  const handleTelegramSend = async () => {
+    setIsSendingTelegram(true);
+    setTelegramStatus(null);
+    try {
+      const botToken = schoolSettings.botToken;
+      if (botToken && parentChatId) {
+        const res = await sendDirectTelegramMessage(botToken, parentChatId, message);
+        if (res.ok) {
+          setTelegramStatus({ ok: true, msg: '✓ Birthday wish dispatched directly to Parent via Telegram Bot!' });
+          if (onSent) onSent('telegram');
+        } else {
+          setTelegramStatus({ ok: false, msg: `Telegram error: ${res.error || 'Failed to dispatch via Bot'}` });
+        }
+      } else {
+        // Fallback: Open Telegram share deep link
+        const tgUrl = `https://t.me/share/url?text=${encodeURIComponent(message)}`;
+        openExternalLink(tgUrl);
+        setTelegramStatus({ ok: true, msg: '✓ Opened Birthday Wish in Telegram!' });
+        if (onSent) onSent('telegram');
+      }
+    } catch (err) {
+      setTelegramStatus({ ok: false, msg: 'Dispatch failed: ' + (err.message || String(err)) });
+    } finally {
+      setIsSendingTelegram(false);
+    }
   };
 
   const handleInsertToken = (token) => {
@@ -207,6 +236,58 @@ export default function BirthdayWishModal({ isOpen, onClose, student, onSent }) 
           </div>
         </div>
 
+        {/* Gateway Channel Selector: WhatsApp vs Telegram */}
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '6px' }}>
+            Choose Delivery Channel
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => setChannel('whatsapp')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '9px 14px',
+                borderRadius: '8px',
+                border: channel === 'whatsapp' ? '2px solid #22c55e' : '1px solid #cbd5e1',
+                backgroundColor: channel === 'whatsapp' ? '#f0fdf4' : '#ffffff',
+                color: channel === 'whatsapp' ? '#15803d' : '#475569',
+                fontWeight: channel === 'whatsapp' ? 700 : 600,
+                fontSize: '12.5px',
+                cursor: 'pointer',
+              }}
+            >
+              <MessageCircle size={16} color={channel === 'whatsapp' ? '#22c55e' : '#64748b'} />
+              <span>WhatsApp Direct</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setChannel('telegram')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                padding: '9px 14px',
+                borderRadius: '8px',
+                border: channel === 'telegram' ? '2px solid #0284c7' : '1px solid #cbd5e1',
+                backgroundColor: channel === 'telegram' ? '#f0f9ff' : '#ffffff',
+                color: channel === 'telegram' ? '#0369a1' : '#475569',
+                fontWeight: channel === 'telegram' ? 700 : 600,
+                fontSize: '12.5px',
+                cursor: 'pointer',
+              }}
+            >
+              <Send size={16} color={channel === 'telegram' ? '#0284c7' : '#64748b'} />
+              <span>Telegram Bot / App</span>
+            </button>
+          </div>
+        </div>
+
         {/* Message Editor */}
         <div style={{ marginBottom: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
@@ -321,28 +402,53 @@ export default function BirthdayWishModal({ isOpen, onClose, student, onSent }) 
               Cancel
             </Button>
 
-            <button
-              type="button"
-              onClick={handleWhatsAppSend}
-              disabled={!targetPhone}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '9px 18px',
-                borderRadius: '6px',
-                backgroundColor: targetPhone ? '#25d366' : '#cbd5e1',
-                border: 'none',
-                color: '#ffffff',
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: targetPhone ? 'pointer' : 'not-allowed',
-                boxShadow: targetPhone ? '0 2px 8px rgba(37, 211, 102, 0.3)' : 'none',
-              }}
-            >
-              <MessageCircle size={16} />
-              1-Click WhatsApp Wish
-            </button>
+            {channel === 'whatsapp' ? (
+              <button
+                type="button"
+                onClick={handleWhatsAppSend}
+                disabled={!targetPhone}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '9px 18px',
+                  borderRadius: '6px',
+                  backgroundColor: targetPhone ? '#25d366' : '#cbd5e1',
+                  border: 'none',
+                  color: '#ffffff',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: targetPhone ? 'pointer' : 'not-allowed',
+                  boxShadow: targetPhone ? '0 2px 8px rgba(37, 211, 102, 0.3)' : 'none',
+                }}
+              >
+                <MessageCircle size={16} />
+                1-Click WhatsApp Wish
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleTelegramSend}
+                disabled={isSendingTelegram}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '9px 18px',
+                  borderRadius: '6px',
+                  backgroundColor: '#0284c7',
+                  border: 'none',
+                  color: '#ffffff',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: isSendingTelegram ? 'wait' : 'pointer',
+                  boxShadow: '0 2px 8px rgba(2, 132, 199, 0.3)',
+                }}
+              >
+                <Send size={16} />
+                {isSendingTelegram ? 'Dispatching...' : '1-Click Telegram Wish'}
+              </button>
+            )}
           </div>
         </div>
       </div>

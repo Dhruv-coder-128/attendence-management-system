@@ -252,30 +252,6 @@ export default function DraggableTrialCapsule({ daysRemaining, onOpenActivation 
             )}
           </span>
         </div>
-
-        {/* Key / Renew indicator */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onOpenActivation) onOpenActivation();
-          }}
-          style={{
-            background: isLowTime ? '#ef4444' : 'rgba(255, 255, 255, 0.12)',
-            border: `1px solid ${isLowTime ? '#f87171' : 'rgba(255, 255, 255, 0.2)'}`,
-            borderRadius: '9999px',
-            color: '#ffffff',
-            padding: '2px 8px',
-            fontSize: '10.5px',
-            fontWeight: 600,
-            cursor: 'pointer',
-            marginLeft: '2px',
-            transition: 'background 0.15s ease',
-          }}
-          title="Click to Activate / Extend License"
-        >
-          {isLowTime ? 'Renew' : 'Key'}
-        </button>
       </div>
     </>
   );

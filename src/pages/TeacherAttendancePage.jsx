@@ -24,6 +24,8 @@ import {
   Calendar,
   Sparkles,
   Cake,
+  ChevronDown,
+  Layers,
 } from 'lucide-react';
 import { App } from '@capacitor/app';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -47,20 +49,24 @@ import {
   setDevicePairedLocally,
 } from '../lib/localWifiHubService';
 import { useAcademySettings } from '../lib/academySettings';
-import { CANONICAL_BATCHES, CANONICAL_STUDENTS } from '../data/canonicalSchoolData';
-import { isStudentBirthdayToday } from '../lib/telegramClient';
+import { groupBatchesByStandard } from '../lib/classHierarchyHelper';
 import BirthdayWishModal from '../components/students/BirthdayWishModal';
 
-export const CANONICAL_BATCH_CODES = ['11-COM', '12-COM', 'FY-BCA', 'SY-BCA', 'TY-BCA'];
+
+export const CANONICAL_BATCH_CODES = [];
 
 export function getCanonicalBatchCode(raw) {
   if (!raw) return '';
   const s = String(raw).trim().toUpperCase();
-  if (s === 'B11' || s.includes('11-COM') || s.includes('11TH')) return '11-COM';
-  if (s === 'B12' || s.includes('12-COM') || s.includes('12TH')) return '12-COM';
-  if (s === 'BFY' || s.includes('FY-BCA') || s === 'FY' || s.includes('FIRST YEAR')) return 'FY-BCA';
-  if (s === 'BSY' || s.includes('SY-BCA') || s === 'SY' || s.includes('SECOND YEAR')) return 'SY-BCA';
-  if (s === 'BTY' || s.includes('TY-BCA') || s === 'TY' || s.includes('THIRD YEAR')) return 'TY-BCA';
+  // Do NOT collapse multi-section codes like 11COM-B or 11TH-B into 11-COM!
+  if (s.endsWith('-B') || s.endsWith(' B') || s.endsWith('_B') || s.includes('DIV B') || s.includes('SECTION B') || s.includes('DIVITION B')) {
+    return s;
+  }
+  if (s === 'B11' || s === '11-COM') return '11-COM';
+  if (s === 'B12' || s === '12-COM') return '12-COM';
+  if (s === 'BFY' || s === 'FY-BCA' || s === 'FY') return 'FY-BCA';
+  if (s === 'BSY' || s === 'SY-BCA' || s === 'SY') return 'SY-BCA';
+  if (s === 'BTY' || s === 'TY-BCA' || s === 'TY') return 'TY-BCA';
   return s;
 }
 
@@ -130,7 +136,7 @@ export default function TeacherAttendancePage() {
   const [cameraError, setCameraError] = useState('');
 
   // Data
-  const [batches, setBatches] = useState(CANONICAL_BATCHES);
+  const [batches, setBatches] = useState([]);
   const [selectedBatchId, setSelectedBatchId] = useState('');
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [students, setStudents] = useState([]);
@@ -151,6 +157,21 @@ export default function TeacherAttendancePage() {
     });
     return Array.from(map.values());
   }, [batches]);
+
+  // Class Hierarchy: Standard -> Section State
+  const [expandedStandard, setExpandedStandard] = useState(null);
+  const [selectedStandard, setSelectedStandard] = useState(null);
+
+  const standardGroups = useMemo(() => {
+    return groupBatchesByStandard(uniqueBatches);
+  }, [uniqueBatches]);
+
+  const activeStandardGroup = useMemo(() => {
+    if (!selectedStandard) return null;
+    return standardGroups.find(
+      (g) => g.standardName.toLowerCase() === selectedStandard.toLowerCase()
+    ) || null;
+  }, [standardGroups, selectedStandard]);
 
   // Active Batch Object (Declared early so callbacks can access safely)
   const activeBatch = useMemo(() => {
@@ -200,7 +221,11 @@ export default function TeacherAttendancePage() {
   showSettingsModalRef.current = showSettingsModal;
   const showSuccessModalRef = useRef(showSuccessModal);
   showSuccessModalRef.current = showSuccessModal;
+  const activeStandardGroupRef = useRef(activeStandardGroup);
+  activeStandardGroupRef.current = activeStandardGroup;
   const lastBackPressTimeRef = useRef(0);
+  const verifyConnectionRef = useRef(null);
+  const hubUrlRef = useRef(hubUrl);
 
   useEffect(() => {
     let listenerHandle = null;
@@ -221,13 +246,22 @@ export default function TeacherAttendancePage() {
         setShowSuccessModal(false);
         return;
       }
-      // 5. If in student roll call, RETURN TO BATCH CARDS! NEVER EXIT APP!
+      // 4. If in student roll call, return to divisions if multi-section or batches if single
       if (viewModeRef.current === 'rollcall') {
+        if (activeStandardGroupRef.current?.hasMultipleSections) {
+          setViewMode('divisions');
+        } else {
+          setViewMode('batches');
+        }
+        return;
+      }
+      // 5. If in divisions view, return to master standards/classes
+      if (viewModeRef.current === 'divisions') {
         setViewMode('batches');
         return;
       }
 
-      // 5. On batches root screen: require double back-tap within 2.0s before exit
+      // 6. On batches root screen: require double back-tap within 2.0s before exit
       const now = Date.now();
       if (now - lastBackPressTimeRef.current < 2000) {
         try {
@@ -248,8 +282,8 @@ export default function TeacherAttendancePage() {
         .catch(() => {});
 
       App.addListener('appStateChange', ({ isActive }) => {
-        if (isActive) {
-          checkConnection();
+        if (isActive && typeof verifyConnectionRef.current === 'function') {
+          verifyConnectionRef.current(hubUrlRef.current, false);
         }
       })
         .then((handle) => {
@@ -261,6 +295,13 @@ export default function TeacherAttendancePage() {
     // Web / browser popstate support
     const handlePopState = (e) => {
       if (viewModeRef.current === 'rollcall') {
+        e?.preventDefault?.();
+        if (activeStandardGroupRef.current?.hasMultipleSections) {
+          setViewMode('divisions');
+        } else {
+          setViewMode('batches');
+        }
+      } else if (viewModeRef.current === 'divisions') {
         e?.preventDefault?.();
         setViewMode('batches');
       }
@@ -276,7 +317,7 @@ export default function TeacherAttendancePage() {
       }
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [checkConnection]);
+  }, [showToast]);
 
   // 1. Load Batches
   const loadBatches = useCallback(async (targetUrl = hubUrl) => {
@@ -296,12 +337,14 @@ export default function TeacherAttendancePage() {
         const data = await res.json();
         const records = data.records || data.allRecords || [];
         if (Array.isArray(records) && records.length > 0) {
-          // Build canonical student lookup
+          // Student lookup map
           const studentLookup = new Map();
-          (CANONICAL_STUDENTS || []).forEach((cs) => {
-            if (cs.admission_no) studentLookup.set(cs.admission_no.trim().toUpperCase(), cs);
-            if (cs.id) studentLookup.set(cs.id.trim(), cs);
-            if (cs.full_name) studentLookup.set(cs.full_name.trim().toLowerCase(), cs);
+          (batches || []).forEach((b) => {
+            (b.students || []).forEach((s) => {
+              if (s.admission_no) studentLookup.set(s.admission_no.trim().toUpperCase(), s);
+              if (s.id) studentLookup.set(s.id.trim(), s);
+              if (s.full_name) studentLookup.set(s.full_name.trim().toLowerCase(), s);
+            });
           });
 
           // Strict student-level deduplication: exactly 1 state per student
@@ -318,13 +361,25 @@ export default function TeacherAttendancePage() {
             const studentKey = matched ? matched.admission_no : (rawAdm || rawId || null);
             if (!studentKey) return;
 
-            if (!studentAttendanceMap.has(studentKey)) {
+            const existingEntry = studentAttendanceMap.get(studentKey);
+            if (!existingEntry) {
               studentAttendanceMap.set(studentKey, {
                 ...r,
                 admission_no: matched ? matched.admission_no : studentKey,
                 batch_code: getCanonicalBatchCode(matched ? matched.batch_code : (r.batch_code || r.batch_id)),
-                status: r.status || 'Present',
+                status: r.status || 'Pending',
               });
+            } else {
+              const existingTime = new Date(existingEntry.updated_at || 0).getTime();
+              const incomingTime = new Date(r.updated_at || 0).getTime();
+              if (incomingTime > existingTime) {
+                studentAttendanceMap.set(studentKey, {
+                  ...r,
+                  admission_no: matched ? matched.admission_no : studentKey,
+                  batch_code: getCanonicalBatchCode(matched ? matched.batch_code : (r.batch_code || r.batch_id)),
+                  status: r.status || 'Pending',
+                });
+              }
             }
           });
 
@@ -334,13 +389,18 @@ export default function TeacherAttendancePage() {
           let totalAbsent = 0;
           let totalLate = 0;
 
-          // Initialize all 5 canonical batches with 20 students each
-          CANONICAL_BATCH_CODES.forEach((code) => {
-            batchMap[code] = { present: 0, absent: 0, late: 0, total: 20, pending: 20, taken: false };
+          // Initialize batchMap dynamically for all actual batches
+          uniqueBatches.forEach((b) => {
+            const bKey = (b.code || b.id || '').toUpperCase();
+            const count = typeof b.student_count === 'number' ? b.student_count : (typeof b.enrolled === 'number' ? b.enrolled : 0);
+            if (bKey) {
+              batchMap[bKey] = { present: 0, absent: 0, late: 0, total: count, pending: count, taken: false };
+            }
           });
 
+
           studentAttendanceMap.forEach((entry) => {
-            const bCode = entry.batch_code;
+            const bCode = (entry.batch_code || '').toUpperCase();
             if (bCode && batchMap[bCode]) {
               batchMap[bCode].taken = true;
               if (entry.status === 'Present') {
@@ -349,24 +409,26 @@ export default function TeacherAttendancePage() {
               } else if (entry.status === 'Late') {
                 batchMap[bCode].late += 1;
                 totalLate += 1;
-              } else {
+              } else if (entry.status === 'Absent') {
                 batchMap[bCode].absent += 1;
                 totalAbsent += 1;
               }
             }
           });
 
-          // Calculate exact pending for each cohort (20 - marked)
-          CANONICAL_BATCH_CODES.forEach((code) => {
-            if (batchMap[code]) {
-              batchMap[code].pending = Math.max(0, 20 - (batchMap[code].present + batchMap[code].absent + batchMap[code].late));
-            }
+          // Calculate exact pending for each cohort
+          Object.keys(batchMap).forEach((code) => {
+            const b = batchMap[code];
+            b.pending = Math.max(0, b.total - (b.present + b.absent + b.late));
           });
 
-          const totalPending = Math.max(0, 100 - (totalPresent + totalAbsent + totalLate));
+          const totalCapacity = typeof data.studentsCount === 'number'
+            ? data.studentsCount
+            : (typeof data.studentCount === 'number' ? data.studentCount : schoolTotalStudents);
+          const totalPending = Math.max(0, totalCapacity - (totalPresent + totalAbsent + totalLate));
 
           const newMetrics = {
-            total: 100,
+            total: totalCapacity,
             present: totalPresent,
             absent: totalAbsent,
             late: totalLate,
@@ -415,6 +477,11 @@ export default function TeacherAttendancePage() {
   }, [hubUrl, loadBatches, refreshHubMetrics, selectedDate]);
 
   useEffect(() => {
+    verifyConnectionRef.current = verifyConnection;
+    hubUrlRef.current = hubUrl;
+  }, [verifyConnection, hubUrl]);
+
+  useEffect(() => {
     verifyConnection(hubUrl, true);
   }, [hubUrl, verifyConnection]);
 
@@ -457,8 +524,9 @@ export default function TeacherAttendancePage() {
   }, [hubUrl, verifyConnection]);
 
   // 3. Load Students when batch is opened & load existing attendance from PC
-  const openBatchRollCall = async (batchId) => {
+  const openBatchRollCall = async (batchId, standardName = null) => {
     setSelectedBatchId(batchId);
+    if (standardName) setSelectedStandard(standardName);
     setViewMode('rollcall');
     setIsLoading(true);
 
@@ -467,13 +535,8 @@ export default function TeacherAttendancePage() {
     } catch {}
 
     let studentList = await fetchStudentsFromHub(batchId, hubUrl);
-    if (!Array.isArray(studentList) || studentList.length === 0) {
-      // Fallback to canonical roster for this batch
-      const canonicalCode = getCanonicalBatchCode(batchId);
-      studentList = (CANONICAL_STUDENTS || []).filter(
-        (s) => getCanonicalBatchCode(s.batch_code || s.batch_id) === canonicalCode
-      );
-    }
+    if (!Array.isArray(studentList)) studentList = [];
+
     setStudents(studentList);
 
     // Fetch existing attendance previously marked today on PC or phone
@@ -489,20 +552,10 @@ export default function TeacherAttendancePage() {
             (s.full_name && r.full_name && s.full_name.trim().toLowerCase() === r.full_name.trim().toLowerCase())
         );
         if (matched) {
-          initialMap[matched.id] = r.status || 'Present';
-        }
-      });
-      studentList.forEach((s) => {
-        if (!initialMap[s.id]) {
-          initialMap[s.id] = 'Present';
+          initialMap[matched.id] = r.status;
         }
       });
       showToast('✓ Loaded existing roll call');
-    } else {
-      // Default: Everyone is marked Present
-      studentList.forEach((s) => {
-        initialMap[s.id] = 'Present';
-      });
     }
 
     setAttendanceMap(initialMap);
@@ -527,17 +580,10 @@ export default function TeacherAttendancePage() {
             (s.full_name && r.full_name && s.full_name.trim().toLowerCase() === r.full_name.trim().toLowerCase())
         );
         if (matched) {
-          map[matched.id] = r.status || 'Present';
+          map[matched.id] = r.status;
         }
       });
-      students.forEach((s) => {
-        if (!map[s.id]) map[s.id] = 'Present';
-      });
       showToast(`Loaded records for ${newDate}`);
-    } else {
-      students.forEach((s) => {
-        map[s.id] = 'Present';
-      });
     }
     setAttendanceMap(map);
     setIsLoading(false);
@@ -559,7 +605,7 @@ export default function TeacherAttendancePage() {
           admission_no: s.admission_no || s.id,
           roll_no: s.roll_no,
           full_name: s.full_name || s.name || '',
-          status: updatedMap[s.id] || updatedMap[s.admission_no] || 'Present',
+          status: updatedMap[s.id] || updatedMap[s.admission_no] || 'Pending',
           remarks: '',
           time_in: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
         }));
@@ -589,19 +635,21 @@ export default function TeacherAttendancePage() {
     let lCount = 0;
 
     students.forEach((s) => {
-      const st = newMap[s.id] || newMap[s.admission_no] || 'Present';
+      const st = newMap[s.id] || newMap[s.admission_no];
       if (st === 'Present') pCount++;
       else if (st === 'Late') lCount++;
-      else aCount++;
+      else if (st === 'Absent') aCount++;
     });
+
+    const batchTotal = students.length;
 
     const newBatchInfo = {
       present: pCount,
       absent: aCount,
       late: lCount,
-      total: students.length || 20,
-      pending: Math.max(0, (students.length || 20) - (pCount + aCount + lCount)),
-      taken: true,
+      total: batchTotal,
+      pending: Math.max(0, batchTotal - (pCount + aCount + lCount)),
+      taken: (pCount + aCount + lCount) > 0,
     };
 
     setBatchStatuses((prev) => {
@@ -612,7 +660,7 @@ export default function TeacherAttendancePage() {
       let sumAbsent = 0;
       let sumLate = 0;
       let sumTotal = 0;
-      CANONICAL_BATCH_CODES.forEach((c) => {
+      Object.keys(next).forEach((c) => {
         const b = next[c];
         if (b) {
           sumPresent += b.present || 0;
@@ -622,9 +670,10 @@ export default function TeacherAttendancePage() {
         }
       });
 
-      const totalPending = Math.max(0, 100 - (sumPresent + sumAbsent + sumLate));
+      const effectiveTotal = Math.max(schoolTotalStudents, sumTotal);
+      const totalPending = Math.max(0, effectiveTotal - (sumPresent + sumAbsent + sumLate));
       const metrics = {
-        total: 100,
+        total: effectiveTotal,
         present: sumPresent,
         absent: sumAbsent,
         late: sumLate,
@@ -675,7 +724,7 @@ export default function TeacherAttendancePage() {
   };
 
   // Metric Computations (Present, Late, Absent, Total) - strictly 1 state per student
-  const getStudentStatus = (s) => attendanceMap[s.id] || (s.admission_no ? attendanceMap[s.admission_no] : 'Present');
+  const getStudentStatus = (s) => attendanceMap[s.id] || (s.admission_no ? attendanceMap[s.admission_no] : null) || 'Pending';
   const totalCount = students.length;
   const presentCount = useMemo(() => {
     return students.filter((s) => getStudentStatus(s) === 'Present').length;
@@ -711,7 +760,7 @@ export default function TeacherAttendancePage() {
       admission_no: s.admission_no || s.id,
       roll_no: s.roll_no,
       full_name: s.full_name || s.name || '',
-      status: attendanceMap[s.id] || 'Present',
+      status: attendanceMap[s.id] || (s.admission_no ? attendanceMap[s.admission_no] : null) || 'Pending',
       remarks: '',
       time_in: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
     }));
@@ -730,12 +779,14 @@ export default function TeacherAttendancePage() {
 
     // Authoritatively update batch status and daily metrics immediately
     const bKey = getCanonicalBatchCode(activeBatch.code || selectedBatchId);
+    const batchTotal = totalCount;
+
     const newBatchInfo = {
       present: presentCount,
       late: lateCount,
       absent: absentCount,
-      total: totalCount || 20,
-      pending: Math.max(0, (totalCount || 20) - (presentCount + absentCount + lateCount)),
+      total: batchTotal,
+      pending: Math.max(0, batchTotal - (presentCount + absentCount + lateCount)),
       taken: true,
     };
 
@@ -751,7 +802,7 @@ export default function TeacherAttendancePage() {
       let sumPresent = 0;
       let sumAbsent = 0;
       let sumLate = 0;
-      CANONICAL_BATCH_CODES.forEach((c) => {
+      Object.keys(currentMap).forEach((c) => {
         const st = currentMap[c];
         if (st) {
           sumTotal += st.total || 0;
@@ -760,9 +811,10 @@ export default function TeacherAttendancePage() {
           sumLate += st.late || 0;
         }
       });
-      const totalPending = Math.max(0, 100 - (sumPresent + sumAbsent + sumLate));
+      const effectiveTotal = Math.max(schoolTotalStudents, sumTotal);
+      const totalPending = Math.max(0, effectiveTotal - (sumPresent + sumAbsent + sumLate));
       const next = {
-        total: 100,
+        total: effectiveTotal,
         present: sumPresent,
         absent: sumAbsent,
         late: sumLate,
@@ -898,8 +950,17 @@ export default function TeacherAttendancePage() {
   }, [showCameraScanner, handleScannedResult]);
 
   const schoolTotalStudents = useMemo(() => {
-    return uniqueBatches.reduce((acc, b) => acc + (b.student_count || b.enrolled || 20), 0) || 100;
-  }, [uniqueBatches]);
+    // If connected to PC and Hub reports authoritative student count, use it directly
+    if (connectionStatus?.ok && typeof connectionStatus?.studentsCount === 'number' && connectionStatus.studentsCount > 0) {
+      return connectionStatus.studentsCount;
+    }
+    // Sum real students across batches; empty custom cohorts count as 0, not phantom 20
+    const sum = uniqueBatches.reduce((acc, b) => {
+      const count = typeof b.student_count === 'number' ? b.student_count : (typeof b.enrolled === 'number' ? b.enrolled : (b.is_canonical ? 20 : 0));
+      return acc + count;
+    }, 0);
+    return sum || 100;
+  }, [uniqueBatches, connectionStatus]);
 
   return (
     <div
@@ -1588,58 +1649,96 @@ export default function TeacherAttendancePage() {
             />
           </div>
 
-          {/* Batches Cards Grid (Artisanal Pure White Cards) */}
+          {/* Hierarchical Standard & Division Cards Grid */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {uniqueBatches
-              .filter(
-                (b) =>
-                  !searchTerm.trim() ||
-                  b.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  b.code?.toLowerCase().includes(searchTerm.toLowerCase())
-              )
-              .map((batch) => {
-                const bKey = getCanonicalBatchCode(batch.code || batch.id);
-                const bStatus = batchStatuses[bKey];
-                const isMarkedToday = bStatus && bStatus.taken;
+            {standardGroups
+              .filter((group) => {
+                if (!searchTerm.trim()) return true;
+                const term = searchTerm.toLowerCase();
+                const matchesStandard = group.standardName.toLowerCase().includes(term);
+                const matchesAnySection = group.sections.some(
+                  (b) =>
+                    b.name?.toLowerCase().includes(term) ||
+                    b.code?.toLowerCase().includes(term) ||
+                    String(b.section || '').toLowerCase().includes(term)
+                );
+                return matchesStandard || matchesAnySection;
+              })
+              .map((group) => {
+                const totalDivisions = group.sections.length;
+                let markedDivisionsCount = 0;
+                let totalStudentsInStandard = 0;
+                group.sections.forEach((b) => {
+                  const bKey = getCanonicalBatchCode(b.code || b.id);
+                  if (batchStatuses[bKey]?.taken) markedDivisionsCount++;
+                  totalStudentsInStandard += typeof b.student_count === 'number' ? b.student_count : (typeof b.enrolled === 'number' ? b.enrolled : 0);
+                });
+
+                // If standalone single-division class, can launch directly; if multiple divisions, drills down to divisions screen
+                const handleCardClick = () => {
+                  if (group.hasMultipleSections) {
+                    setSelectedStandard(group.standardName);
+                    setViewMode('divisions');
+                  } else {
+                    const singleBatch = group.sections[0];
+                    openBatchRollCall(singleBatch.id || singleBatch.code, group.standardName);
+                  }
+                };
 
                 return (
                   <div
-                    key={batch.code || batch.id}
-                    onClick={() => openBatchRollCall(batch.id || batch.code)}
+                    key={group.standardName}
+                    onClick={handleCardClick}
                     className="liquid-card"
                     style={{
                       backgroundColor: '#ffffff',
                       borderRadius: '16px',
                       padding: '16px',
-                      border: isMarkedToday
-                        ? '1px solid #a7f3d0'
-                        : '1px solid #e2e8f0',
+                      border: markedDivisionsCount === totalDivisions && totalDivisions > 0 ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
+                      borderLeft: '4px solid #4f46e5',
                       boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
                       cursor: 'pointer',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
+                      transition: 'all 0.15s ease',
                     }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
                         <span
                           style={{
-                            backgroundColor: '#f1f5f9',
-                            border: '1px solid #cbd5e1',
-                            color: '#0f172a',
+                            backgroundColor: '#e0e7ff',
+                            border: '1px solid #c7d2fe',
+                            color: '#4338ca',
                             padding: '2px 8px',
                             borderRadius: '6px',
                             fontSize: '11px',
                             fontWeight: 800,
-                            fontFamily: 'monospace',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
                           }}
                         >
-                          {batch.code || batch.id}
+                          <Layers size={12} />
+                          <span>{group.hasMultipleSections ? 'Standard Group' : 'Class'}</span>
                         </span>
 
-                        {/* Live Roll Call Status Pill */}
-                        {isMarkedToday ? (
+                        <span
+                          style={{
+                            backgroundColor: '#f1f5f9',
+                            border: '1px solid #e2e8f0',
+                            color: '#475569',
+                            padding: '2px 8px',
+                            borderRadius: '20px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                          }}
+                        >
+                          {totalDivisions} {totalDivisions === 1 ? 'Division' : 'Divisions'} ({group.sections.map((s) => s.section).join(', ')})
+                        </span>
+
+                        {markedDivisionsCount === totalDivisions && totalDivisions > 0 ? (
                           <span
                             style={{
                               fontSize: '11px',
@@ -1655,12 +1754,21 @@ export default function TeacherAttendancePage() {
                             }}
                           >
                             <Check size={11} strokeWidth={3} />
-                            <span>
-                              {bStatus.present} Present · {bStatus.absent} Absent
-                              {(bStatus.pending !== undefined ? bStatus.pending : Math.max(0, (bStatus.total || 20) - (bStatus.present + bStatus.absent + (bStatus.late || 0)))) > 0
-                                ? ` · ${bStatus.pending !== undefined ? bStatus.pending : Math.max(0, (bStatus.total || 20) - (bStatus.present + bStatus.absent + (bStatus.late || 0)))} Pending`
-                                : ''}
-                            </span>
+                            <span>All Marked Today</span>
+                          </span>
+                        ) : markedDivisionsCount > 0 ? (
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              color: '#0284c7',
+                              backgroundColor: '#f0f9ff',
+                              border: '1px solid #bae6fd',
+                              padding: '2px 8px',
+                              borderRadius: '20px',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {markedDivisionsCount}/{totalDivisions} Marked
                           </span>
                         ) : (
                           <span
@@ -1678,36 +1786,20 @@ export default function TeacherAttendancePage() {
                             }}
                           >
                             <Clock size={11} />
-                            <span>20 Students Pending</span>
+                            <span>Roll Call Pending</span>
                           </span>
                         )}
-
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            color: '#64748b',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '3px',
-                          }}
-                        >
-                          <MapPin size={11} color="#64748b" />
-                          {batch.classroom || 'Room 101'}
-                        </span>
                       </div>
 
                       <div
                         style={{
-                          fontSize: '16px',
+                          fontSize: '17px',
                           fontWeight: 800,
                           color: '#0f172a',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          letterSpacing: '-0.2px',
+                          letterSpacing: '-0.3px',
                         }}
                       >
-                        {batch.name}
+                        {group.standardName}
                       </div>
 
                       <div
@@ -1720,11 +1812,11 @@ export default function TeacherAttendancePage() {
                           gap: '6px',
                         }}
                       >
-                        <Clock size={12} color="#64748b" />
-                        <span>{batch.timing || '08:00 AM – 10:30 AM'}</span>
+                        <Users size={12} color="#64748b" />
+                        <span>{totalStudentsInStandard} Total Enrolled</span>
                         <span style={{ color: '#cbd5e1' }}>•</span>
-                        <span style={{ color: '#2563eb', fontWeight: 600 }}>
-                          {batch.student_count !== undefined ? `${batch.student_count} Students` : 'Enrolled'}
+                        <span style={{ color: '#4f46e5', fontWeight: 600 }}>
+                          {group.hasMultipleSections ? 'Tap to view divisions' : 'Tap to take roll call'}
                         </span>
                       </div>
                     </div>
@@ -1733,16 +1825,16 @@ export default function TeacherAttendancePage() {
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '4px',
-                        color: '#0284c7',
+                        gap: '6px',
+                        color: '#4f46e5',
                         fontSize: '12px',
                         fontWeight: 700,
                         paddingLeft: '12px',
                         flexShrink: 0,
                       }}
                     >
-                      <span>{isMarkedToday ? 'Edit' : 'Roll Call'}</span>
-                      <ChevronRight size={16} />
+                      <span>{group.hasMultipleSections ? 'View Divisions' : 'Roll Call'}</span>
+                      <ChevronRight size={18} />
                     </div>
                   </div>
                 );
@@ -1752,20 +1844,14 @@ export default function TeacherAttendancePage() {
       )}
 
       {/* ========================================================================= */}
-      {/* SCREEN 2: STUDENT ROLL CALL SCREEN (MOBILE-FRIENDLY 2-TIER CARDS)         */}
+      {/* SCREEN 2: DIVISIONS / SECTIONS DRILL-DOWN SCREEN (USER SKETCH IMAGE 2)    */}
       {/* ========================================================================= */}
-      {viewMode === 'rollcall' && (
+      {viewMode === 'divisions' && activeStandardGroup && (
         <main style={{ padding: '16px 16px 130px 16px', maxWidth: '640px', margin: '0 auto', minHeight: '100vh', boxSizing: 'border-box' }}>
-          {/* Header: Back Navigation + Date Selector */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '14px',
-            }}
-          >
+          {/* Top Back Navigation Bar */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
             <button
+              type="button"
               onClick={() => setViewMode('batches')}
               className="touch-action-btn"
               style={{
@@ -1784,7 +1870,226 @@ export default function TeacherAttendancePage() {
               }}
             >
               <ArrowLeft size={16} color="#0284c7" />
-              <span>← Batches</span>
+              <span>← All Classes</span>
+            </button>
+
+            <span
+              style={{
+                backgroundColor: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: '20px',
+                padding: '4px 12px',
+                fontSize: '11px',
+                fontWeight: 700,
+                color: '#1d4ed8',
+              }}
+            >
+              {activeStandardGroup.sections.length} Divisions
+            </span>
+          </div>
+
+          {/* Standard Cohort Banner */}
+          <div
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '16px',
+              padding: '16px',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
+              marginBottom: '16px',
+              borderLeft: '4px solid #4f46e5',
+            }}
+          >
+            <div style={{ fontSize: '11px', color: '#4f46e5', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>
+              Standard Cohort
+            </div>
+            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
+              {activeStandardGroup.standardName}
+            </h1>
+            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Users size={13} color="#64748b" />
+              <span>{activeStandardGroup.totalStudents} Enrolled Students</span>
+              <span style={{ color: '#cbd5e1' }}>•</span>
+              <span>Select a division below to take roll call</span>
+            </div>
+          </div>
+
+          {/* Division Cards List (Image 2) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {activeStandardGroup.sections.map((batch) => {
+              const bKey = getCanonicalBatchCode(batch.code || batch.id);
+              const bStatus = batchStatuses[bKey];
+              const isMarked = bStatus && bStatus.taken;
+
+              return (
+                <div
+                  key={batch.code || batch.id}
+                  onClick={() => openBatchRollCall(batch.id || batch.code, activeStandardGroup.standardName)}
+                  className="liquid-card"
+                  style={{
+                    backgroundColor: '#ffffff',
+                    borderRadius: '16px',
+                    padding: '16px',
+                    border: isMarked ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
+                    borderLeft: '4px solid #2563eb',
+                    boxShadow: '0 4px 14px rgba(15, 23, 42, 0.04)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                      <span
+                        style={{
+                          backgroundColor: '#2563eb',
+                          color: '#ffffff',
+                          padding: '2px 10px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          letterSpacing: '0.2px',
+                        }}
+                      >
+                        Division {batch.section || 'A'}
+                      </span>
+
+                      <span
+                        style={{
+                          backgroundColor: '#f1f5f9',
+                          border: '1px solid #cbd5e1',
+                          color: '#0f172a',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        {batch.code || batch.id}
+                      </span>
+
+                      {isMarked ? (
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            color: '#059669',
+                            backgroundColor: '#ecfdf5',
+                            border: '1px solid #a7f3d0',
+                            padding: '2px 8px',
+                            borderRadius: '20px',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
+                          <Check size={11} strokeWidth={3} />
+                          <span>{bStatus.present}P · {bStatus.absent}A · {bStatus.pending} Pending</span>
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            color: '#b45309',
+                            backgroundColor: '#fffbeb',
+                            border: '1px solid #fde68a',
+                            padding: '2px 8px',
+                            borderRadius: '20px',
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
+                          <Clock size={11} />
+                          <span>Roll Call Pending</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.2px' }}>
+                      {batch.displayName || batch.name}
+                    </div>
+
+                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Clock size={12} color="#64748b" />
+                      <span>{batch.timing || '08:00 AM – 10:30 AM'}</span>
+                      <span style={{ color: '#cbd5e1' }}>•</span>
+                      <MapPin size={12} color="#64748b" />
+                      <span>{batch.classroom || 'Room 101'}</span>
+                      <span style={{ color: '#cbd5e1' }}>•</span>
+                      <span style={{ color: '#2563eb', fontWeight: 700 }}>
+                        {typeof batch.student_count === 'number' ? `${batch.student_count} Students` : '0 Students'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      color: '#2563eb',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      paddingLeft: '12px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span>{isMarked ? 'Edit' : 'Take Roll Call'}</span>
+                    <ChevronRight size={16} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </main>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SCREEN 3: STUDENT ROLL CALL SCREEN (MOBILE-FRIENDLY 2-TIER CARDS)         */}
+      {/* ========================================================================= */}
+      {viewMode === 'rollcall' && (
+        <main style={{ padding: '16px 16px 130px 16px', maxWidth: '640px', margin: '0 auto', minHeight: '100vh', boxSizing: 'border-box' }}>
+          {/* Header: Back Navigation + Date Selector */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '14px',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                if (activeStandardGroup?.hasMultipleSections) {
+                  setViewMode('divisions');
+                } else {
+                  setViewMode('batches');
+                }
+              }}
+              className="touch-action-btn"
+              style={{
+                backgroundColor: '#ffffff',
+                border: '1px solid #cbd5e1',
+                color: '#0f172a',
+                padding: '9px 16px',
+                borderRadius: '12px',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
+              }}
+            >
+              <ArrowLeft size={16} color="#0284c7" />
+              <span>{activeStandardGroup?.hasMultipleSections ? `← ${activeStandardGroup.standardName}` : '← All Classes'}</span>
             </button>
 
             <div
@@ -2029,11 +2334,47 @@ export default function TeacherAttendancePage() {
 
           {/* MOBILE-FIRST 2-TIER STUDENT CARDS: 100% FULL NAME READABILITY */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {filteredStudents.map((student) => {
-              const status = attendanceMap[student.id] || 'Present';
+            {filteredStudents.length === 0 ? (
+              <div
+                style={{
+                  backgroundColor: '#ffffff',
+                  borderRadius: '16px',
+                  border: '2px dashed #cbd5e1',
+                  padding: '36px 20px',
+                  textAlign: 'center',
+                  margin: '10px 0',
+                }}
+              >
+                <div
+                  style={{
+                    width: '56px',
+                    height: '56px',
+                    borderRadius: '50%',
+                    backgroundColor: '#f1f5f9',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 12px',
+                  }}
+                >
+                  <Users size={28} color="#64748b" />
+                </div>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>
+                  No Students Enrolled in {activeBatch.name || 'this Division'}
+                </div>
+                <div style={{ fontSize: '13px', color: '#64748b', maxWidth: '320px', margin: '0 auto', lineHeight: 1.5 }}>
+                  {searchTerm.trim()
+                    ? `No students found matching "${searchTerm}". Try a different name or admission number.`
+                    : 'This cohort does not have any students assigned yet. Add students from the School PC Admin portal to begin taking attendance.'}
+                </div>
+              </div>
+            ) : (
+              filteredStudents.map((student) => {
+              const status = attendanceMap[student.id] || attendanceMap[student.admission_no] || 'Pending';
               const isPresent = status === 'Present';
               const isLate = status === 'Late';
               const isAbsent = status === 'Absent';
+              const isPending = status === 'Pending';
 
               return (
                 <div
@@ -2160,9 +2501,9 @@ export default function TeacherAttendancePage() {
                         borderRadius: '20px',
                         fontSize: '11px',
                         fontWeight: 800,
-                        backgroundColor: isPresent ? '#ecfdf5' : isLate ? '#fffbeb' : '#fff1f2',
-                        color: isPresent ? '#059669' : isLate ? '#b45309' : '#e11d48',
-                        border: `1px solid ${isPresent ? '#a7f3d0' : isLate ? '#fde68a' : '#fecdd3'}`,
+                        backgroundColor: isPresent ? '#ecfdf5' : isLate ? '#fffbeb' : isAbsent ? '#fff1f2' : '#fef3c7',
+                        color: isPresent ? '#059669' : isLate ? '#b45309' : isAbsent ? '#e11d48' : '#d97706',
+                        border: `1px solid ${isPresent ? '#a7f3d0' : isLate ? '#fde68a' : isAbsent ? '#fecdd3' : '#fcd34d'}`,
                         flexShrink: 0,
                       }}
                     >
@@ -2259,8 +2600,9 @@ export default function TeacherAttendancePage() {
                   </div>
                 </div>
               );
-            })}
-          </div>
+            })
+          )}
+        </div>
 
           {/* Sticky Bottom "DONE — Save to School PC" Action Bar (Floating White Glass Dock) */}
           <div

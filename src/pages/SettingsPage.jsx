@@ -21,6 +21,8 @@ import {
   Lock,
   Eye,
   EyeOff,
+  Cake,
+  MessageSquare,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
@@ -46,7 +48,10 @@ import {
   fetchAcademySettings,
   updateAcademySettings,
   DEFAULT_ACADEMY_SETTINGS,
+  saveSettingsToLocal,
+  getStoredAcademySettings,
 } from '../lib/academySettings';
+import { checkAndDispatchBirthdayWishes } from '../lib/birthdayAutoDispatcher';
 
 /**
  * System Settings, Cloud Integration Status & Staff Access Page
@@ -63,6 +68,14 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
   const [academicYear, setAcademicYear] = useState(DEFAULT_ACADEMY_SETTINGS.academic_year);
   const [minAttendanceThreshold, setMinAttendanceThreshold] = useState(DEFAULT_ACADEMY_SETTINGS.min_attendance_threshold);
   const [lateGracePeriod, setLateGracePeriod] = useState(DEFAULT_ACADEMY_SETTINGS.late_grace_minutes);
+  const [autoBirthdayWishEnabled, setAutoBirthdayWishEnabled] = useState(
+    DEFAULT_ACADEMY_SETTINGS.auto_birthday_wish_enabled
+  );
+  const [autoBirthdayWishChannel, setAutoBirthdayWishChannel] = useState(
+    DEFAULT_ACADEMY_SETTINGS.auto_birthday_wish_channel
+  );
+  const [isDispatchingBirthdays, setIsDispatchingBirthdays] = useState(false);
+  const [birthdayDispatchNotice, setBirthdayDispatchNotice] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
 
@@ -200,6 +213,8 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
         setAcademicYear(s.academic_year || DEFAULT_ACADEMY_SETTINGS.academic_year);
         setMinAttendanceThreshold(s.min_attendance_threshold ?? DEFAULT_ACADEMY_SETTINGS.min_attendance_threshold);
         setLateGracePeriod(s.late_grace_minutes ?? DEFAULT_ACADEMY_SETTINGS.late_grace_minutes);
+        setAutoBirthdayWishEnabled(s.auto_birthday_wish_enabled ?? DEFAULT_ACADEMY_SETTINGS.auto_birthday_wish_enabled);
+        setAutoBirthdayWishChannel(s.auto_birthday_wish_channel || DEFAULT_ACADEMY_SETTINGS.auto_birthday_wish_channel);
       }
     });
   }, []);
@@ -233,6 +248,8 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
         academic_year: academicYear,
         min_attendance_threshold: Number(minAttendanceThreshold),
         late_grace_minutes: Number(lateGracePeriod),
+        auto_birthday_wish_enabled: autoBirthdayWishEnabled,
+        auto_birthday_wish_channel: autoBirthdayWishChannel,
       });
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 3500);
@@ -240,6 +257,65 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
       console.error('Failed to save settings:', err);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleToggleAutoBirthday = (enabled) => {
+    setAutoBirthdayWishEnabled(enabled);
+    saveSettingsToLocal({
+      ...getStoredAcademySettings(),
+      academy_name: instituteName,
+      branch_name: campusName,
+      address,
+      phone,
+      email,
+      logo_url: logoUrl,
+      tagline,
+      academic_year: academicYear,
+      min_attendance_threshold: Number(minAttendanceThreshold),
+      late_grace_minutes: Number(lateGracePeriod),
+      auto_birthday_wish_enabled: enabled,
+      auto_birthday_wish_channel: autoBirthdayWishChannel,
+    });
+  };
+
+  const handleSelectBirthdayChannel = (ch) => {
+    setAutoBirthdayWishChannel(ch);
+    saveSettingsToLocal({
+      ...getStoredAcademySettings(),
+      academy_name: instituteName,
+      branch_name: campusName,
+      address,
+      phone,
+      email,
+      logo_url: logoUrl,
+      tagline,
+      academic_year: academicYear,
+      min_attendance_threshold: Number(minAttendanceThreshold),
+      late_grace_minutes: Number(lateGracePeriod),
+      auto_birthday_wish_enabled: autoBirthdayWishEnabled,
+      auto_birthday_wish_channel: ch,
+    });
+  };
+
+  const handleManualBirthdayDispatch = async () => {
+    setIsDispatchingBirthdays(true);
+    setBirthdayDispatchNotice(null);
+    try {
+      const res = await checkAndDispatchBirthdayWishes({ force: true });
+      setBirthdayDispatchNotice({
+        type: res.status === 'success' ? 'success' : res.status === 'no_birthdays' ? 'info' : 'error',
+        message: res.message,
+      });
+      setTimeout(() => setBirthdayDispatchNotice(null), 6000);
+    } catch (err) {
+      setBirthdayDispatchNotice({
+        type: 'error',
+        message: err.message || 'Error occurred while dispatching birthday wishes.',
+      });
+      setTimeout(() => setBirthdayDispatchNotice(null), 6000);
+    } finally {
+      setIsDispatchingBirthdays(false);
     }
   };
 
@@ -1093,6 +1169,269 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
                 </Button>
               </div>
             )}
+          </div>
+
+          {/* Automated Birthday Wishes Policy & Channel Dispatcher */}
+          <div className="erp-card" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    borderRadius: '10px',
+                    backgroundColor: 'var(--navy-900)',
+                    color: 'var(--gold-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Cake size={20} />
+                </div>
+                <div>
+                  <h2
+                    style={{
+                      fontFamily: 'var(--font-heading)',
+                      fontSize: '16px',
+                      fontWeight: 700,
+                      color: 'var(--navy-950)',
+                      margin: 0,
+                    }}
+                  >
+                    Automated Birthday Wishes Policy
+                  </h2>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                    Auto-sends personalized celebratory greetings to students celebrating their birthday today.
+                  </p>
+                </div>
+              </div>
+
+              {/* Modern Slider Toggle Button */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span
+                  style={{
+                    fontSize: '11.5px',
+                    fontWeight: 700,
+                    color: autoBirthdayWishEnabled ? '#166534' : '#64748b',
+                  }}
+                >
+                  {autoBirthdayWishEnabled ? 'Auto-Wish Active' : 'Disabled'}
+                </span>
+                <label
+                  style={{
+                    position: 'relative',
+                    display: 'inline-block',
+                    width: '46px',
+                    height: '26px',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                  title={autoBirthdayWishEnabled ? 'Disable automated birthday wishes' : 'Enable automated birthday wishes'}
+                >
+                  <input
+                    type="checkbox"
+                    checked={autoBirthdayWishEnabled}
+                    onChange={(e) => handleToggleAutoBirthday(e.target.checked)}
+                    style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                  />
+                  <span
+                    style={{
+                      position: 'absolute',
+                      cursor: 'pointer',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      backgroundColor: autoBirthdayWishEnabled ? '#10b981' : '#cbd5e1',
+                      transition: '0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                      borderRadius: '26px',
+                      boxShadow: autoBirthdayWishEnabled ? '0 2px 8px rgba(16, 185, 129, 0.35)' : 'none',
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: 'absolute',
+                        content: '""',
+                        height: '20px',
+                        width: '20px',
+                        left: autoBirthdayWishEnabled ? '23px' : '3px',
+                        bottom: '3px',
+                        backgroundColor: '#ffffff',
+                        transition: '0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                        borderRadius: '50%',
+                        boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+                      }}
+                    />
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            {/* Channel Selection Buttons */}
+            <div style={{ marginBottom: '16px' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  color: 'var(--navy-950)',
+                  marginBottom: '8px',
+                }}
+              >
+                Delivery Dispatch Channel:
+              </label>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => handleSelectBirthdayChannel('telegram')}
+                  style={{
+                    padding: '10px 8px',
+                    borderRadius: '8px',
+                    border: `2px solid ${autoBirthdayWishChannel === 'telegram' ? 'var(--navy-900)' : 'var(--border-subtle)'}`,
+                    backgroundColor: autoBirthdayWishChannel === 'telegram' ? '#eff6ff' : '#ffffff',
+                    color: autoBirthdayWishChannel === 'telegram' ? 'var(--navy-950)' : '#64748b',
+                    fontWeight: autoBirthdayWishChannel === 'telegram' ? 700 : 500,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Send size={16} color={autoBirthdayWishChannel === 'telegram' ? '#2563eb' : '#64748b'} />
+                  <span>Telegram Bot</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectBirthdayChannel('whatsapp')}
+                  style={{
+                    padding: '10px 8px',
+                    borderRadius: '8px',
+                    border: `2px solid ${autoBirthdayWishChannel === 'whatsapp' ? '#10b981' : 'var(--border-subtle)'}`,
+                    backgroundColor: autoBirthdayWishChannel === 'whatsapp' ? '#ecfdf5' : '#ffffff',
+                    color: autoBirthdayWishChannel === 'whatsapp' ? '#065f46' : '#64748b',
+                    fontWeight: autoBirthdayWishChannel === 'whatsapp' ? 700 : 500,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <MessageSquare size={16} color={autoBirthdayWishChannel === 'whatsapp' ? '#059669' : '#64748b'} />
+                  <span>WhatsApp</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectBirthdayChannel('both')}
+                  style={{
+                    padding: '10px 8px',
+                    borderRadius: '8px',
+                    border: `2px solid ${autoBirthdayWishChannel === 'both' ? 'var(--gold-primary)' : 'var(--border-subtle)'}`,
+                    backgroundColor: autoBirthdayWishChannel === 'both' ? '#fffbeb' : '#ffffff',
+                    color: autoBirthdayWishChannel === 'both' ? 'var(--navy-950)' : '#64748b',
+                    fontWeight: autoBirthdayWishChannel === 'both' ? 700 : 500,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Sparkles size={16} color={autoBirthdayWishChannel === 'both' ? 'var(--gold-dark)' : '#64748b'} />
+                  <span>Both (Tele + WA)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Status Information Box */}
+            <div
+              style={{
+                backgroundColor: 'var(--bg-subtle)',
+                borderRadius: '8px',
+                padding: '10px 14px',
+                marginBottom: '16px',
+                border: '1px solid var(--border-subtle)',
+                fontSize: '12px',
+                color: 'var(--text-muted)',
+                lineHeight: '1.5',
+              }}
+            >
+              <div>
+                <strong>Automatic Schedule:</strong> Daily at system startup. The dispatcher audits registered student birth dates (<code style={{ fontSize: '11px' }}>dob</code>) against today's date.
+              </div>
+              <div style={{ marginTop: '4px' }}>
+                <strong>Duplicate Protection:</strong> Automatically remembers dispatches and prevents multiple messages from being sent on the same day.
+              </div>
+            </div>
+
+            {/* Live Feedback Notice */}
+            {birthdayDispatchNotice && (
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  backgroundColor:
+                    birthdayDispatchNotice.type === 'success'
+                      ? 'var(--status-present-bg)'
+                      : birthdayDispatchNotice.type === 'info'
+                      ? '#eff6ff'
+                      : 'var(--status-absent-bg)',
+                  border: `1px solid ${
+                    birthdayDispatchNotice.type === 'success'
+                      ? 'var(--status-present-border)'
+                      : birthdayDispatchNotice.type === 'info'
+                      ? '#bfdbfe'
+                      : 'var(--status-absent-border)'
+                  }`,
+                  color:
+                    birthdayDispatchNotice.type === 'success'
+                      ? 'var(--status-present)'
+                      : birthdayDispatchNotice.type === 'info'
+                      ? '#1e40af'
+                      : 'var(--status-absent)',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  marginBottom: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                {birthdayDispatchNotice.type === 'success' ? (
+                  <CheckCircle2 size={16} />
+                ) : (
+                  <AlertCircle size={16} />
+                )}
+                <span>{birthdayDispatchNotice.message}</span>
+              </div>
+            )}
+
+            {/* Manual Trigger Action */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>
+                Need to run now? Test or dispatch immediately.
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Send}
+                onClick={handleManualBirthdayDispatch}
+                disabled={isDispatchingBirthdays}
+              >
+                {isDispatchingBirthdays ? 'Dispatching Wishes...' : "Trigger Today's Birthday Dispatch Now"}
+              </Button>
+            </div>
           </div>
         </div>
       </div>

@@ -366,6 +366,10 @@ export default function ParentsPage({ onRefreshCounts }) {
       setModalError('Contact phone number is required.');
       return;
     }
+    if (!parentToEdit && !formData.student_id) {
+      setModalError('Please select a student ward to link with this guardian.');
+      return;
+    }
 
     setIsSubmitting(true);
 
@@ -1539,14 +1543,15 @@ export default function ParentsPage({ onRefreshCounts }) {
 
           {!parentToEdit && (
             <Select
-              label="Link to Student Ward (Optional)"
+              label="Linked Student Ward *"
               value={formData.student_id}
               onChange={(e) => setFormData({ ...formData, student_id: e.target.value })}
               options={students.map((s) => ({
                 value: s.id,
                 label: `${s.full_name} (${s.admission_no})`,
               }))}
-              placeholder="Select student to link..."
+              placeholder="Select student ward (Required)..."
+              required
             />
           )}
         </form>
