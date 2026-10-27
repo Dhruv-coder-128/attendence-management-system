@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "lastModified": "2026-10-27T11:18:33.761Z",
+  "lastModified": "2026-10-27T12:19:33.713Z",
   "academy": {
     "name": "SMS International Academy",
     "code": "SMS-DEMO-2026",
@@ -72,11 +72,11 @@
       "code": "LIC:SMS-NOBLE-30D-89XK7",
       "name": "Noble Academy [SUSPENDED]",
       "level": "License",
-      "description": "{\"status\":\"suspended\",\"isLocked\":true,\"is_locked\":true,\"school_name\":\"Noble Academy\",\"schoolName\":\"Noble Academy\",\"licenseKey\":\"SMS-NOBLE-30D-89XK7\",\"days_remaining\":10059,\"is_timer_visible\":true,\"daysRemaining\":10059,\"trial_ends_at\":\"2054-05-11T07:05:24.781Z\",\"updated_at\":\"2026-10-27T06:51:45.491Z\"}",
+      "description": "{\"status\":\"suspended\",\"isLocked\":true,\"is_locked\":true,\"school_name\":\"Noble Academy\",\"schoolName\":\"Noble Academy\",\"licenseKey\":\"SMS-NOBLE-30D-89XK7\",\"days_remaining\":10059,\"is_timer_visible\":true,\"daysRemaining\":10059,\"trial_ends_at\":\"2054-05-11T07:05:24.781Z\",\"updated_at\":\"2026-10-27T11:21:05.279Z\"}",
       "is_active": false,
       "id": "e97fc48c-54df-4f79-9f0f-c1e3cc897ed3",
       "created_at": "2026-10-23T13:11:00.722Z",
-      "updated_at": "2026-10-27T06:51:45.492Z"
+      "updated_at": "2026-10-27T11:21:05.280Z"
     }
   ],
   "batches": [
@@ -91,6 +91,18 @@
       "is_active": true,
       "student_count": 20,
       "enrolled": 20
+    },
+    {
+      "id": "B11-B",
+      "name": "11th Commerce - Division B",
+      "code": "11COM-B",
+      "course_id": "C11",
+      "timing": "08:00 AM - 10:30 AM",
+      "classroom": "Room 101B",
+      "max_capacity": 40,
+      "is_active": true,
+      "student_count": 1,
+      "enrolled": 1
     },
     {
       "id": "B12",
@@ -464,6 +476,25 @@
       "address": "Near City Center, Junagadh",
       "status": "Active",
       "created_at": "2026-06-01T08:00:00Z"
+    },
+    {
+      "id": "ST1019-DHRUV",
+      "admission_no": "SMS-2026-1165",
+      "roll_no": 1,
+      "full_name": "Dhruv Shah",
+      "batch_id": "B11-B",
+      "batch_name": "11th Commerce - Division B",
+      "batch_code": "11COM-B",
+      "course_id": "C11",
+      "gender": "Male",
+      "contact_number": "8866039007",
+      "phone": "8866039007",
+      "parent_name": "Uday Shah",
+      "email": "dushah2007@gmail.com",
+      "address": "Near City Center, Rajkot, Gujarat",
+      "status": "Active",
+      "created_at": "2026-06-01T08:00:00Z",
+      "dob": "2007-10-23"
     },
     {
       "id": "ST1020",
@@ -2843,6 +2874,16 @@
       "telegram_chat_id": null,
       "is_verified": true,
       "created_at": "2026-06-01T08:00:00Z"
+    },
+    {
+      "id": "P_DHRUV_SHAH",
+      "full_name": "Uday Shah",
+      "phone": "8866039007",
+      "email": "dushah2007@gmail.com",
+      "address": "Near City Center, Rajkot, Gujarat",
+      "telegram_chat_id": null,
+      "is_verified": true,
+      "created_at": "2026-06-01T08:00:00Z"
     }
   ],
   "parent_students": [
@@ -3643,6 +3684,14 @@
       "parent_id": "P_ST1100",
       "student_id": "ST1100",
       "relationship": "Parent",
+      "is_primary_contact": true,
+      "can_receive_alerts": true
+    },
+    {
+      "id": "PS_DHRUV_SHAH",
+      "parent_id": "P_DHRUV_SHAH",
+      "student_id": "ST1019-DHRUV",
+      "relationship": "Father",
       "is_primary_contact": true,
       "can_receive_alerts": true
     }

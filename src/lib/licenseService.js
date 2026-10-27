@@ -6,7 +6,8 @@
  * multi-school database mapping, and configurable developer contact actions.
  */
 
-import { supabase, isSupabaseConfigured } from './supabase.js';
+import { supabase, isSupabaseConfigured, getActiveDatabaseConfig, PRODUCTION_SUPABASE_URL, PRODUCTION_SUPABASE_ANON_KEY } from './supabase.js';
+import { createClient } from '@supabase/supabase-js';
 import { Capacitor } from '@capacitor/core';
 import { getHardwareFingerprint } from './hardwareFingerprint.js';
 
@@ -71,11 +72,40 @@ export function checkStudentCapacityAllowed(currentCount, addingCount = 1) {
   };
 }
 
+// Dedicated headless Supabase client for license verification.
+// Uses persistSession: false so license queries NEVER mutate the main app UI's authentication session!
+let headlessLicensingClient = null;
+export function getHeadlessLicensingClient() {
+  if (!headlessLicensingClient) {
+    try {
+      const config = typeof getActiveDatabaseConfig === 'function' ? getActiveDatabaseConfig() : null;
+      const url = config?.url || PRODUCTION_SUPABASE_URL || 'https://uugvudqbwoyywzbjrfol.supabase.co';
+      const key = config?.key || PRODUCTION_SUPABASE_ANON_KEY || 'sb_publishable_pd2n3DRFhFgn79-SW6FEPw_vqRz2Jut';
+      headlessLicensingClient = createClient(url, key, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+          storageKey: 'sms_headless_licensing_token',
+        },
+      });
+    } catch (err) {
+      console.warn('Failed to initialize headless licensing client:', err);
+    }
+  }
+  return headlessLicensingClient;
+}
+
+export function getLicensingDbClient() {
+  return getHeadlessLicensingClient() || supabase;
+}
+
 /**
  * Ensures a valid Supabase authenticated session exists for querying license state.
- * Specifically checks that the active user is the authorized verifier or developer.
+ * Authenticates STRICTLY on the headless licensing client — NEVER on the primary application user client!
  */
-export async function ensureLicensingAuth(client) {
+export async function ensureLicensingAuth() {
+  const client = getHeadlessLicensingClient();
   if (!client || !client.auth) return false;
   try {
     const { data: sess } = await client.auth.getSession();
@@ -185,8 +215,8 @@ export function clearStoredLicense() {
 export async function fetchCloudLicenses() {
   if (!supabase || !isSupabaseConfigured) return [];
   try {
-    await ensureLicensingAuth(supabase);
-    const { data, error } = await supabase
+    await ensureLicensingAuth();
+    const { data, error } = await getLicensingDbClient()
       .from('courses')
       .select('*')
       .like('code', 'LIC:%')
@@ -238,7 +268,7 @@ export async function fetchCloudLicenses() {
 export async function saveCloudLicense(clientObj) {
   if (!supabase || !isSupabaseConfigured || !clientObj?.licenseKey) return { ok: false, error: 'Database unconfigured' };
   try {
-    await ensureLicensingAuth(supabase);
+    await ensureLicensingAuth();
     const cleanKey = String(clientObj.licenseKey).trim().toUpperCase();
     const isLocked = Boolean(clientObj.isLocked || clientObj.status === 'suspended');
     const status = isLocked ? 'suspended' : (clientObj.status || (clientObj.daysRemaining > 0 ? 'trial_active' : 'trial_expired'));
@@ -271,7 +301,7 @@ export async function saveCloudLicense(clientObj) {
 
     const courseName = `${schoolName} [${status.toUpperCase()}]`;
 
-    const { error } = await supabase.from('courses').upsert({
+    const { error } = await getLicensingDbClient().from('courses').upsert({
       code: 'LIC:' + cleanKey,
       name: courseName,
       level: 'License',
@@ -291,9 +321,9 @@ export async function saveCloudLicense(clientObj) {
 export async function updateCloudLicenseTier(licenseKey, maxStudents) {
   if (!supabase || !isSupabaseConfigured || !licenseKey) return { ok: false };
   try {
-    await ensureLicensingAuth(supabase);
+    await ensureLicensingAuth();
     const cleanKey = String(licenseKey).trim().toUpperCase();
-    const { data: row } = await supabase.from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
+    const { data: row } = await getLicensingDbClient().from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
     if (!row) return { ok: false, error: 'License not found in cloud' };
 
     let desc = {};
@@ -304,7 +334,7 @@ export async function updateCloudLicenseTier(licenseKey, maxStudents) {
     desc.maxStudents = count;
     desc.updated_at = new Date().toISOString();
 
-    await supabase.from('courses').update({
+    await getLicensingDbClient().from('courses').update({
       description: JSON.stringify(desc),
       updated_at: new Date().toISOString(),
     }).eq('code', 'LIC:' + cleanKey);
@@ -318,9 +348,9 @@ export async function updateCloudLicenseTier(licenseKey, maxStudents) {
 export async function adjustCloudLicenseDays(licenseKey, deltaOrExactDays, isExact = false) {
   if (!supabase || !isSupabaseConfigured || !licenseKey) return { ok: false };
   try {
-    await ensureLicensingAuth(supabase);
+    await ensureLicensingAuth();
     const cleanKey = String(licenseKey).trim().toUpperCase();
-    const { data: row } = await supabase.from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
+    const { data: row } = await getLicensingDbClient().from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
     if (!row) return { ok: false, error: 'License not found in cloud' };
 
     let desc = {};
@@ -346,7 +376,7 @@ export async function adjustCloudLicenseDays(licenseKey, deltaOrExactDays, isExa
 
     const courseName = `${desc.school_name || 'SMS Client School'} [${desc.status.toUpperCase()}]`;
 
-    await supabase.from('courses').update({
+    await getLicensingDbClient().from('courses').update({
       name: courseName,
       description: JSON.stringify(desc),
       is_active: !isLocked,
@@ -362,9 +392,9 @@ export async function adjustCloudLicenseDays(licenseKey, deltaOrExactDays, isExa
 export async function setCloudLicenseLock(licenseKey, willLock) {
   if (!supabase || !isSupabaseConfigured || !licenseKey) return { ok: false };
   try {
-    await ensureLicensingAuth(supabase);
+    await ensureLicensingAuth();
     const cleanKey = String(licenseKey).trim().toUpperCase();
-    const { data: row } = await supabase.from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
+    const { data: row } = await getLicensingDbClient().from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
     if (!row) return { ok: false, error: 'License not found in cloud' };
 
     let desc = {};
@@ -380,7 +410,7 @@ export async function setCloudLicenseLock(licenseKey, willLock) {
 
     const courseName = `${desc.school_name || 'SMS Client School'} [${newStatus.toUpperCase()}]`;
 
-    await supabase.from('courses').update({
+    await getLicensingDbClient().from('courses').update({
       name: courseName,
       description: JSON.stringify(desc),
       is_active: !willLock,
@@ -396,9 +426,9 @@ export async function setCloudLicenseLock(licenseKey, willLock) {
 export async function unbindCloudHardware(licenseKey) {
   if (!supabase || !isSupabaseConfigured || !licenseKey) return { ok: false };
   try {
-    await ensureLicensingAuth(supabase);
+    await ensureLicensingAuth();
     const cleanKey = String(licenseKey).trim().toUpperCase();
-    const { data: row } = await supabase.from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
+    const { data: row } = await getLicensingDbClient().from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
     if (!row) return { ok: false, error: 'License not found' };
 
     let desc = {};
@@ -410,7 +440,7 @@ export async function unbindCloudHardware(licenseKey) {
     desc.bound_at = null;
     desc.updated_at = new Date().toISOString();
 
-    await supabase.from('courses').update({
+    await getLicensingDbClient().from('courses').update({
       description: JSON.stringify(desc),
       updated_at: new Date().toISOString(),
     }).eq('code', 'LIC:' + cleanKey);
@@ -424,9 +454,9 @@ export async function unbindCloudHardware(licenseKey) {
 export async function deleteCloudLicense(licenseKey) {
   if (!supabase || !isSupabaseConfigured || !licenseKey) return { ok: false };
   try {
-    await ensureLicensingAuth(supabase);
+    await ensureLicensingAuth();
     const cleanKey = String(licenseKey).trim().toUpperCase();
-    await supabase.from('courses').delete().eq('code', 'LIC:' + cleanKey);
+    await getLicensingDbClient().from('courses').delete().eq('code', 'LIC:' + cleanKey);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -819,11 +849,11 @@ export async function validateLicense(options = {}) {
   // 1. Direct authoritative check via Supabase database (Real-Time Cloud & Desktop Enforcement)
   if (supabase && isSupabaseConfigured) {
     try {
-      await ensureLicensingAuth(supabase);
+      await ensureLicensingAuth();
       // 1.A. Universal 30-Day Free Trial Key Validation
       if (cached.licenseKey === UNIVERSAL_TRIAL_KEY) {
         const licCode = 'LIC:' + UNIVERSAL_TRIAL_KEY;
-        const { data: licRow } = await supabase.from('courses').select('*').eq('code', licCode).maybeSingle();
+        const { data: licRow } = await getLicensingDbClient().from('courses').select('*').eq('code', licCode).maybeSingle();
         let desc = {};
         try { desc = JSON.parse(licRow?.description || '{}'); } catch {}
         const devRec = desc.activated_devices?.[currentHwid];
@@ -881,7 +911,7 @@ export async function validateLicense(options = {}) {
       // 1.B. Universal 5-Day Emergency Grace Key Validation
       if (cached.licenseKey === UNIVERSAL_GRACE_KEY) {
         const licCode = 'LIC:' + UNIVERSAL_GRACE_KEY;
-        const { data: licRow } = await supabase.from('courses').select('*').eq('code', licCode).maybeSingle();
+        const { data: licRow } = await getLicensingDbClient().from('courses').select('*').eq('code', licCode).maybeSingle();
         let desc = {};
         try { desc = JSON.parse(licRow?.description || '{}'); } catch {}
         const devRec = desc.authorized_devices?.[currentHwid];
@@ -939,7 +969,7 @@ export async function validateLicense(options = {}) {
 
       // 1.C. Specific Client License Key Validation
       const licCode = 'LIC:' + cached.licenseKey;
-      const { data: licRow } = await supabase
+      const { data: licRow } = await getLicensingDbClient()
         .from('courses')
         .select('*')
         .eq('code', licCode)

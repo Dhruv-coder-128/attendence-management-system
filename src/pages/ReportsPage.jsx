@@ -612,12 +612,15 @@ export default function ReportsPage() {
     window.print();
   };
 
+  // Safe Currency Formatter
+  const formatCurrency = (val) => (Number(val) || 0).toLocaleString('en-IN');
+
   // WhatsApp Fee Reminder Trigger
   const sendWhatsAppFeeReminder = (student) => {
-    const phone = (student.phone || '').replace(/\D/g, '');
+    const phone = (student?.phone || '').replace(/\D/g, '');
     const cleanPhone = phone.length === 10 ? `91${phone}` : phone;
     const text = encodeURIComponent(
-      `Respected Parent, this is an official fee reminder from ${schoolName}. The tuition fee balance for ${student.fullName} (Roll: ${student.rollNo}, Admission: ${student.admissionNo}) is Rs. ${student.balanceDue.toLocaleString('en-IN')}, due by ${student.dueDate}. Kindly clear the balance at your earliest convenience. Thank you.`
+      `Respected Parent, this is an official fee reminder from ${schoolName}. The tuition fee balance for ${student?.fullName || 'Student'} (Roll: ${student?.rollNo || '-'}, Admission: ${student?.admissionNo || '-'}) is Rs. ${formatCurrency(student?.balanceDue)}, due by ${student?.dueDate || 'upcoming deadline'}. Kindly clear the balance at your earliest convenience. Thank you.`
     );
     window.open(`https://api.whatsapp.com/send?phone=${cleanPhone}&text=${text}`, '_blank');
   };
@@ -644,8 +647,8 @@ export default function ReportsPage() {
     ? Math.round(((totalPresentToday + totalLateToday * 0.5) / totalEnrolledAcrossBatches) * 100)
     : 0;
 
-  const totalCollectedFees = feeReportData.reduce((acc, f) => acc + f.paidFee, 0);
-  const totalOutstandingFees = feeReportData.reduce((acc, f) => acc + f.balanceDue, 0);
+  const totalCollectedFees = feeReportData.reduce((acc, f) => acc + (Number(f.paidFee) || 0), 0);
+  const totalOutstandingFees = feeReportData.reduce((acc, f) => acc + (Number(f.balanceDue) || 0), 0);
 
   // Best & Critical Performing Cohorts
   const activeCohortsWithStudents = attendanceReportData.filter((b) => b.totalEnrolled > 0);
@@ -701,8 +704,8 @@ export default function ReportsPage() {
           </div>
           <div style={{ border: '1px solid #cbd5e1', padding: '8px 10px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
             <div style={{ fontSize: '7.5pt', textTransform: 'uppercase', fontWeight: 700, color: '#0369a1' }}>Fee Collections</div>
-            <div style={{ fontSize: '13pt', fontWeight: 800, color: '#0369a1' }}>₹{totalCollectedFees.toLocaleString('en-IN')}</div>
-            <div style={{ fontSize: '7.5pt', color: '#b91c1c' }}>Dues: ₹{totalOutstandingFees.toLocaleString('en-IN')}</div>
+            <div style={{ fontSize: '13pt', fontWeight: 800, color: '#0369a1' }}>₹{formatCurrency(totalCollectedFees)}</div>
+            <div style={{ fontSize: '7.5pt', color: '#b91c1c' }}>Dues: ₹{formatCurrency(totalOutstandingFees)}</div>
           </div>
         </div>
 
@@ -765,10 +768,10 @@ export default function ReportsPage() {
                   <td><code>{f.admissionNo}</code></td>
                   <td><strong>{f.fullName}</strong></td>
                   <td>{f.batchName}</td>
-                  <td style={{ textAlign: 'right' }}>₹{f.tuitionFee.toLocaleString('en-IN')}</td>
-                  <td style={{ textAlign: 'right', color: '#166534' }}>₹{f.paidFee.toLocaleString('en-IN')}</td>
-                  <td style={{ textAlign: 'right', color: f.balanceDue > 0 ? '#b91c1c' : '#166534', fontWeight: f.balanceDue > 0 ? 700 : 400 }}>
-                    ₹{f.balanceDue.toLocaleString('en-IN')}
+                  <td style={{ textAlign: 'right' }}>₹{formatCurrency(f.totalFee || f.tuitionFee)}</td>
+                  <td style={{ textAlign: 'right', color: '#166534' }}>₹{formatCurrency(f.paidFee)}</td>
+                  <td style={{ textAlign: 'right', color: (Number(f.balanceDue) || 0) > 0 ? '#b91c1c' : '#166534', fontWeight: (Number(f.balanceDue) || 0) > 0 ? 700 : 400 }}>
+                    ₹{formatCurrency(f.balanceDue)}
                   </td>
                 </tr>
               ))}
@@ -981,7 +984,7 @@ export default function ReportsPage() {
             <div>
               <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b' }}>Fee Collection</div>
               <div style={{ fontSize: '24px', fontWeight: 800, color: '#2563eb', marginTop: '4px' }}>
-                ₹{totalCollectedFees.toLocaleString('en-IN')}
+                ₹{formatCurrency(totalCollectedFees)}
               </div>
             </div>
             <div style={{ padding: '8px', backgroundColor: '#f0fdf4', borderRadius: '10px', color: '#16a34a' }}>
@@ -998,7 +1001,7 @@ export default function ReportsPage() {
             <div>
               <div style={{ fontSize: '12px', fontWeight: 600, color: '#64748b' }}>Outstanding Dues</div>
               <div style={{ fontSize: '24px', fontWeight: 800, color: '#dc2626', marginTop: '4px' }}>
-                ₹{totalOutstandingFees.toLocaleString('en-IN')}
+                ₹{formatCurrency(totalOutstandingFees)}
               </div>
             </div>
             <div style={{ padding: '8px', backgroundColor: '#fef2f2', borderRadius: '10px', color: '#dc2626' }}>
@@ -1432,7 +1435,7 @@ export default function ReportsPage() {
               </div>
             </div>
             <span style={{ fontSize: '12px', fontWeight: 700, color: '#059669', backgroundColor: '#ecfdf5', padding: '4px 10px', borderRadius: '8px' }}>
-              Total Balance Due: ₹{totalOutstandingFees.toLocaleString('en-IN')}
+              Total Balance Due: ₹{formatCurrency(totalOutstandingFees)}
             </span>
           </div>
 
@@ -1470,10 +1473,10 @@ export default function ReportsPage() {
                       <div style={{ fontSize: '12px', fontWeight: 600 }}>{row.standard}</div>
                       <div style={{ fontSize: '11px', color: '#64748b' }}>Division {row.section}</div>
                     </td>
-                    <td style={{ fontWeight: 600 }}>₹{row.totalFee.toLocaleString('en-IN')}</td>
-                    <td style={{ fontWeight: 700, color: '#059669' }}>₹{row.paidFee.toLocaleString('en-IN')}</td>
-                    <td style={{ fontWeight: 700, color: row.balanceDue > 0 ? '#dc2626' : '#64748b' }}>
-                      ₹{row.balanceDue.toLocaleString('en-IN')}
+                    <td style={{ fontWeight: 600 }}>₹{formatCurrency(row.totalFee)}</td>
+                    <td style={{ fontWeight: 700, color: '#059669' }}>₹{formatCurrency(row.paidFee)}</td>
+                    <td style={{ fontWeight: 700, color: (Number(row.balanceDue) || 0) > 0 ? '#dc2626' : '#64748b' }}>
+                      ₹{formatCurrency(row.balanceDue)}
                     </td>
                     <td>
                       <Badge

@@ -18,9 +18,9 @@ const BulkImportPage = lazy(() => import('./pages/BulkImportPage'));
 const MasterAdminPortalPage = lazy(() => import('./pages/MasterAdminPortalPage'));
 const ParentPortalPage = lazy(() => import('./pages/ParentPortalPage'));
 
-import { supabase, isSupabaseConfigured, reinitializeSupabaseClient } from './lib/supabase';
+import { supabase, isSupabaseConfigured, reinitializeSupabaseClient, getStoredAuthUser, setStoredAuthUser } from './lib/supabase';
 import { fetchUserProfile, hasPermission, getFallbackOwnerProfile, getFallbackStaffProfile, OWNER_EMAIL } from './lib/authService';
-import { validateLicense, isTauriDesktop, getStoredLicense } from './lib/licenseService';
+import { validateLicense, isTauriDesktop, getStoredLicense, SYSTEM_VERIFIER_EMAIL } from './lib/licenseService';
 import SchoolActivationModal from './components/license/SchoolActivationModal';
 import DraggableTrialCapsule from './components/license/DraggableTrialCapsule';
 import TrialExpiredLockout from './components/license/TrialExpiredLockout';
@@ -215,17 +215,19 @@ export default function App() {
           let sessionToUse = initialSession || null;
           let currentUser = sessionToUse?.user ?? null;
 
-          // In standalone desktop app, guarantee an authorized administrator session on launch
-          if (isTauriDesktop() && !currentUser) {
-            currentUser = {
-              id: 'desktop-admin-session',
-              email: 'admin@institution.edu',
-              role: 'owner',
-              aud: 'authenticated',
-              user_metadata: { full_name: 'Institution Administrator', role: 'owner' },
-              app_metadata: { role: 'owner', provider: 'email' },
-            };
-            sessionToUse = { user: currentUser, access_token: 'offline-token' };
+          // Only restore offline user if explicitly saved by user sign-in
+          if (!currentUser) {
+            const stored = typeof getStoredAuthUser === 'function' ? getStoredAuthUser() : null;
+            if (stored && stored.email) {
+              currentUser = stored;
+              sessionToUse = { user: currentUser, access_token: 'offline-token' };
+            }
+          }
+
+          // Never treat background licensing verifier token as an application user
+          if (currentUser?.email && currentUser.email.toLowerCase() === SYSTEM_VERIFIER_EMAIL.toLowerCase()) {
+            currentUser = null;
+            sessionToUse = null;
           }
 
           setSession(sessionToUse);
@@ -238,19 +240,6 @@ export default function App() {
         .catch((err) => {
           clearTimeout(safetyTimer);
           console.error('Session retrieval error:', err);
-          if (isTauriDesktop()) {
-            const fallbackAdmin = {
-              id: 'desktop-admin-session',
-              email: 'admin@institution.edu',
-              role: 'owner',
-              aud: 'authenticated',
-              user_metadata: { full_name: 'Institution Administrator', role: 'owner' },
-              app_metadata: { role: 'owner', provider: 'email' },
-            };
-            setSession({ user: fallbackAdmin, access_token: 'offline-token' });
-            setUser(fallbackAdmin);
-            loadProfile(fallbackAdmin);
-          }
           setAuthLoading(false);
         });
 
@@ -259,8 +248,14 @@ export default function App() {
         data: { subscription } = {},
       } = supabase.auth.onAuthStateChange((_event, currentSession) => {
         clearTimeout(safetyTimer);
-        setSession(currentSession || null);
         const currentUser = currentSession?.user ?? null;
+
+        // Never switch UI session for headless licensing verifier queries
+        if (currentUser?.email && currentUser.email.toLowerCase() === SYSTEM_VERIFIER_EMAIL.toLowerCase()) {
+          return;
+        }
+
+        setSession(currentSession || null);
         setUser(currentUser);
         if (currentUser) {
           loadProfile(currentUser);
@@ -329,6 +324,9 @@ export default function App() {
     } catch (err) {
       console.error('Logout error:', err);
     } finally {
+      if (typeof setStoredAuthUser === 'function') {
+        setStoredAuthUser(null);
+      }
       setSession(null);
       setUser(null);
       setCurrentUserProfile(null);
