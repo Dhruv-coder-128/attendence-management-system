@@ -50,10 +50,21 @@ export function getMaxStudentCapacity() {
 
 export function checkStudentCapacityAllowed(currentCount, addingCount = 1) {
   const max = getMaxStudentCapacity();
+  if (max >= 5000) {
+    return {
+      allowed: true,
+      maxStudents: Infinity,
+      isUnlimited: true,
+      currentCount,
+      available: Infinity,
+      tier: STUDENT_CAPACITY_TIERS[3],
+    };
+  }
   const allowed = (currentCount + addingCount) <= max;
   return {
     allowed,
     maxStudents: max,
+    isUnlimited: false,
     currentCount,
     available: Math.max(0, max - currentCount),
     tier: getStudentCapacityTier(max),
@@ -124,7 +135,12 @@ export function getStoredLicense() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.trialEndsAt && (parsed.daysRemaining || 0) < 9000) {
+      const diffMs = new Date(parsed.trialEndsAt).getTime() - Date.now();
+      parsed.daysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -184,8 +200,14 @@ export async function fetchCloudLicenses() {
       const cleanKey = parsed.license_key || parsed.licenseKey || row.code.replace(/^LIC:/, '');
       const schoolName = parsed.school_name || parsed.schoolName || row.name?.replace(/\s*\[.*\]/, '').trim() || 'SMS Client School';
       const isLocked = Boolean(parsed.is_locked || parsed.isLocked || !row.is_active || parsed.status === 'suspended');
-      const daysRemaining = parsed.days_remaining !== undefined ? parsed.days_remaining : (parsed.daysRemaining !== undefined ? parsed.daysRemaining : 30);
+      let daysRemaining = parsed.days_remaining !== undefined ? parsed.days_remaining : (parsed.daysRemaining !== undefined ? parsed.daysRemaining : 30);
       const isTimerVisible = parsed.is_timer_visible !== undefined ? parsed.is_timer_visible : (parsed.isTimerVisible !== false);
+      const trialEnds = parsed.trial_ends_at || parsed.trialEndsAt;
+
+      if (trialEnds && daysRemaining < 9000) {
+        const diffMs = new Date(trialEnds).getTime() - Date.now();
+        daysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+      }
 
       return {
         id: parsed.id || row.id || `SMS-SCH-${String(idx + 1).padStart(3, '0')}`,
@@ -201,7 +223,7 @@ export async function fetchCloudLicenses() {
         maxStudents: parsed.max_students !== undefined ? parseInt(parsed.max_students, 10) : (parsed.maxStudents !== undefined ? parseInt(parsed.maxStudents, 10) : 200),
         tier: getStudentCapacityTier(parsed.max_students || parsed.maxStudents || 200),
         trialStartedAt: parsed.trial_started_at || parsed.trialStartedAt || row.created_at,
-        trialEndsAt: parsed.trial_ends_at || parsed.trialEndsAt,
+        trialEndsAt: trialEnds,
         boundDeviceId: parsed.bound_device_id || parsed.activated_device_id || null,
         notes: parsed.notes || '',
         createdAt: row.created_at,
@@ -589,9 +611,15 @@ export async function activateSchoolLicense(licenseKey) {
         }
 
         const schoolName = licInfo.school_name || licInfo.schoolName || licRow.name?.replace(/\s*\[.*\]/, '').trim() || 'SMS Academy';
-        const daysRemaining = licInfo.days_remaining !== undefined ? licInfo.days_remaining : 30;
+        let daysRemaining = licInfo.days_remaining !== undefined ? licInfo.days_remaining : 30;
         const status = licInfo.status || 'trial_active';
         const maxStudents = parseInt(licInfo.max_students ?? licInfo.maxStudents ?? 200, 10);
+        const trialEnds = licInfo.trial_ends_at || licInfo.trialEndsAt;
+
+        if (trialEnds && daysRemaining < 9000) {
+          const diffMs = new Date(trialEnds).getTime() - Date.now();
+          daysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+        }
 
         const activeLicenseData = {
           licenseKey: cleanKey,
@@ -603,13 +631,26 @@ export async function activateSchoolLicense(licenseKey) {
           tier: getStudentCapacityTier(maxStudents),
           boundDeviceId: hwid,
           trialStartedAt: licInfo.trial_started_at || new Date().toISOString(),
-          trialEndsAt: licInfo.trial_ends_at,
+          trialEndsAt: trialEnds,
           isTimerVisible: licInfo.is_timer_visible !== false,
           developerContact: DEFAULT_DEV_CONTACT,
           lastServerSync: new Date().toISOString(),
         };
 
         saveStoredLicense(activeLicenseData);
+
+        // Auto-synchronize school name into local institution settings
+        if (typeof window !== 'undefined' && schoolName) {
+          try {
+            const rawSettings = localStorage.getItem('sms_academy_settings');
+            const parsedSettings = rawSettings ? JSON.parse(rawSettings) : {};
+            parsedSettings.academy_name = schoolName;
+            localStorage.setItem('sms_academy_settings', JSON.stringify(parsedSettings));
+            localStorage.setItem('erp_institute_name', schoolName);
+            window.dispatchEvent(new CustomEvent('sms_academy_settings_updated', { detail: parsedSettings }));
+          } catch {}
+        }
+
         return { ok: true, data: activeLicenseData };
       }
     } catch (dbErr) {
@@ -975,9 +1016,15 @@ export async function validateLicense(options = {}) {
           ? Boolean(licInfo.is_timer_visible)
           : (effectiveStatus === 'trial_active');
 
-        const daysRem = licInfo?.days_remaining ?? licInfo?.daysRemaining ?? cached.daysRemaining ?? 30;
         const trialEnds = licInfo?.trial_ends_at || licInfo?.trialEndsAt || cached.trialEndsAt;
+        let daysRem = licInfo?.days_remaining ?? licInfo?.daysRemaining ?? cached.daysRemaining ?? 30;
         const maxStudents = parseInt(licInfo?.max_students ?? licInfo?.maxStudents ?? cached.maxStudents ?? 200, 10);
+
+        // Authoritative live calculation: Synchronize exact remaining days from trialEnds
+        if (trialEnds && daysRem < 9000) {
+          const diffMs = new Date(trialEnds).getTime() - Date.now();
+          daysRem = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+        }
 
         // Strict timer expiration: if days are up OR validity date has arrived (for non-lifetime licenses)
         const isLifetime = (daysRem >= 9000);

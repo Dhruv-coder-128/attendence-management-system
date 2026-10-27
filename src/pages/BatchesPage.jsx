@@ -314,7 +314,7 @@ export default function BatchesPage({ onRefreshCounts }) {
             onClick={handleAutoDistributeStudents}
             disabled={isDistributing || loading}
           >
-            {isDistributing ? 'Distributing...' : '⚡ Rebalance Batches (1-Click)'}
+            {isDistributing ? 'Verifying...' : '⚡ Verify Roster & Linkages'}
           </Button>
 
           <Button

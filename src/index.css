@@ -823,17 +823,19 @@ textarea {
 /* =====================================================================
    MODAL / DIALOG — Modern, Elevated & Production-Grade
    ===================================================================== */
-.modal-overlay {
+.modal-overlay,
+.modal-backdrop {
   position: fixed;
   inset: 0;
-  background-color: rgba(10, 20, 36, 0.6);
+  background-color: rgba(10, 20, 36, 0.72);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  z-index: 100;
+  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
+  overflow-y: auto;
 }
 
 .modal-dialog {
@@ -1310,4 +1312,124 @@ textarea {
 
 .erp-btn-download-action:active {
   transform: translateY(0);
+}
+
+/* =====================================================================
+   INSTITUTIONAL PRINT & DOSSIER FORMATTING (Global @media print)
+   ===================================================================== */
+.print-only {
+  display: none !important;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm 14mm 10mm;
+  }
+
+  /* Hide interactive web UI components */
+  .screen-only,
+  .no-print,
+  .app-sidebar,
+  .app-header,
+  .page-header .page-actions,
+  .page-actions,
+  button,
+  .btn,
+  .erp-btn,
+  input,
+  select,
+  .modal-overlay,
+  .modal-backdrop,
+  #sms-trial-capsule {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  body, html, #root, .app-layout, .app-main, .page-content {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    font-size: 11pt !important;
+    box-shadow: none !important;
+  }
+
+  .erp-card {
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+    page-break-inside: avoid;
+    margin-bottom: 12px !important;
+  }
+
+  /* Institutional Print Sheet */
+  .institutional-print-sheet {
+    display: block !important;
+    width: 100% !important;
+    color: #0f172a !important;
+    background: #ffffff !important;
+    font-family: var(--font-body, system-ui, sans-serif);
+  }
+
+  .institutional-print-header {
+    border-bottom: 2px solid #0f172a;
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .institutional-print-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-top: 10px;
+    margin-bottom: 14px;
+    font-size: 10pt;
+  }
+
+  .institutional-print-table th {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 8.5pt;
+    padding: 6px 8px;
+    border: 1px solid #cbd5e1;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .institutional-print-table td {
+    padding: 6px 8px;
+    border: 1px solid #e2e8f0;
+    font-size: 9.5pt;
+  }
+
+  .institutional-print-table tr:nth-child(even) td {
+    background-color: #f8fafc !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .institutional-signature-row {
+    margin-top: 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    page-break-inside: avoid;
+  }
+
+  .institutional-signature-box {
+    border-top: 1px solid #0f172a;
+    width: 200px;
+    text-align: center;
+    padding-top: 6px;
+    font-size: 9.5pt;
+    font-weight: 600;
+  }
 }

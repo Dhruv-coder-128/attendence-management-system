@@ -3,6 +3,7 @@ import {
   Users,
   CalendarCheck,
   UserX,
+  UserCheck,
   BookOpen,
   Clock,
   ArrowRight,
@@ -44,10 +45,11 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
   const [isMasterModalOpen, setIsMasterModalOpen] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
 
-  // 5 Primary Metrics (Strict Invariant: Present + Absent + Pending = Total Students)
+  // 6 Primary Metrics (Strict Invariant: Present + Late + Absent + Pending = Total Students)
   const [stats, setStats] = useState({
     totalStudents: 0,
     presentToday: 0,
+    lateToday: 0,
     absentToday: 0,
     pendingToday: 0,
     activeBatches: 0,
@@ -183,13 +185,15 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
 
       const uniqueRecords = Array.from(studentAttendanceMap.values());
       const present = uniqueRecords.filter((r) => r.status === 'Present').length;
-      const absent = uniqueRecords.filter((r) => r.status === 'Absent' || r.status === 'Late').length;
+      const late = uniqueRecords.filter((r) => r.status === 'Late').length;
+      const absent = uniqueRecords.filter((r) => r.status === 'Absent').length;
       const totalEnrolled = studentList.length;
-      const pending = Math.max(0, totalEnrolled - (present + absent));
+      const pending = Math.max(0, totalEnrolled - (present + late + absent));
 
       setStats({
         totalStudents: totalEnrolled,
         presentToday: present,
+        lateToday: late,
         absentToday: absent,
         pendingToday: pending,
         activeBatches: (batchesData || []).filter((b) => b.is_active !== false).length,
@@ -388,8 +392,8 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
         </div>
       )}
 
-      {/* 5 PRIMARY STATS GRID (Enrolled, Present, Absent, Pending, Batches) */}
-      <div className="stats-grid" style={{ marginBottom: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+      {/* 6 PRIMARY STATS GRID (Enrolled, Present, Late, Absent, Pending, Batches) */}
+      <div className="stats-grid" style={{ marginBottom: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         <StatsCard
           title="Total Students"
           value={loading ? '...' : String(stats.totalStudents)}
@@ -407,9 +411,17 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
         />
 
         <StatsCard
+          title="Late Today"
+          value={loading ? '...' : String(stats.lateToday)}
+          subtext="Marked late arrival"
+          icon={UserCheck}
+          variant={stats.lateToday > 0 ? 'warning' : 'navy'}
+        />
+
+        <StatsCard
           title="Absent Today"
           value={loading ? '...' : String(stats.absentToday)}
-          subtext="Marked absent or late"
+          subtext="Marked absent today"
           icon={UserX}
           variant={stats.absentToday > 0 ? 'danger' : 'navy'}
         />
@@ -446,7 +458,7 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px', fontWeight: 700 }}>
             <span style={{ color: 'var(--navy-900)' }}>Today's Roll Call Completion</span>
             <span style={{ color: 'var(--text-muted)' }}>
-              {stats.presentToday + stats.absentToday} / {stats.totalStudents} Marked ({Math.round(((stats.presentToday + stats.absentToday) / stats.totalStudents) * 100)}%)
+              {stats.presentToday + stats.lateToday + stats.absentToday} / {stats.totalStudents} Marked ({Math.round(((stats.presentToday + stats.lateToday + stats.absentToday) / (stats.totalStudents || 1)) * 100)}%)
             </span>
           </div>
           <div
@@ -461,7 +473,7 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
           >
             <div
               style={{
-                width: `${(stats.presentToday / stats.totalStudents) * 100}%`,
+                width: `${(stats.presentToday / (stats.totalStudents || 1)) * 100}%`,
                 backgroundColor: '#10b981',
                 transition: 'width 0.4s ease',
               }}
@@ -469,7 +481,15 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
             />
             <div
               style={{
-                width: `${(stats.absentToday / stats.totalStudents) * 100}%`,
+                width: `${(stats.lateToday / (stats.totalStudents || 1)) * 100}%`,
+                backgroundColor: '#f59e0b',
+                transition: 'width 0.4s ease',
+              }}
+              title={`Late: ${stats.lateToday}`}
+            />
+            <div
+              style={{
+                width: `${(stats.absentToday / (stats.totalStudents || 1)) * 100}%`,
                 backgroundColor: '#ef4444',
                 transition: 'width 0.4s ease',
               }}
@@ -477,8 +497,8 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
             />
             <div
               style={{
-                width: `${(stats.pendingToday / stats.totalStudents) * 100}%`,
-                backgroundColor: '#f59e0b',
+                width: `${(stats.pendingToday / (stats.totalStudents || 1)) * 100}%`,
+                backgroundColor: '#cbd5e1',
                 transition: 'width 0.4s ease',
               }}
               title={`Pending: ${stats.pendingToday}`}
@@ -490,11 +510,15 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
               Present: {stats.presentToday}
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
+              Late: {stats.lateToday}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
               <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ef4444' }} />
               Absent: {stats.absentToday}
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f59e0b' }} />
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#cbd5e1' }} />
               Pending: {stats.pendingToday}
             </span>
           </div>

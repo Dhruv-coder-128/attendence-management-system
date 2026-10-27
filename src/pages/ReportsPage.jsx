@@ -658,23 +658,153 @@ export default function ReportsPage() {
 
   return (
     <div style={{ paddingBottom: '60px' }}>
-      {/* PRINT-ONLY OFFICIAL INSTITUTIONAL HEADER */}
-      <div className="print-only-header" style={{ display: 'none', marginBottom: '24px' }}>
-        <div style={{ textAlign: 'center', borderBottom: '2px solid #0f172a', paddingBottom: '12px' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: 900, margin: 0, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            {schoolName}
-          </h1>
-          <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#475569' }}>
-            {schoolAddress} · Helpline: {schoolPhone}
-          </p>
-          <div style={{ marginTop: '8px', fontSize: '14px', fontWeight: 800, textDecoration: 'underline' }}>
-            OFFICIAL DAILY ACADEMIC &amp; INSTITUTIONAL AUDIT DOSSIER — {selectedDate}
+      {/* =====================================================================
+          INSTITUTIONAL PRINT-ONLY DOSSIER (Rendered exclusively when printing)
+          ===================================================================== */}
+      <div className="print-only institutional-print-sheet">
+        {/* Header */}
+        <div className="institutional-print-header">
+          <div>
+            <h1 style={{ fontSize: '18pt', fontWeight: 800, margin: 0, textTransform: 'uppercase', color: '#0f172a' }}>
+              {schoolName}
+            </h1>
+            <p style={{ margin: '3px 0 0', fontSize: '9pt', color: '#475569' }}>
+              {schoolAddress} &bull; Helpline: {schoolPhone}
+            </p>
           </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '11pt', fontWeight: 800, color: '#0f172a', textTransform: 'uppercase' }}>
+              Institutional Audit Dossier
+            </div>
+            <div style={{ fontSize: '8.5pt', color: '#475569', marginTop: '2px' }}>
+              Audit Date: <strong>{selectedDate}</strong> &bull; Generated: {new Date().toLocaleDateString('en-IN')}
+            </div>
+          </div>
+        </div>
+
+        {/* Executive Summary Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '14px' }}>
+          <div style={{ border: '1px solid #cbd5e1', padding: '8px 10px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
+            <div style={{ fontSize: '7.5pt', textTransform: 'uppercase', fontWeight: 700, color: '#64748b' }}>Total Enrolled</div>
+            <div style={{ fontSize: '14pt', fontWeight: 800, color: '#0f172a' }}>{totalStudentsCount}</div>
+            <div style={{ fontSize: '7.5pt', color: '#64748b' }}>Across {totalBatchesCount} Cohorts</div>
+          </div>
+          <div style={{ border: '1px solid #cbd5e1', padding: '8px 10px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
+            <div style={{ fontSize: '7.5pt', textTransform: 'uppercase', fontWeight: 700, color: '#166534' }}>Present Today</div>
+            <div style={{ fontSize: '14pt', fontWeight: 800, color: '#166534' }}>{totalPresentToday}</div>
+            <div style={{ fontSize: '7.5pt', color: '#166534' }}>Attendance: {overallAttendanceRate}%</div>
+          </div>
+          <div style={{ border: '1px solid #cbd5e1', padding: '8px 10px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
+            <div style={{ fontSize: '7.5pt', textTransform: 'uppercase', fontWeight: 700, color: '#b91c1c' }}>Absent / Late Today</div>
+            <div style={{ fontSize: '14pt', fontWeight: 800, color: '#b91c1c' }}>{totalAbsentToday} / {totalLateToday}</div>
+            <div style={{ fontSize: '7.5pt', color: '#b91c1c' }}>Absent / Late</div>
+          </div>
+          <div style={{ border: '1px solid #cbd5e1', padding: '8px 10px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
+            <div style={{ fontSize: '7.5pt', textTransform: 'uppercase', fontWeight: 700, color: '#0369a1' }}>Fee Collections</div>
+            <div style={{ fontSize: '13pt', fontWeight: 800, color: '#0369a1' }}>₹{totalCollectedFees.toLocaleString('en-IN')}</div>
+            <div style={{ fontSize: '7.5pt', color: '#b91c1c' }}>Dues: ₹{totalOutstandingFees.toLocaleString('en-IN')}</div>
+          </div>
+        </div>
+
+        {/* Section 1: Cohort Attendance Roll Call Table */}
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ fontSize: '10.5pt', fontWeight: 800, color: '#0f172a', marginBottom: '4px', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '3px' }}>
+            1. Cohort Attendance Audit Register
+          </div>
+          <table className="institutional-print-table">
+            <thead>
+              <tr>
+                <th style={{ width: '4%' }}>#</th>
+                <th style={{ width: '28%' }}>Cohort / Standard</th>
+                <th style={{ width: '14%' }}>Classroom</th>
+                <th style={{ width: '18%' }}>Timing</th>
+                <th style={{ width: '9%', textAlign: 'center' }}>Enrolled</th>
+                <th style={{ width: '9%', textAlign: 'center' }}>Present</th>
+                <th style={{ width: '9%', textAlign: 'center' }}>Late</th>
+                <th style={{ width: '9%', textAlign: 'center' }}>Absent</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attendanceReportData.map((row, idx) => (
+                <tr key={row.batchId || idx}>
+                  <td>{idx + 1}</td>
+                  <td><strong>{row.batchName}</strong> ({row.batchCode})</td>
+                  <td>{row.classroom || '—'}</td>
+                  <td>{row.timing || '—'}</td>
+                  <td style={{ textAlign: 'center' }}>{row.totalEnrolled}</td>
+                  <td style={{ textAlign: 'center', color: '#166534', fontWeight: 700 }}>{row.present}</td>
+                  <td style={{ textAlign: 'center', color: '#b45309' }}>{row.late}</td>
+                  <td style={{ textAlign: 'center', color: '#b91c1c', fontWeight: 700 }}>{row.absent}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Section 2: Financial Fee Summary Table */}
+        <div style={{ marginBottom: '16px', pageBreakInside: 'avoid' }}>
+          <div style={{ fontSize: '10.5pt', fontWeight: 800, color: '#0f172a', marginBottom: '4px', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '3px' }}>
+            2. Tuition &amp; Fee Ledger Overview (Top Records)
+          </div>
+          <table className="institutional-print-table">
+            <thead>
+              <tr>
+                <th style={{ width: '4%' }}>#</th>
+                <th style={{ width: '16%' }}>Admission No</th>
+                <th style={{ width: '28%' }}>Student Name</th>
+                <th style={{ width: '20%' }}>Cohort</th>
+                <th style={{ width: '12%', textAlign: 'right' }}>Total Fee</th>
+                <th style={{ width: '10%', textAlign: 'right' }}>Paid</th>
+                <th style={{ width: '10%', textAlign: 'right' }}>Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {feeReportData.slice(0, 15).map((f, idx) => (
+                <tr key={f.id || idx}>
+                  <td>{idx + 1}</td>
+                  <td><code>{f.admissionNo}</code></td>
+                  <td><strong>{f.fullName}</strong></td>
+                  <td>{f.batchName}</td>
+                  <td style={{ textAlign: 'right' }}>₹{f.tuitionFee.toLocaleString('en-IN')}</td>
+                  <td style={{ textAlign: 'right', color: '#166534' }}>₹{f.paidFee.toLocaleString('en-IN')}</td>
+                  <td style={{ textAlign: 'right', color: f.balanceDue > 0 ? '#b91c1c' : '#166534', fontWeight: f.balanceDue > 0 ? 700 : 400 }}>
+                    ₹{f.balanceDue.toLocaleString('en-IN')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Official Signature Blocks */}
+        <div className="institutional-signature-row">
+          <div className="institutional-signature-box">
+            <div>Audit Invigilator</div>
+            <div style={{ fontSize: '8pt', color: '#64748b', marginTop: '2px' }}>Verified &amp; Recorded</div>
+          </div>
+          <div style={{ textAlign: 'center', width: '120px' }}>
+            <div style={{ width: '60px', height: '36px', border: '1px dashed #94a3b8', borderRadius: '4px', margin: '0 auto 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7.5pt', color: '#94a3b8' }}>
+              SEAL
+            </div>
+            <div style={{ fontSize: '8pt', fontWeight: 600 }}>School Stamp</div>
+          </div>
+          <div className="institutional-signature-box">
+            <div>Principal / Head of School</div>
+            <div style={{ fontSize: '8pt', color: '#64748b', marginTop: '2px' }}>Authorized Signatory</div>
+          </div>
+        </div>
+
+        <div style={{ textAlign: 'center', fontSize: '8pt', color: '#94a3b8', marginTop: '16px' }}>
+          Official Institutional Record &bull; Generated by SMS Enterprise System &bull; Verification Hash: SMS-VERIFY-{selectedDate}
         </div>
       </div>
 
-      {/* Page Header */}
-      <div className="page-header" style={{ marginBottom: '20px' }}>
+      {/* =====================================================================
+          SCREEN-ONLY INTERACTIVE WEB UI
+          ===================================================================== */}
+      <div className="screen-only">
+        {/* Page Header */}
+        <div className="page-header" style={{ marginBottom: '20px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h1 className="page-title" style={{ margin: 0 }}>Reports &amp; Analytics Hub</h1>
@@ -1885,46 +2015,6 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* PRINT-ONLY OFFICIAL FOOTER & STAMP BLOCKS */}
-      <div className="print-only-footer" style={{ display: 'none', marginTop: '48px', paddingTop: '24px', borderTop: '1px solid #cbd5e1' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', padding: '0 20px' }}>
-          <div style={{ textAlign: 'center', width: '180px' }}>
-            <div style={{ borderBottom: '1px solid #0f172a', height: '50px', marginBottom: '8px' }}></div>
-            <div style={{ fontSize: '12px', fontWeight: 800 }}>Prepared By / Teacher</div>
-            <div style={{ fontSize: '10px', color: '#64748b' }}>Roll Call Invigilator</div>
-          </div>
-
-          <div style={{ textAlign: 'center', width: '180px' }}>
-            <div
-              style={{
-                width: '100px',
-                height: '50px',
-                border: '2px dashed #94a3b8',
-                borderRadius: '8px',
-                margin: '0 auto 8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '10px',
-                color: '#94a3b8',
-                fontWeight: 700,
-              }}
-            >
-              SEAL / STAMP
-            </div>
-            <div style={{ fontSize: '12px', fontWeight: 800 }}>Institution Seal</div>
-          </div>
-
-          <div style={{ textAlign: 'center', width: '180px' }}>
-            <div style={{ borderBottom: '1px solid #0f172a', height: '50px', marginBottom: '8px' }}></div>
-            <div style={{ fontSize: '12px', fontWeight: 800 }}>Principal / Director</div>
-            <div style={{ fontSize: '10px', color: '#64748b' }}>Authorized Signatory</div>
-          </div>
-        </div>
-
-        <div style={{ textAlign: 'center', fontSize: '10px', color: '#94a3b8', marginTop: '24px' }}>
-          Generated by SMS Student Management Enterprise System · Verification ID: SMS-AUDIT-{selectedDate}
-        </div>
       </div>
     </div>
   );

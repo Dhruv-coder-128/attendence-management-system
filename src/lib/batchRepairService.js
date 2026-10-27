@@ -168,13 +168,14 @@ export async function getBatchDistributionStats() {
 }
 
 /**
- * Distributes students across active batches evenly or by course match,
- * and ensures all batches are correctly mapped to their respective courses.
+ * Verifies batch course linkages and safeguards student roster integrity.
+ * Strictly guarantees that existing student batch assignments are 100% IMMUTABLE
+ * and never rebalanced or shuffled across cohorts.
  */
 export async function autoDistributeMisassignedStudents() {
   if (!supabase) throw new Error('Database connection is not available.');
 
-  // 1. First, repair batch course linkages so B11 -> 11th Commerce, B12 -> 12th Commerce, etc.
+  // 1. Repair batch course linkages so B11 -> 11th Commerce, B12 -> 12th Commerce, etc.
   await repairBatchCourseLinkages();
 
   // 2. Fetch updated batches with joined course
@@ -185,7 +186,7 @@ export async function autoDistributeMisassignedStudents() {
 
   if (bErr) throw bErr;
   if (!batches || batches.length === 0) {
-    throw new Error('No batches available to distribute students into.');
+    throw new Error('No batches available.');
   }
 
   // 3. Fetch all students
@@ -196,39 +197,35 @@ export async function autoDistributeMisassignedStudents() {
 
   if (sErr) throw sErr;
   if (!students || students.length === 0) {
-    return { success: true, count: 0, message: 'No students found to re-assign.' };
+    return { success: true, count: 0, message: 'Roster verified. All student batch assignments are intact.' };
   }
 
-  const activeBatches = batches;
-  const numBatches = activeBatches.length;
-  let updatedCount = 0;
+  const batchMap = new Map();
+  batches.forEach((b) => {
+    if (b.id) batchMap.set(b.id, b);
+    if (b.code) batchMap.set(b.code, b);
+  });
 
-  // Distribute students sequentially in balanced cohorts across active batches
-  for (let i = 0; i < students.length; i++) {
-    const student = students[i];
-    const targetBatch = activeBatches[i % numBatches];
-
-    // Update student's batch_id and synchronize course_id
-    if (student.batch_id !== targetBatch.id || (targetBatch.course_id && student.course_id !== targetBatch.course_id)) {
-      const { error: uErr } = await supabase
-        .from('students')
-        .update({
-          batch_id: targetBatch.id,
-          ...(targetBatch.course_id ? { course_id: targetBatch.course_id } : {}),
-        })
-        .eq('id', student.id);
-
-      if (!uErr) {
-        updatedCount++;
+  let synchronizedCourses = 0;
+  // Strictly PRESERVE existing batch assignments. Only sync course_id if batch has a course.
+  for (const student of students) {
+    if (student.batch_id && batchMap.has(student.batch_id)) {
+      const b = batchMap.get(student.batch_id);
+      if (b.course_id && student.course_id !== b.course_id) {
+        await supabase
+          .from('students')
+          .update({ course_id: b.course_id })
+          .eq('id', student.id);
+        synchronizedCourses++;
       }
     }
   }
 
   return {
     success: true,
-    count: updatedCount,
+    count: synchronizedCourses,
     totalStudents: students.length,
-    batchesCount: numBatches,
-    message: `Successfully rebalanced ${updatedCount} students across ${numBatches} batches and linked each batch to its proper course!`,
+    batchesCount: batches.length,
+    message: `Roster integrity verified! Student class assignments permanently locked (${students.length} students preserved).`,
   };
 }

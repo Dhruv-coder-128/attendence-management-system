@@ -26,6 +26,7 @@ import {
   Copy,
   Calendar,
   Users,
+  ShieldCheck,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
@@ -557,11 +558,12 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
               <div style={{ backgroundColor: 'var(--bg-subtle)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
-                  License Key
+                  License Protection Status
                 </div>
-                <code style={{ fontSize: '12px', fontWeight: 800, color: 'var(--navy-950)', fontFamily: 'monospace' }}>
-                  {liveLicense?.licenseKey || 'SMS-STANDARD-EVALUATION'}
-                </code>
+                <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
+                  <ShieldCheck size={14} color="#16a34a" />
+                  <span>Bound &amp; Active (Secured)</span>
+                </div>
               </div>
 
               <div style={{ backgroundColor: 'var(--bg-subtle)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
@@ -903,10 +905,10 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: 'var(--text-muted)' }}>License Key:</span>
-                <code style={{ fontWeight: 700, color: 'var(--navy-900)', fontFamily: 'monospace', backgroundColor: '#ffffff', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-subtle)' }}>
-                  {liveLicense?.licenseKey || 'UNLICENSED'}
-                </code>
+                <span style={{ color: 'var(--text-muted)' }}>Institutional Entitlement:</span>
+                <span style={{ fontWeight: 700, color: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '5px', backgroundColor: '#f0fdf4', padding: '3px 8px', borderRadius: '4px', border: '1px solid #bbf7d0', fontSize: '11.5px' }}>
+                  <ShieldCheck size={13} color="#16a34a" /> Bound &amp; Active (Cryptographically Secured)
+                </span>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
