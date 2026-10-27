@@ -25,13 +25,20 @@ import {
   MessageSquare,
   Copy,
   Calendar,
+  Users,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
 import UsersManagement from '../components/settings/UsersManagement';
 import MessageCenter from '../components/settings/MessageCenter';
 import { isSupabaseConfigured, checkSupabaseConnection, supabaseConfig } from '../lib/supabase';
-import { getStoredLicense, validateLicense, isTauriDesktop } from '../lib/licenseService';
+import {
+  getStoredLicense,
+  validateLicense,
+  isTauriDesktop,
+  getMaxStudentCapacity,
+  getStudentCapacityTier,
+} from '../lib/licenseService';
 import { getHardwareFingerprint } from '../lib/hardwareFingerprint';
 import {
   getTelegramBotStatus,
@@ -486,6 +493,98 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
       >
         {/* Left Column: Institute Profile & Attendance Policy */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Institutional License & Subscription Status Card */}
+          <div className="erp-card" style={{ padding: '20px', borderLeft: '4px solid var(--gold-primary)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <KeyRound size={18} color="var(--gold-dark)" />
+                <h2
+                  style={{
+                    fontFamily: 'var(--font-heading)',
+                    fontSize: '15px',
+                    fontWeight: 700,
+                    color: 'var(--navy-950)',
+                    margin: 0,
+                  }}
+                >
+                  Institutional License &amp; Capacity
+                </h2>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: '12px',
+                    backgroundColor: liveLicense?.daysRemaining >= 9000 ? '#f0fdf4' : (liveLicense?.daysRemaining > 0 ? '#eff6ff' : '#fef2f2'),
+                    color: liveLicense?.daysRemaining >= 9000 ? '#166534' : (liveLicense?.daysRemaining > 0 ? '#1e40af' : '#b91c1c'),
+                    border: `1px solid ${liveLicense?.daysRemaining >= 9000 ? '#bbf7d0' : (liveLicense?.daysRemaining > 0 ? '#bfdbfe' : '#fecaca')}`,
+                  }}
+                >
+                  {liveLicense?.daysRemaining >= 9000 ? 'Lifetime License' : (liveLicense?.daysRemaining > 0 ? `${liveLicense.daysRemaining} Days Active` : 'Expired')}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleManualSyncLicense}
+                  disabled={isSyncingLicense}
+                  style={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '6px',
+                    padding: '4px 8px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    backgroundColor: '#ffffff',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                  title="Sync with cloud license registry"
+                >
+                  <RefreshCw size={12} className={isSyncingLicense ? 'animate-spin' : ''} />
+                  <span>{isSyncingLicense ? 'Syncing...' : 'Sync'}</span>
+                </button>
+              </div>
+            </div>
+
+            {licenseSyncFeedback && (
+              <div style={{ marginBottom: '10px', fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
+                {licenseSyncFeedback}
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+              <div style={{ backgroundColor: 'var(--bg-subtle)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
+                  License Key
+                </div>
+                <code style={{ fontSize: '12px', fontWeight: 800, color: 'var(--navy-950)', fontFamily: 'monospace' }}>
+                  {liveLicense?.licenseKey || 'SMS-STANDARD-EVALUATION'}
+                </code>
+              </div>
+
+              <div style={{ backgroundColor: 'var(--bg-subtle)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
+                  Authorized Student Capacity
+                </div>
+                <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#1e40af', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '1px' }}>
+                  <Users size={14} />
+                  <span>{getMaxStudentCapacity()} Students ({getStudentCapacityTier(getMaxStudentCapacity()).name})</span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
+              <span>
+                🔒 Workstation ID: <code>{machineHwid ? (machineHwid.length > 20 ? machineHwid.slice(0, 18) + '…' : machineHwid) : 'Authorized Machine'}</code>
+              </span>
+              <span style={{ color: 'var(--text-muted)' }}>
+                Technical Support: <b>+91 8866039007</b>
+              </span>
+            </div>
+          </div>
+
           <div className="erp-card" style={{ padding: '20px' }}>
             <h2
               style={{

@@ -426,8 +426,12 @@ export default function App() {
 
   const isDesktopExe = isTauriDesktop();
 
-  // 1. Lockout screen if trial has expired, license is suspended/locked/revoked, hardware mismatch, or clock tampered
+  // 1. Lockout screen if trial has expired, subscription validity ended, suspended/revoked, or hardware mismatch
   // Exclusively enforced on School PC (Desktop Windows EXE)
+  const isLifetime = (licenseStatus?.daysRemaining >= 9000);
+  const isExpiredByDays = !isLifetime && (licenseStatus?.daysRemaining !== undefined && licenseStatus.daysRemaining <= 0);
+  const isExpiredByDate = !isLifetime && Boolean(licenseStatus?.trialEndsAt && new Date(licenseStatus.trialEndsAt).getTime() <= Date.now());
+
   const isLockedOut =
     isDesktopExe && (
       licenseStatus?.isTrialExpired ||
@@ -439,7 +443,8 @@ export default function App() {
       licenseStatus?.status === 'clock_tampered' ||
       licenseStatus?.status === 'cloned_copy_detected' ||
       licenseStatus?.status === 'hardware_mismatch' ||
-      (licenseStatus?.status === 'trial_active' && (licenseStatus?.daysRemaining ?? 30) <= 0)
+      isExpiredByDays ||
+      isExpiredByDate
     );
 
   if (isLockedOut) {

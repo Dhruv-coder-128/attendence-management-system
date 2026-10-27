@@ -17,6 +17,8 @@ import {
   Sparkles,
   ShieldAlert,
   Calendar,
+  Users,
+  Zap,
 } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
@@ -31,6 +33,11 @@ import {
   setCloudLicenseLock,
   unbindCloudHardware,
   deleteCloudLicense,
+  updateCloudLicenseTier,
+  STUDENT_CAPACITY_TIERS,
+  UNIVERSAL_TRIAL_KEY,
+  UNIVERSAL_GRACE_KEY,
+  getStudentCapacityTier,
 } from '../lib/licenseService';
 
 const MASTER_DEV_PIN = '8866';
@@ -158,6 +165,12 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
   const [newPhone, setNewPhone] = useState('');
   const [newDuration, setNewDuration] = useState('30');
   const [newCustomDays, setNewCustomDays] = useState('45');
+  const [newMaxStudents, setNewMaxStudents] = useState('200');
+
+  // Modal State: Change Student Capacity Tier
+  const [isTierModalOpen, setIsTierModalOpen] = useState(false);
+  const [tierTargetClient, setTierTargetClient] = useState(null);
+  const [tierInputValue, setTierInputValue] = useState('200');
 
   // Modal State: Full Client Edit
   const [isEditClientModalOpen, setIsEditClientModalOpen] = useState(false);
@@ -242,6 +255,7 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
     const now = new Date();
     const trialEnds = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
     const initialStatus = durationDays === 9999 ? 'licensed' : 'trial_active';
+    const maxStudents = parseInt(newMaxStudents, 10) || 200;
 
     const newClientObj = {
       id: `SMS-SCH-${String(clients.length + 1).padStart(3, '0')}`,
@@ -253,6 +267,8 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
       status: initialStatus,
       isLocked: false,
       daysRemaining: durationDays,
+      maxStudents,
+      tier: getStudentCapacityTier(maxStudents),
       isTimerVisible: true,
       trialStartedAt: now.toISOString(),
       trialEndsAt: trialEnds.toISOString(),
@@ -269,7 +285,7 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
     setCreatedSuccessData(newClientObj);
 
     if (saveRes.ok) {
-      showToast(`✓ Generated & saved cloud license for ${newClientObj.schoolName}: ${generatedKey}`);
+      showToast(`✓ Generated & saved cloud license for ${newClientObj.schoolName}: ${generatedKey} (${maxStudents} students)`);
     } else {
       showToast(`⚠️ License saved: ${saveRes.error || 'Cloud sync note'}`);
     }
@@ -280,7 +296,37 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
     setNewEmail('');
     setNewPhone('');
     setNewDuration('30');
+    setNewMaxStudents('200');
     setIsNewClientModalOpen(false);
+  };
+
+  // Change Student Plan Tier Capacity
+  const handleSaveTierCapacity = async () => {
+    if (!tierTargetClient) return;
+    const count = parseInt(tierInputValue, 10) || 200;
+    setIsActionLoading(true);
+    const res = await updateCloudLicenseTier(tierTargetClient.licenseKey, count);
+    setIsActionLoading(false);
+
+    const updated = clients.map((c) => {
+      if (c.id === tierTargetClient.id) {
+        return {
+          ...c,
+          maxStudents: count,
+          tier: getStudentCapacityTier(count),
+        };
+      }
+      return c;
+    });
+    saveClients(updated);
+    setIsTierModalOpen(false);
+    setTierTargetClient(null);
+
+    if (res.ok) {
+      showToast(`✓ Updated ${tierTargetClient.schoolName} capacity to ${count} students (${getStudentCapacityTier(count).name})`);
+    } else {
+      showToast(`⚠️ Updated locally: ${res.error || 'Cloud sync note'}`);
+    }
   };
 
   // 2. Adjust Days (+days or -days)
@@ -496,6 +542,8 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
             email: editingClientData.email,
             licenseKey: editingClientData.licenseKey,
             days_remaining: editingClientData.daysRemaining,
+            max_students: editingClientData.maxStudents || 200,
+            maxStudents: editingClientData.maxStudents || 200,
             is_timer_visible: editingClientData.isTimerVisible !== false,
           }),
           is_active: editingClientData.status !== 'suspended',
@@ -763,6 +811,156 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
         </div>
       </div>
 
+      {/* Universal Keys & Rapid Dispatch Console */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+          gap: '16px',
+          marginBottom: '24px',
+        }}
+      >
+        {/* 30-Day Common Free Trial Key Card */}
+        <div
+          className="erp-card"
+          style={{
+            padding: '20px',
+            backgroundColor: '#f0fdf4',
+            border: '1px solid #bbf7d0',
+            boxShadow: '0 2px 10px rgba(34, 197, 94, 0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: '#22c55e20', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>
+                <Sparkles size={18} />
+              </div>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: '#14532d' }}>
+                  30-Day Common Trial Key
+                </h4>
+                <span style={{ fontSize: '11px', color: '#15803d', fontWeight: 600 }}>
+                  Universal key for all new clients (5,000+ student capacity)
+                </span>
+              </div>
+            </div>
+            <span style={{ fontSize: '11px', fontWeight: 800, backgroundColor: '#dcfce7', color: '#166534', padding: '3px 8px', borderRadius: '12px' }}>
+              30 Days
+            </span>
+          </div>
+
+          <div style={{ backgroundColor: '#ffffff', border: '1px dashed #86efac', borderRadius: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
+            <code style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', letterSpacing: '0.04em' }}>
+              {UNIVERSAL_TRIAL_KEY}
+            </code>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={Copy}
+              onClick={() => {
+                navigator.clipboard.writeText(UNIVERSAL_TRIAL_KEY);
+                showToast(`✓ Copied 30-Day Trial Key: ${UNIVERSAL_TRIAL_KEY}`);
+              }}
+            >
+              Copy Key
+            </Button>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+            <button
+              onClick={() => {
+                const msg = `🏫 SMS — Student Management System\n\n🎉 Welcome to your 30-Day Free Trial!\n\n🔑 Universal Trial Key: ${UNIVERSAL_TRIAL_KEY}\n📅 Validity: 30 Days Full Access\n👥 Student Capacity: Up to 5,000 Students (All Features Active)\n🔒 Device Policy: Single-PC Hardware Locked\n\nInstructions: Download and run the SMS Desktop EXE or Android APK. Enter this Key to start your trial.\n\nSupport: Dhruv Shah (+91 8866039007)`;
+                navigator.clipboard.writeText(msg);
+                showToast('✓ Copied 30-Day Trial WhatsApp invitation message!');
+              }}
+              style={{
+                flex: 1,
+                padding: '6px 10px',
+                fontSize: '11.5px',
+                fontWeight: 700,
+                color: '#15803d',
+                backgroundColor: '#ffffff',
+                border: '1px solid #86efac',
+                borderRadius: '6px',
+                cursor: 'pointer',
+              }}
+            >
+              📋 Copy WhatsApp Trial Invitation
+            </button>
+          </div>
+        </div>
+
+        {/* 5-Day Emergency Grace Key Card */}
+        <div
+          className="erp-card"
+          style={{
+            padding: '20px',
+            backgroundColor: '#fffbeb',
+            border: '1px solid #fde68a',
+            boxShadow: '0 2px 10px rgba(245, 158, 11, 0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '32px', height: '32px', borderRadius: '8px', backgroundColor: '#f59e0b20', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#b45309' }}>
+                <Zap size={18} />
+              </div>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 800, color: '#78350f' }}>
+                  5-Day Emergency Grace Key
+                </h4>
+                <span style={{ fontSize: '11px', color: '#b45309', fontWeight: 600 }}>
+                  Instant relief key when client plan expires (Preserves data)
+                </span>
+              </div>
+            </div>
+            <span style={{ fontSize: '11px', fontWeight: 800, backgroundColor: '#fef3c7', color: '#92400e', padding: '3px 8px', borderRadius: '12px' }}>
+              5 Days Grace
+            </span>
+          </div>
+
+          <div style={{ backgroundColor: '#ffffff', border: '1px dashed #fcd34d', borderRadius: '8px', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
+            <code style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', letterSpacing: '0.04em' }}>
+              {UNIVERSAL_GRACE_KEY}
+            </code>
+            <Button
+              variant="outline"
+              size="sm"
+              icon={Copy}
+              onClick={() => {
+                navigator.clipboard.writeText(UNIVERSAL_GRACE_KEY);
+                showToast(`✓ Copied 5-Day Grace Key: ${UNIVERSAL_GRACE_KEY}`);
+              }}
+            >
+              Copy Key
+            </Button>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+            <button
+              onClick={() => {
+                const msg = `🏫 SMS — Student Management System\n\n⚠️ Emergency Grace Period Granted\n\n🔑 Emergency Grace Key: ${UNIVERSAL_GRACE_KEY}\n📅 Validity: +5 Emergency Days\n✅ Functionality: Attendance and all operations restored immediately\n\nPlease complete your renewal payment within these 5 days to avoid service interruption.\n\nSupport: Dhruv Shah (+91 8866039007)`;
+                navigator.clipboard.writeText(msg);
+                showToast('✓ Copied 5-Day Grace WhatsApp message!');
+              }}
+              style={{
+                flex: 1,
+                padding: '6px 10px',
+                fontSize: '11.5px',
+                fontWeight: 700,
+                color: '#b45309',
+                backgroundColor: '#ffffff',
+                border: '1px solid #fcd34d',
+                borderRadius: '6px',
+                cursor: 'pointer',
+              }}
+            >
+              📋 Copy WhatsApp Grace Message
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Master Client Fleet Table */}
       <div className="erp-card" style={{ padding: '0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0, 0, 0, 0.05)' }}>
         <div
@@ -793,6 +991,7 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
                 <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>School &amp; Contact</th>
                 <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>License Key</th>
                 <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>Status</th>
+                <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>Plan Tier &amp; Capacity</th>
                 <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>Days Left</th>
                 <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>Adjust Days (+ / -)</th>
                 <th style={{ padding: '12px 16px', color: 'var(--navy-900)', fontWeight: 700 }}>Trial Timer</th>
@@ -890,6 +1089,53 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
                       ) : (
                         <Badge variant="late">Trial Active</Badge>
                       )}
+                    </td>
+
+                    {/* Plan Tier & Capacity */}
+                    <td style={{ padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            fontSize: '11.5px',
+                            fontWeight: 700,
+                            backgroundColor: '#eff6ff',
+                            color: '#1e40af',
+                            border: '1px solid #bfdbfe',
+                          }}
+                        >
+                          <Users size={12} />
+                          <span>{client.maxStudents || 200} Students</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTierTargetClient(client);
+                            setTierInputValue(String(client.maxStudents || 200));
+                            setIsTierModalOpen(true);
+                          }}
+                          style={{
+                            padding: '2px 6px',
+                            fontSize: '10.5px',
+                            fontWeight: 700,
+                            borderRadius: '4px',
+                            border: '1px solid #cbd5e1',
+                            backgroundColor: '#ffffff',
+                            color: '#475569',
+                            cursor: 'pointer',
+                          }}
+                          title="Change Student Plan Tier"
+                        >
+                          Change
+                        </button>
+                      </div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                        {client.tier?.name || getStudentCapacityTier(client.maxStudents || 200).name}
+                      </div>
                     </td>
 
                     {/* Days Left */}
@@ -1107,6 +1353,22 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
                     onChange={(e) => setNewCustomDays(e.target.value)}
                   />
                 )}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)', marginBottom: '4px' }}>
+                    Student Plan Tier (Capacity Limit) *
+                  </label>
+                  <select
+                    value={newMaxStudents}
+                    onChange={(e) => setNewMaxStudents(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#ffffff' }}
+                  >
+                    {STUDENT_CAPACITY_TIERS.map((tier) => (
+                      <option key={tier.id} value={tier.maxStudents}>
+                        {tier.label} — {tier.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
             <div className="modal-footer" style={{ padding: '14px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -1158,6 +1420,30 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
                   value={editingClientData.notes || ''}
                   onChange={(e) => setEditingClientData({ ...editingClientData, notes: e.target.value })}
                 />
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)', marginBottom: '4px' }}>
+                    Student Plan Tier
+                  </label>
+                  <select
+                    value={editingClientData.maxStudents || 200}
+                    onChange={(e) => {
+                      const count = parseInt(e.target.value, 10);
+                      setEditingClientData({
+                        ...editingClientData,
+                        maxStudents: count,
+                        max_students: count,
+                        tier: getStudentCapacityTier(count),
+                      });
+                    }}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#ffffff' }}
+                  >
+                    {STUDENT_CAPACITY_TIERS.map((tier) => (
+                      <option key={tier.id} value={tier.maxStudents}>
+                        {tier.label} — {tier.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
             <div className="modal-footer" style={{ padding: '14px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -1199,6 +1485,54 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
               </Button>
               <Button variant="primary" size="sm" onClick={handleApplyCustomDays}>
                 Apply Days
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3.5: Change Student Plan Tier Capacity */}
+      {isTierModalOpen && tierTargetClient && (
+        <div className="modal-backdrop">
+          <div className="modal-dialog" style={{ maxWidth: '440px' }}>
+            <div style={{ backgroundColor: 'var(--navy-900)', padding: '16px 20px', color: '#ffffff', borderRadius: '10px 10px 0 0' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700 }}>Update Student Capacity Tier</h3>
+              <p style={{ margin: '3px 0 0 0', fontSize: '12px', color: 'rgba(255, 255, 255, 0.7)' }}>
+                {tierTargetClient.schoolName} ({tierTargetClient.licenseKey})
+              </p>
+            </div>
+            <div className="modal-body" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  Select the authorized student enrollment limit for this school. The client desktop EXE and imports will strictly enforce this cap.
+                </p>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '6px' }}>
+                    Authorized Student Limit
+                  </label>
+                  <select
+                    value={tierInputValue}
+                    onChange={(e) => setTierInputValue(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', backgroundColor: '#ffffff' }}
+                  >
+                    {STUDENT_CAPACITY_TIERS.map((tier) => (
+                      <option key={tier.id} value={tier.maxStudents}>
+                        {tier.label} — {tier.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ padding: '12px', backgroundColor: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe', fontSize: '12px', color: '#1e40af' }}>
+                  💡 <b>Instant Cloud Sync:</b> Once saved, the school&apos;s installation will immediately reflect this tier upon its next automatic sync.
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer" style={{ padding: '12px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <Button variant="outline" size="sm" onClick={() => { setIsTierModalOpen(false); setTierTargetClient(null); }}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleSaveTierCapacity} disabled={isActionLoading}>
+                {isActionLoading ? 'Saving...' : 'Update Plan Tier'}
               </Button>
             </div>
           </div>
@@ -1247,7 +1581,7 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
                   </Button>
                 </div>
                 <div style={{ fontSize: '12px', color: '#64748b', marginTop: '8px' }}>
-                  Duration: <b>{createdSuccessData.daysRemaining >= 9000 ? 'Lifetime' : `${createdSuccessData.daysRemaining} Days`}</b> | Workstations: <b>1 Authorized Device (Anti-Copy Locked)</b>
+                  Duration: <b>{createdSuccessData.daysRemaining >= 9000 ? 'Lifetime' : `${createdSuccessData.daysRemaining} Days`}</b> | Capacity: <b>{createdSuccessData.maxStudents || 200} Students ({createdSuccessData.tier?.name || getStudentCapacityTier(createdSuccessData.maxStudents || 200).name})</b> | Workstations: <b>1 Authorized Device (Anti-Copy Locked)</b>
                 </div>
               </div>
 
@@ -1258,9 +1592,9 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
                 </label>
                 <textarea
                   readOnly
-                  rows={6}
+                  rows={7}
                   style={{ width: '100%', padding: '10px 12px', fontSize: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#f1f5f9', color: '#334155', fontFamily: 'monospace', resize: 'none' }}
-                  value={`🏫 SMS — Student Management System\n\nDear ${createdSuccessData.contactPerson || 'School Administrator'},\nHere is your official activation license key for ${createdSuccessData.schoolName}:\n\n🔑 License Key: ${createdSuccessData.licenseKey}\n📅 Validity: ${createdSuccessData.daysRemaining >= 9000 ? 'Lifetime License' : `${createdSuccessData.daysRemaining} Days Evaluation`}\n🔒 Workstation Policy: 1 Device Binding (Locked to your primary PC/phone)\n\nInstructions: Launch SMS Desktop or Android APK. Enter this License Key when prompted to activate.\n\nTechnical Support: Dhruv Shah (+91 8866039007)`}
+                  value={`🏫 SMS — Student Management System\n\nDear ${createdSuccessData.contactPerson || 'School Administrator'},\nHere is your official activation license key for ${createdSuccessData.schoolName}:\n\n🔑 License Key: ${createdSuccessData.licenseKey}\n📅 Validity: ${createdSuccessData.daysRemaining >= 9000 ? 'Lifetime License' : `${createdSuccessData.daysRemaining} Days Evaluation`}\n👥 Plan Tier: ${createdSuccessData.maxStudents || 200} Students (${createdSuccessData.tier?.name || getStudentCapacityTier(createdSuccessData.maxStudents || 200).name})\n🔒 Workstation Policy: 1 Device Binding (Locked to your primary PC)\n\nInstructions: Launch SMS Desktop or Android APK. Enter this License Key when prompted to activate.\n\nTechnical Support: Dhruv Shah (+91 8866039007)`}
                 />
               </div>
             </div>
@@ -1278,7 +1612,7 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
                 size="sm"
                 icon={Copy}
                 onClick={() => {
-                  const msg = `🏫 SMS — Student Management System\n\nDear ${createdSuccessData.contactPerson || 'School Administrator'},\nHere is your official activation license key for ${createdSuccessData.schoolName}:\n\n🔑 License Key: ${createdSuccessData.licenseKey}\n📅 Validity: ${createdSuccessData.daysRemaining >= 9000 ? 'Lifetime License' : `${createdSuccessData.daysRemaining} Days Evaluation`}\n🔒 Workstation Policy: 1 Device Binding (Locked to your primary PC/phone)\n\nInstructions: Launch SMS Desktop or Android APK. Enter this License Key when prompted to activate.\n\nTechnical Support: Dhruv Shah (+91 8866039007)`;
+                  const msg = `🏫 SMS — Student Management System\n\nDear ${createdSuccessData.contactPerson || 'School Administrator'},\nHere is your official activation license key for ${createdSuccessData.schoolName}:\n\n🔑 License Key: ${createdSuccessData.licenseKey}\n📅 Validity: ${createdSuccessData.daysRemaining >= 9000 ? 'Lifetime License' : `${createdSuccessData.daysRemaining} Days Evaluation`}\n👥 Plan Tier: ${createdSuccessData.maxStudents || 200} Students (${createdSuccessData.tier?.name || getStudentCapacityTier(createdSuccessData.maxStudents || 200).name})\n🔒 Workstation Policy: 1 Device Binding (Locked to your primary PC)\n\nInstructions: Launch SMS Desktop or Android APK. Enter this License Key when prompted to activate.\n\nTechnical Support: Dhruv Shah (+91 8866039007)`;
                   navigator.clipboard.writeText(msg);
                   showToast('✓ Copied complete client WhatsApp message to clipboard!');
                 }}

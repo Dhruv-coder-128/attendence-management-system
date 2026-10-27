@@ -1,5 +1,6 @@
 import { supabase } from '../supabase.js';
 import { importDatabaseBackup, generateLocalId } from '../databaseAdapter.js';
+import { checkStudentCapacityAllowed } from '../licenseService.js';
 
 /**
  * Normalizes header string for robust fuzzy matching
@@ -359,6 +360,20 @@ export async function commitMasterSpreadsheetData(parseResult, { onProgress = ()
       is_active: true,
     };
   });
+
+  // Enforce student capacity limits against client license
+  if (supabase) {
+    try {
+      const { count: currentTotal } = await supabase.from('students').select('*', { count: 'exact', head: true });
+      const capCheck = checkStudentCapacityAllowed(currentTotal || 0, studentsToInsert.length);
+      if (!capCheck.allowed) {
+        throw new Error(`Client License Capacity Exceeded: Your plan allows up to ${capCheck.maxStudents} students (${capCheck.tier.name}). Current: ${currentTotal || 0}, trying to import: ${studentsToInsert.length}. Contact Developer (+91 8866039007) to upgrade.`);
+      }
+    } catch (capErr) {
+      if (capErr.message?.includes('Capacity Exceeded')) throw capErr;
+      console.warn('Capacity pre-check warning:', capErr.message);
+    }
+  }
 
   const CHUNK_SIZE = 50;
   let insertedStudents = [];

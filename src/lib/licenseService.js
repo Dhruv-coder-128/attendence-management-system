@@ -21,6 +21,45 @@ const DEFAULT_DEV_CONTACT = {
 export const SYSTEM_VERIFIER_EMAIL = 'client-license-sync@sms-system.internal';
 export const SYSTEM_VERIFIER_PASS = 'SmsLicenseSync2026!SecureKey';
 
+export const UNIVERSAL_TRIAL_KEY = 'SMS-FREE-TRIAL-30D';
+export const UNIVERSAL_GRACE_KEY = 'SMS-GRACE-5D';
+
+export const STUDENT_CAPACITY_TIERS = [
+  { id: 'tier_200', name: 'Tier 1 — Starter', maxStudents: 200, label: 'Up to 200 Students' },
+  { id: 'tier_500', name: 'Tier 2 — Growth', maxStudents: 500, label: 'Up to 500 Students' },
+  { id: 'tier_1000', name: 'Tier 3 — Pro', maxStudents: 1000, label: 'Up to 1,000 Students' },
+  { id: 'tier_5000', name: 'Tier 4 — Enterprise', maxStudents: 5000, label: '5,000+ Students (Unlimited)' },
+];
+
+export function getStudentCapacityTier(maxStudents) {
+  const count = parseInt(maxStudents, 10);
+  if (!count || count <= 200) return STUDENT_CAPACITY_TIERS[0];
+  if (count <= 500) return STUDENT_CAPACITY_TIERS[1];
+  if (count <= 1000) return STUDENT_CAPACITY_TIERS[2];
+  return STUDENT_CAPACITY_TIERS[3];
+}
+
+export function getMaxStudentCapacity() {
+  const lic = getStoredLicense();
+  if (!lic) return 5000;
+  if (lic.maxStudents !== undefined && lic.maxStudents !== null) {
+    return parseInt(lic.maxStudents, 10) || 200;
+  }
+  return 5000;
+}
+
+export function checkStudentCapacityAllowed(currentCount, addingCount = 1) {
+  const max = getMaxStudentCapacity();
+  const allowed = (currentCount + addingCount) <= max;
+  return {
+    allowed,
+    maxStudents: max,
+    currentCount,
+    available: Math.max(0, max - currentCount),
+    tier: getStudentCapacityTier(max),
+  };
+}
+
 /**
  * Ensures a valid Supabase authenticated session exists for querying license state.
  * Specifically checks that the active user is the authorized verifier or developer.
@@ -159,6 +198,8 @@ export async function fetchCloudLicenses() {
         isLocked,
         isTimerVisible,
         daysRemaining,
+        maxStudents: parsed.max_students !== undefined ? parseInt(parsed.max_students, 10) : (parsed.maxStudents !== undefined ? parseInt(parsed.maxStudents, 10) : 200),
+        tier: getStudentCapacityTier(parsed.max_students || parsed.maxStudents || 200),
         trialStartedAt: parsed.trial_started_at || parsed.trialStartedAt || row.created_at,
         trialEndsAt: parsed.trial_ends_at || parsed.trialEndsAt,
         boundDeviceId: parsed.bound_device_id || parsed.activated_device_id || null,
@@ -180,6 +221,7 @@ export async function saveCloudLicense(clientObj) {
     const isLocked = Boolean(clientObj.isLocked || clientObj.status === 'suspended');
     const status = isLocked ? 'suspended' : (clientObj.status || (clientObj.daysRemaining > 0 ? 'trial_active' : 'trial_expired'));
     const schoolName = clientObj.schoolName?.trim() || 'SMS Client School';
+    const maxStudents = clientObj.maxStudents !== undefined ? parseInt(clientObj.maxStudents, 10) : 200;
 
     const payload = {
       id: clientObj.id || `LIC-${cleanKey}`,
@@ -195,6 +237,8 @@ export async function saveCloudLicense(clientObj) {
       isLocked: isLocked,
       days_remaining: clientObj.daysRemaining !== undefined ? clientObj.daysRemaining : 30,
       daysRemaining: clientObj.daysRemaining !== undefined ? clientObj.daysRemaining : 30,
+      max_students: maxStudents,
+      maxStudents: maxStudents,
       trial_started_at: clientObj.trialStartedAt || new Date().toISOString(),
       trial_ends_at: clientObj.trialEndsAt || new Date(Date.now() + (clientObj.daysRemaining || 30) * 86400000).toISOString(),
       is_timer_visible: clientObj.isTimerVisible !== false,
@@ -218,6 +262,33 @@ export async function saveCloudLicense(clientObj) {
     return { ok: true, data: payload };
   } catch (err) {
     console.error('saveCloudLicense error:', err);
+    return { ok: false, error: err.message };
+  }
+}
+
+export async function updateCloudLicenseTier(licenseKey, maxStudents) {
+  if (!supabase || !isSupabaseConfigured || !licenseKey) return { ok: false };
+  try {
+    await ensureLicensingAuth(supabase);
+    const cleanKey = String(licenseKey).trim().toUpperCase();
+    const { data: row } = await supabase.from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
+    if (!row) return { ok: false, error: 'License not found in cloud' };
+
+    let desc = {};
+    try { desc = JSON.parse(row.description) || {}; } catch {}
+
+    const count = parseInt(maxStudents, 10) || 200;
+    desc.max_students = count;
+    desc.maxStudents = count;
+    desc.updated_at = new Date().toISOString();
+
+    await supabase.from('courses').update({
+      description: JSON.stringify(desc),
+      updated_at: new Date().toISOString(),
+    }).eq('code', 'LIC:' + cleanKey);
+
+    return { ok: true, maxStudents: count, tier: getStudentCapacityTier(count) };
+  } catch (err) {
     return { ok: false, error: err.message };
   }
 }
@@ -357,6 +428,120 @@ export async function activateSchoolLicense(licenseKey) {
   if (supabase && isSupabaseConfigured) {
     try {
       await ensureLicensingAuth(supabase);
+
+      // 1.A. Universal 30-Day Free Trial Key: SMS-FREE-TRIAL-30D
+      if (cleanKey === UNIVERSAL_TRIAL_KEY) {
+        const licCode = 'LIC:' + UNIVERSAL_TRIAL_KEY;
+        const { data: row } = await supabase.from('courses').select('*').eq('code', licCode).maybeSingle();
+        let desc = {};
+        try { desc = JSON.parse(row?.description || '{}'); } catch {}
+        if (!desc.activated_devices) desc.activated_devices = {};
+
+        const now = new Date();
+        let devRec = desc.activated_devices[hwid];
+        if (!devRec) {
+          const endsAt = new Date(now.getTime() + 30 * 86400000).toISOString();
+          devRec = {
+            activated_at: now.toISOString(),
+            trial_ends_at: endsAt,
+            days_remaining: 30,
+            max_students: 5000,
+          };
+          desc.activated_devices[hwid] = devRec;
+          desc.school_name = 'Evaluation Trial Workstation';
+          desc.status = 'trial_active';
+          desc.max_students = 5000;
+
+          await supabase.from('courses').upsert({
+            code: licCode,
+            name: 'SMS Universal Free Trial [TRIAL_ACTIVE]',
+            level: 'License',
+            description: JSON.stringify(desc),
+            is_active: true,
+            updated_at: now.toISOString(),
+          }, { onConflict: 'code' });
+        }
+
+        const endsMs = new Date(devRec.trial_ends_at).getTime();
+        const diffDays = Math.max(0, Math.ceil((endsMs - now.getTime()) / 86400000));
+
+        if (diffDays <= 0) {
+          return {
+            ok: false,
+            error: 'The 30-Day Evaluation Trial on this workstation has concluded. Please contact developer Dhruv Shah (+91 8866039007) to purchase a license.',
+          };
+        }
+
+        const trialData = {
+          licenseKey: UNIVERSAL_TRIAL_KEY,
+          licenseId: `LIC-${UNIVERSAL_TRIAL_KEY}`,
+          schoolName: 'Evaluation Trial School',
+          status: 'trial_active',
+          daysRemaining: diffDays,
+          maxStudents: 5000,
+          tier: getStudentCapacityTier(5000),
+          boundDeviceId: hwid,
+          trialStartedAt: devRec.activated_at,
+          trialEndsAt: devRec.trial_ends_at,
+          isTimerVisible: true,
+          developerContact: DEFAULT_DEV_CONTACT,
+          lastServerSync: now.toISOString(),
+        };
+
+        saveStoredLicense(trialData);
+        return { ok: true, data: trialData };
+      }
+
+      // 1.B. Universal 5-Day Emergency Grace Key: SMS-GRACE-5D
+      if (cleanKey === UNIVERSAL_GRACE_KEY) {
+        const licCode = 'LIC:' + UNIVERSAL_GRACE_KEY;
+        const { data: row } = await supabase.from('courses').select('*').eq('code', licCode).maybeSingle();
+        let desc = {};
+        try { desc = JSON.parse(row?.description || '{}'); } catch {}
+        if (!desc.authorized_devices) desc.authorized_devices = {};
+
+        const now = new Date();
+        const cachedLic = getStoredLicense();
+        const preservedCapacity = cachedLic?.maxStudents || 5000;
+        const endsAt = new Date(now.getTime() + 5 * 86400000).toISOString();
+
+        desc.authorized_devices[hwid] = {
+          granted_at: now.toISOString(),
+          trial_ends_at: endsAt,
+          days_remaining: 5,
+          max_students: preservedCapacity,
+        };
+
+        await supabase.from('courses').upsert({
+          code: licCode,
+          name: 'SMS Emergency Grace Portal [ACTIVE]',
+          level: 'License',
+          description: JSON.stringify(desc),
+          is_active: true,
+          updated_at: now.toISOString(),
+        }, { onConflict: 'code' });
+
+        const graceData = {
+          licenseKey: UNIVERSAL_GRACE_KEY,
+          licenseId: `LIC-${UNIVERSAL_GRACE_KEY}`,
+          schoolName: cachedLic?.schoolName || 'SMS Emergency Grace Extension',
+          status: 'trial_active',
+          daysRemaining: 5,
+          maxStudents: preservedCapacity,
+          tier: getStudentCapacityTier(preservedCapacity),
+          boundDeviceId: hwid,
+          trialStartedAt: now.toISOString(),
+          trialEndsAt: endsAt,
+          isTimerVisible: true,
+          developerContact: DEFAULT_DEV_CONTACT,
+          lastServerSync: now.toISOString(),
+        };
+
+        saveStoredLicense(graceData);
+        return { ok: true, data: graceData };
+      }
+
+      // 1.C. Specific Client License Key
       const licCode = 'LIC:' + cleanKey;
       const { data: licRow } = await supabase
         .from('courses')
@@ -406,6 +591,7 @@ export async function activateSchoolLicense(licenseKey) {
         const schoolName = licInfo.school_name || licInfo.schoolName || licRow.name?.replace(/\s*\[.*\]/, '').trim() || 'SMS Academy';
         const daysRemaining = licInfo.days_remaining !== undefined ? licInfo.days_remaining : 30;
         const status = licInfo.status || 'trial_active';
+        const maxStudents = parseInt(licInfo.max_students ?? licInfo.maxStudents ?? 200, 10);
 
         const activeLicenseData = {
           licenseKey: cleanKey,
@@ -413,6 +599,8 @@ export async function activateSchoolLicense(licenseKey) {
           schoolName,
           status,
           daysRemaining,
+          maxStudents,
+          tier: getStudentCapacityTier(maxStudents),
           boundDeviceId: hwid,
           trialStartedAt: licInfo.trial_started_at || new Date().toISOString(),
           trialEndsAt: licInfo.trial_ends_at,
@@ -591,6 +779,124 @@ export async function validateLicense(options = {}) {
   if (supabase && isSupabaseConfigured) {
     try {
       await ensureLicensingAuth(supabase);
+      // 1.A. Universal 30-Day Free Trial Key Validation
+      if (cached.licenseKey === UNIVERSAL_TRIAL_KEY) {
+        const licCode = 'LIC:' + UNIVERSAL_TRIAL_KEY;
+        const { data: licRow } = await supabase.from('courses').select('*').eq('code', licCode).maybeSingle();
+        let desc = {};
+        try { desc = JSON.parse(licRow?.description || '{}'); } catch {}
+        const devRec = desc.activated_devices?.[currentHwid];
+
+        if (devRec) {
+          const endsMs = new Date(devRec.trial_ends_at).getTime();
+          const diffDays = Math.max(0, Math.ceil((endsMs - Date.now()) / 86400000));
+
+          if (diffDays <= 0 || endsMs <= Date.now()) {
+            saveStoredLicense({
+              ...cached,
+              status: 'trial_expired',
+              daysRemaining: 0,
+              isLocked: true,
+              isTrialExpired: true,
+            });
+            return {
+              ok: false,
+              status: 'trial_expired',
+              isTrialExpired: true,
+              isLocked: true,
+              error: 'The 30-Day Evaluation Trial on this workstation has concluded. Please contact developer Dhruv Shah (+91 8866039007) to purchase a license.',
+              developerContact: DEFAULT_DEV_CONTACT,
+              trialEndsAt: devRec.trial_ends_at,
+            };
+          }
+
+          saveStoredLicense({
+            ...cached,
+            status: 'trial_active',
+            daysRemaining: diffDays,
+            maxStudents: 5000,
+            tier: getStudentCapacityTier(5000),
+            trialEndsAt: devRec.trial_ends_at,
+            isLocked: false,
+            isTrialExpired: false,
+          });
+
+          return {
+            ok: true,
+            status: 'trial_active',
+            schoolName: 'Evaluation Trial School',
+            daysRemaining: diffDays,
+            maxStudents: 5000,
+            tier: getStudentCapacityTier(5000),
+            isTimerVisible: true,
+            isTrialExpired: false,
+            isLocked: false,
+            trialEndsAt: devRec.trial_ends_at,
+            developerContact: DEFAULT_DEV_CONTACT,
+          };
+        }
+      }
+
+      // 1.B. Universal 5-Day Emergency Grace Key Validation
+      if (cached.licenseKey === UNIVERSAL_GRACE_KEY) {
+        const licCode = 'LIC:' + UNIVERSAL_GRACE_KEY;
+        const { data: licRow } = await supabase.from('courses').select('*').eq('code', licCode).maybeSingle();
+        let desc = {};
+        try { desc = JSON.parse(licRow?.description || '{}'); } catch {}
+        const devRec = desc.authorized_devices?.[currentHwid];
+
+        if (devRec) {
+          const endsMs = new Date(devRec.trial_ends_at).getTime();
+          const diffDays = Math.max(0, Math.ceil((endsMs - Date.now()) / 86400000));
+          const maxStudents = devRec.max_students || cached.maxStudents || 5000;
+
+          if (diffDays <= 0 || endsMs <= Date.now()) {
+            saveStoredLicense({
+              ...cached,
+              status: 'trial_expired',
+              daysRemaining: 0,
+              isLocked: true,
+              isTrialExpired: true,
+            });
+            return {
+              ok: false,
+              status: 'trial_expired',
+              isTrialExpired: true,
+              isLocked: true,
+              error: 'The 5-Day Emergency Grace period on this workstation has concluded. Please contact developer Dhruv Shah (+91 8866039007) to renew your license.',
+              developerContact: DEFAULT_DEV_CONTACT,
+              trialEndsAt: devRec.trial_ends_at,
+            };
+          }
+
+          saveStoredLicense({
+            ...cached,
+            status: 'trial_active',
+            daysRemaining: diffDays,
+            maxStudents,
+            tier: getStudentCapacityTier(maxStudents),
+            trialEndsAt: devRec.trial_ends_at,
+            isLocked: false,
+            isTrialExpired: false,
+          });
+
+          return {
+            ok: true,
+            status: 'trial_active',
+            schoolName: cached.schoolName || 'SMS Emergency Grace Extension',
+            daysRemaining: diffDays,
+            maxStudents,
+            tier: getStudentCapacityTier(maxStudents),
+            isTimerVisible: true,
+            isTrialExpired: false,
+            isLocked: false,
+            trialEndsAt: devRec.trial_ends_at,
+            developerContact: DEFAULT_DEV_CONTACT,
+          };
+        }
+      }
+
+      // 1.C. Specific Client License Key Validation
       const licCode = 'LIC:' + cached.licenseKey;
       const { data: licRow } = await supabase
         .from('courses')
@@ -671,23 +977,30 @@ export async function validateLicense(options = {}) {
 
         const daysRem = licInfo?.days_remaining ?? licInfo?.daysRemaining ?? cached.daysRemaining ?? 30;
         const trialEnds = licInfo?.trial_ends_at || licInfo?.trialEndsAt || cached.trialEndsAt;
+        const maxStudents = parseInt(licInfo?.max_students ?? licInfo?.maxStudents ?? cached.maxStudents ?? 200, 10);
 
-        // Check if trial days ran out
-        if (daysRem <= 0 && effectiveStatus !== 'licensed') {
+        // Strict timer expiration: if days are up OR validity date has arrived (for non-lifetime licenses)
+        const isLifetime = (daysRem >= 9000);
+        const isDateExpired = trialEnds && (new Date(trialEnds).getTime() <= Date.now());
+        const isDaysExpired = daysRem <= 0;
+
+        if (!isLifetime && (isDaysExpired || isDateExpired)) {
           saveStoredLicense({
             ...cached,
             status: 'trial_expired',
             daysRemaining: 0,
             isLocked: true,
             isTimerVisible: false,
+            maxStudents,
           });
           return {
             ok: false,
             status: 'trial_expired',
             isTrialExpired: true,
             isLocked: true,
-            error: '30-Day Evaluation Period has ended. Please contact developer for a full commercial license.',
+            error: 'Subscription validity period has concluded. Please contact developer Dhruv Shah (+91 8866039007) to renew your SMS license.',
             developerContact: DEFAULT_DEV_CONTACT,
+            trialEndsAt: trialEnds,
           };
         }
 
@@ -698,6 +1011,8 @@ export async function validateLicense(options = {}) {
           isTimerVisible,
           daysRemaining: daysRem,
           trialEndsAt: trialEnds,
+          maxStudents,
+          tier: getStudentCapacityTier(maxStudents),
           boundDeviceId: cloudBoundId || currentHwid || cached.boundDeviceId,
         });
 
@@ -706,6 +1021,8 @@ export async function validateLicense(options = {}) {
           status: effectiveStatus,
           schoolName: licInfo?.school_name || licInfo?.schoolName || licRow.name?.replace(/\s*\[.*\]/, '') || cached.schoolName,
           daysRemaining: daysRem,
+          maxStudents,
+          tier: getStudentCapacityTier(maxStudents),
           isTimerVisible,
           isTrialExpired: false,
           isLocked: false,
@@ -838,8 +1155,9 @@ export async function validateLicense(options = {}) {
       };
     }
 
-    // 2. Strict Timer Expiry Check against trialEndsAt (30-day, 15-day, or custom days)
-    if (cached.trialEndsAt && cached.status !== 'licensed') {
+    // 2. Strict Timer Expiry Check against trialEndsAt (365-day annual, 30-day trial, 5-day grace, or custom days)
+    const isOfflineLifetime = (cached.daysRemaining >= 9000) || (cached.licenseKey || '').toUpperCase().includes('LIFETIME');
+    if (cached.trialEndsAt && !isOfflineLifetime) {
       const trialEndsMs = new Date(cached.trialEndsAt).getTime();
       const diffMs = trialEndsMs - nowMs;
       const actualDaysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
@@ -857,7 +1175,7 @@ export async function validateLicense(options = {}) {
           status: 'trial_expired',
           isTrialExpired: true,
           isLocked: true,
-          error: 'Your trial period has expired. Contact the developer to activate SMS.',
+          error: 'Your subscription or trial period has concluded. Contact developer Dhruv Shah (+91 8866039007) to renew SMS.',
           developerContact: cached.developerContact || DEFAULT_DEV_CONTACT,
           trialEndsAt: cached.trialEndsAt,
         };

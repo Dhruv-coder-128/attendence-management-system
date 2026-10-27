@@ -15,7 +15,7 @@ import path from 'path';
 const ROOT_DIR = process.cwd();
 const RELEASE_APK_DIR = path.join(ROOT_DIR, 'release-apk');
 const RELEASE_EXE_DIR = path.join(ROOT_DIR, 'release-exe');
-const VERSION = 'v1.0.10';
+const VERSION = 'v1.0.11';
 
 console.log('====================================================');
 console.log(`Starting SMS Full Release Packaging Pipeline [${VERSION}]`);

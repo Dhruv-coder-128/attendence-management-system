@@ -20,6 +20,7 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Users,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -35,6 +36,11 @@ import { computeFeeStatus, getStandardCoursePolicy } from '../lib/feeService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { exportStudentsToExcel, exportStudentsToCSV } from '../lib/studentExporter';
 import { getStoredAcademySettings } from '../lib/academySettings';
+import {
+  checkStudentCapacityAllowed,
+  getMaxStudentCapacity,
+  getStudentCapacityTier,
+} from '../lib/licenseService';
 
 /**
  * Students Directory Page — Connected directly to Supabase PostgreSQL
@@ -71,6 +77,9 @@ export default function StudentsPage({ onRefreshCounts }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [modalError, setModalError] = useState('');
   const [showAdvancedFields, setShowAdvancedFields] = useState(false);
+  const [capacityNotice, setCapacityNotice] = useState(null);
+  const maxCapacity = getMaxStudentCapacity();
+  const capacityTier = getStudentCapacityTier(maxCapacity);
 
   // Form State for Add / Edit
   const initialFormState = {
@@ -359,6 +368,14 @@ export default function StudentsPage({ onRefreshCounts }) {
 
   // Open Add Modal
   const handleOpenAdd = () => {
+    const cap = checkStudentCapacityAllowed(students.length, 1);
+    if (!cap.allowed) {
+      setCapacityNotice({
+        title: 'Student Capacity Limit Reached',
+        message: `Your current license plan allows up to ${cap.maxStudents} students (${cap.tier.name}). You currently have ${students.length} students enrolled. To add more students, please contact developer Dhruv Shah (+91 8866039007) to upgrade your plan tier.`,
+      });
+      return;
+    }
     setModalError('');
     setFormData({
       ...initialFormState,
@@ -459,6 +476,14 @@ export default function StudentsPage({ onRefreshCounts }) {
         showToast(`Student record for ${payload.full_name} updated successfully!`);
         setStudentToEdit(null);
       } else {
+        // Enforce Student Capacity Tier Limit
+        const cap = checkStudentCapacityAllowed(students.length, 1);
+        if (!cap.allowed) {
+          setModalError(`Plan Limit Exceeded: Maximum allowed students is ${cap.maxStudents} (${cap.tier.name}). Please contact developer Dhruv Shah (+91 8866039007) to upgrade your plan.`);
+          setIsSubmitting(false);
+          return;
+        }
+
         // INSERT new student in Supabase
         const { data: newStudent, error: insertErr } = await supabase
           .from('students')
@@ -782,6 +807,28 @@ export default function StudentsPage({ onRefreshCounts }) {
                 </button>
               </div>
             )}
+          </div>
+
+          {/* Student Plan Capacity Badge */}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              borderRadius: '8px',
+              border: students.length >= maxCapacity ? '1px solid #fca5a5' : '1px solid #bfdbfe',
+              backgroundColor: students.length >= maxCapacity ? '#fef2f2' : '#eff6ff',
+              color: students.length >= maxCapacity ? '#b91c1c' : '#1e40af',
+              fontSize: '12px',
+              fontWeight: 700,
+            }}
+            title={`Authorized Plan: ${capacityTier.name} (Max ${maxCapacity} Students)`}
+          >
+            <Users size={14} />
+            <span>
+              {students.length} / {maxCapacity} Students ({capacityTier.name})
+            </span>
           </div>
 
           <Button
@@ -1593,6 +1640,45 @@ export default function StudentsPage({ onRefreshCounts }) {
           showToast('Bulk student import completed successfully!');
         }}
       />
+
+      {/* Capacity Upgrade Prompt Modal */}
+      {capacityNotice && (
+        <Modal
+          isOpen={true}
+          onClose={() => setCapacityNotice(null)}
+          title="Plan Capacity Reached — Upgrade Required"
+          size="sm"
+        >
+          <div style={{ padding: '8px 0', textAlign: 'center' }}>
+            <div style={{ width: '52px', height: '52px', borderRadius: '50%', backgroundColor: '#fef2f2', border: '1px solid #fecaca', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px auto', color: '#dc2626' }}>
+              <AlertCircle size={28} />
+            </div>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', fontWeight: 800, color: 'var(--navy-950)' }}>
+              {capacityNotice.title}
+            </h3>
+            <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              {capacityNotice.message}
+            </p>
+            <div style={{ padding: '12px', backgroundColor: 'var(--bg-subtle)', borderRadius: '8px', border: '1px solid var(--border-subtle)', textAlign: 'left', marginBottom: '16px', fontSize: '12.5px' }}>
+              <div style={{ fontWeight: 700, color: 'var(--navy-950)', marginBottom: '4px' }}>
+                📞 Developer Contact for Instant Upgrade:
+              </div>
+              <div style={{ color: 'var(--text-secondary)' }}>
+                Phone / WhatsApp: <b>+91 8866039007</b><br />
+                Email: <b>dushah2007@gmail.com</b>
+              </div>
+            </div>
+            <Button
+              variant="primary"
+              size="md"
+              style={{ width: '100%' }}
+              onClick={() => setCapacityNotice(null)}
+            >
+              Understood
+            </Button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
