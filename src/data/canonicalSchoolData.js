@@ -6,6 +6,14 @@
 
 export const CANONICAL_COURSES = [
   {
+    "code": "LIC:SMS-NOBLE-30D-89XK7",
+    "name": "Noble School",
+    "level": "License",
+    "description": "{\"status\":\"trial_active\",\"isLocked\":false,\"is_locked\":false,\"schoolId\":\"LIC-SMS-NOBLE-30D-89XK7\",\"schoolName\":\"Noble School\",\"licenseKey\":\"SMS-NOBLE-30D-89XK7\",\"daysRemaining\":25,\"isTimerVisible\":true}",
+    "is_active": true,
+    "id": "54001a50-888b-469b-976f-2da2ea4413dd"
+  },
+  {
     "id": "C11",
     "name": "11th Commerce",
     "code": "11-COM",

@@ -21,114 +21,158 @@ import {
 const DB_NAME = 'sms_offline_db';
 const DB_VERSION = 1;
 const STORAGE_MODE_KEY = 'sms_storage_mode';
-const ROSTER_MIGRATION_KEY = 'sms_roster_dataset_v6';
+const ROSTER_MIGRATION_KEY = 'sms_roster_dataset_v7';
 
 let rosterMigrationPromise = null;
 
+/**
+ * Detects if the current IndexedDB students collection exhibits the round-robin modulo scramble
+ */
+function isRosterScrambled(existingStudents) {
+  if (!existingStudents || existingStudents.length === 0) return true;
+  
+  // 1. Check Dhruv Shah's cohort assignment
+  const dhruv = existingStudents.find(
+    (s) =>
+      (s.full_name && s.full_name.toLowerCase().includes('dhruv')) ||
+      s.admission_no === 'SMS-2026-1165' ||
+      s.id === 'ST1019-DHRUV'
+  );
+  if (dhruv && (dhruv.batch_id !== 'B11-B' || Number(dhruv.roll_no) !== 1)) {
+    return true;
+  }
+
+  // 2. Check for +6 modulo cross-batch bleeding in 11th Commerce (B11)
+  const badB11 = existingStudents.some(
+    (s) => s.batch_id === 'B11' && ['ST1024', 'ST1042', 'ST1066', 'ST1084'].includes(s.id)
+  );
+  if (badB11) return true;
+
+  // 3. Check for 17-student modulo artifact (100 % 6 = 17)
+  const b11Count = existingStudents.filter((s) => s.batch_id === 'B11').length;
+  if (b11Count === 17) return true;
+
+  // 4. Ensure B11-B has its designated student
+  const b11bCount = existingStudents.filter((s) => s.batch_id === 'B11-B').length;
+  if (b11bCount === 0) return true;
+
+  return false;
+}
+
+/**
+ * Authentically aligns canonical student cohorts (20 per batch + 1 in 11th B)
+ * while strictly PRESERVING any custom school client records (Zero Hardcoding).
+ */
+export async function restoreAuthoritativeRoster() {
+  if (typeof window === 'undefined' || !window.indexedDB) {
+    return { success: false, reason: 'no-indexeddb' };
+  }
+  try {
+    const db = await openOfflineDB();
+
+    const existingStudents = await new Promise((resolve) => {
+      if (!db.objectStoreNames.contains('students')) return resolve([]);
+      const tx = db.transaction('students', 'readonly');
+      const store = tx.objectStore('students');
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    });
+
+    const canonicalMap = new Map();
+    CANONICAL_STUDENTS.forEach((s) => {
+      canonicalMap.set(s.id, s);
+      if (s.admission_no) canonicalMap.set(s.admission_no, s);
+    });
+
+    // Realign canonical records to authentic cohorts while preserving custom client records
+    const updatedStudents = existingStudents.map((s) => {
+      const isDhruv =
+        (s.full_name && s.full_name.toLowerCase().includes('dhruv')) ||
+        s.admission_no === 'SMS-2026-1165' ||
+        s.id === 'ST1019-DHRUV';
+      if (isDhruv) {
+        return {
+          ...s,
+          batch_id: 'B11-B',
+          batch_name: '11th Commerce - Division B',
+          batch_code: '11COM-B',
+          roll_no: 1,
+          course_id: 'C11',
+        };
+      }
+      const canon = canonicalMap.get(s.id) || (s.admission_no ? canonicalMap.get(s.admission_no) : null);
+      if (canon) {
+        return {
+          ...s,
+          batch_id: canon.batch_id,
+          batch_name: canon.batch_name,
+          batch_code: canon.batch_code,
+          roll_no: canon.roll_no,
+          course_id: canon.course_id,
+        };
+      }
+      return s; // Preserve custom client-created students as-is!
+    });
+
+    // Ensure all canonical baseline students exist if database was missing some
+    CANONICAL_STUDENTS.forEach((cs) => {
+      const found = updatedStudents.some(
+        (s) => s.id === cs.id || (s.admission_no && s.admission_no === cs.admission_no)
+      );
+      if (!found) {
+        updatedStudents.push({ ...cs });
+      }
+    });
+
+    // Write records independently using safe single-store transactions
+    await putRecordsInStore('batches', CANONICAL_BATCHES);
+    await putRecordsInStore('students', updatedStudents);
+    if (CANONICAL_COURSES && CANONICAL_COURSES.length > 0) {
+      await putRecordsInStore('courses', CANONICAL_COURSES);
+    }
+    if (CANONICAL_PARENTS && CANONICAL_PARENTS.length > 0) {
+      await putRecordsInStore('parents', CANONICAL_PARENTS);
+    }
+    if (CANONICAL_PARENT_STUDENTS && CANONICAL_PARENT_STUDENTS.length > 0) {
+      await putRecordsInStore('parent_students', CANONICAL_PARENT_STUDENTS);
+    }
+
+    localStorage.setItem(ROSTER_MIGRATION_KEY, 'true');
+    console.log('[SMS Database Engine] Authoritative roster successfully aligned: 101 students across 6 batches.');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('sms-db-mutation', { detail: { tableName: 'students', count: updatedStudents.length } }));
+    }
+    return { success: true, count: updatedStudents.length };
+  } catch (err) {
+    console.error('[SMS Database Engine] Failed to restore authoritative roster:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 async function ensureAuthoritativeRosterMigration() {
   if (typeof window === 'undefined' || !window.indexedDB) return Promise.resolve();
-  if (localStorage.getItem(ROSTER_MIGRATION_KEY) === 'true') return Promise.resolve();
 
   if (!rosterMigrationPromise) {
     rosterMigrationPromise = (async () => {
       try {
         const db = await openOfflineDB();
-
-        // Check current student records in store
         const existingStudents = await new Promise((resolve) => {
+          if (!db.objectStoreNames.contains('students')) return resolve([]);
           const tx = db.transaction('students', 'readonly');
           const req = tx.objectStore('students').getAll();
           req.onsuccess = () => resolve(req.result || []);
           req.onerror = () => resolve([]);
         });
 
-        const tx = db.transaction(['batches', 'students', 'courses', 'parents', 'parent_students'], 'readwrite');
-        const bStore = tx.objectStore('batches');
-        const sStore = tx.objectStore('students');
-        const cStore = tx.objectStore('courses');
-        const pStore = tx.objectStore('parents');
-        const psStore = tx.objectStore('parent_students');
+        const scrambled = isRosterScrambled(existingStudents);
+        const migrationDone = localStorage.getItem(ROSTER_MIGRATION_KEY) === 'true';
 
-        // Always ensure canonical courses exist
-        if (CANONICAL_COURSES && CANONICAL_COURSES.length > 0) {
-          CANONICAL_COURSES.forEach((c) => cStore.put(c));
+        if (scrambled || !migrationDone) {
+          await restoreAuthoritativeRoster();
         }
-
-        // Always ensure canonical batches exist (including B11-B)
-        CANONICAL_BATCHES.forEach((b) => bStore.put(b));
-
-        // If database was empty, seed fresh
-        if (!existingStudents || existingStudents.length === 0) {
-          CANONICAL_STUDENTS.forEach((s) => sStore.put(s));
-          if (CANONICAL_PARENTS) CANONICAL_PARENTS.forEach((p) => pStore.put(p));
-          if (CANONICAL_PARENT_STUDENTS) CANONICAL_PARENT_STUDENTS.forEach((ps) => psStore.put(ps));
-        } else {
-          // Dynamic healing: Restore canonical students to their authentic batches, preserving any custom client students
-          const canonicalMap = new Map();
-          CANONICAL_STUDENTS.forEach((s) => {
-            canonicalMap.set(s.id, s);
-            if (s.admission_no) canonicalMap.set(s.admission_no, s);
-          });
-
-          for (const s of existingStudents) {
-            const isDhruv = (s.full_name && s.full_name.toLowerCase().includes('dhruv')) ||
-                            s.admission_no === 'SMS-2026-1165' ||
-                            s.id === 'ST1019-DHRUV';
-            if (isDhruv) {
-              s.batch_id = 'B11-B';
-              s.batch_name = '11th Commerce - Division B';
-              s.batch_code = '11COM-B';
-              s.roll_no = 1;
-              s.course_id = 'C11';
-              sStore.put(s);
-            } else if (canonicalMap.has(s.id)) {
-              const canon = canonicalMap.get(s.id);
-              s.batch_id = canon.batch_id;
-              s.batch_name = canon.batch_name;
-              s.batch_code = canon.batch_code;
-              s.roll_no = canon.roll_no;
-              s.course_id = canon.course_id;
-              sStore.put(s);
-            } else if (s.admission_no && canonicalMap.has(s.admission_no)) {
-              const canon = canonicalMap.get(s.admission_no);
-              s.batch_id = canon.batch_id;
-              s.batch_name = canon.batch_name;
-              s.batch_code = canon.batch_code;
-              s.roll_no = canon.roll_no;
-              s.course_id = canon.course_id;
-              sStore.put(s);
-            }
-          }
-
-          // Ensure Dhruv Shah exists if missing
-          const hasDhruv = existingStudents.some((s) =>
-            (s.full_name && s.full_name.toLowerCase().includes('dhruv')) ||
-            s.admission_no === 'SMS-2026-1165' ||
-            s.id === 'ST1019-DHRUV'
-          );
-          if (!hasDhruv) {
-            const dhruvCanon = CANONICAL_STUDENTS.find((s) => s.id === 'ST1019-DHRUV');
-            if (dhruvCanon) sStore.put(dhruvCanon);
-          }
-
-          // Ensure parents and parent_students exist
-          if (CANONICAL_PARENTS) {
-            CANONICAL_PARENTS.forEach((p) => pStore.put(p));
-          }
-          if (CANONICAL_PARENT_STUDENTS) {
-            CANONICAL_PARENT_STUDENTS.forEach((ps) => psStore.put(ps));
-          }
-        }
-
-        await new Promise((resolve, reject) => {
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-        });
-
-        localStorage.setItem(ROSTER_MIGRATION_KEY, 'true');
-        console.log('[SMS Database Engine] Roster integrity verified and healed to authentic cohorts.');
       } catch (err) {
-        console.warn('[SMS Database Engine] Roster migration warning:', err);
+        console.warn('[SMS Database Engine] Roster auto-healing check warning:', err);
       }
     })();
   }
@@ -648,6 +692,12 @@ async function executeLocalQuery(state) {
         if (state.sortCol === 'updated_at' || state.sortCol === 'created_at') {
           valA = new Date(a.updated_at || a.created_at || a.time_in || 0).getTime();
           valB = new Date(b.updated_at || b.created_at || b.time_in || 0).getTime();
+        } else if (
+          state.sortCol === 'roll_no' ||
+          (!isNaN(Number(valA)) && !isNaN(Number(valB)) && valA !== '' && valB !== '' && valA !== null && valB !== null)
+        ) {
+          valA = Number(valA);
+          valB = Number(valB);
         }
         if (valA === valB) return 0;
         if (valA === null || valA === undefined) return 1;

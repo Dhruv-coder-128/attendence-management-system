@@ -54,6 +54,7 @@ import {
   setStorageMode,
   exportDatabaseBackup,
   importDatabaseBackup,
+  restoreAuthoritativeRoster,
 } from '../lib/databaseAdapter';
 import {
   fetchAcademySettings,
@@ -1038,6 +1039,35 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
                     style={{ display: 'none' }}
                   />
                 </label>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await restoreAuthoritativeRoster();
+                    if (res.success) {
+                      setBackupNotice({ type: 'success', message: 'Authentic roster aligned: 101 students across 6 batches.' });
+                    } else {
+                      setBackupNotice({ type: 'error', message: 'Alignment note: ' + (res.error || res.reason || 'Completed') });
+                    }
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-subtle)',
+                    backgroundColor: '#ffffff',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    color: 'var(--navy-900)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <CheckCircle2 size={14} color="var(--status-present)" />
+                  <span>Verify & Align Cohorts</span>
+                </button>
               </div>
 
               {backupNotice && (

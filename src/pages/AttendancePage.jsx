@@ -201,7 +201,7 @@ export default function AttendancePage({ onRefreshCounts }) {
           )
         `)
         .eq('batch_id', selectedBatchId)
-        .order('admission_no');
+        .order('roll_no', { ascending: true });
 
       let resolvedStudents = (studentsData && studentsData.length > 0) ? studentsData : [];
       if (resolvedStudents.length === 0) {
@@ -211,6 +211,9 @@ export default function AttendancePage({ onRefreshCounts }) {
           resolvedStudents = canonical;
         }
       }
+
+      // Ensure sequential numerical ordering by roll_no (1 to 20)
+      resolvedStudents.sort((a, b) => Number(a.roll_no || 0) - Number(b.roll_no || 0));
 
       // Fetch attendance records for this batch and date from Supabase / IndexedDB
       const { data: attendanceData, error: attendanceErr } = await supabase
