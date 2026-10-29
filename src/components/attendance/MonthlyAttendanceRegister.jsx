@@ -120,7 +120,7 @@ export default function MonthlyAttendanceRegister({
           )
         `)
         .eq('batch_id', selectedBatchId)
-        .order('admission_no');
+        .order('roll_no', { ascending: true });
 
       if (sErr) throw sErr;
 
@@ -158,7 +158,8 @@ export default function MonthlyAttendanceRegister({
 
       const sortedSessionDates = Array.from(uniqueDates).sort();
 
-      setStudents(studentsData || []);
+      const resolved = (studentsData || []).slice().sort((a, b) => Number(a.roll_no || 0) - Number(b.roll_no || 0));
+      setStudents(resolved);
       setMonthlyAttendanceMap(map);
       setSessionDates(sortedSessionDates);
     } catch (err) {

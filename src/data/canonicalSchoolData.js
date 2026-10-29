@@ -6,6 +6,14 @@
 
 export const CANONICAL_COURSES = [
   {
+    "code": "LIC:SMS-NOBLE-30D-89XK7",
+    "name": "Noble School",
+    "level": "License",
+    "description": "{\"status\":\"trial_active\",\"isLocked\":false,\"is_locked\":false,\"schoolId\":\"LIC-SMS-NOBLE-30D-89XK7\",\"schoolName\":\"Noble School\",\"licenseKey\":\"SMS-NOBLE-30D-89XK7\",\"daysRemaining\":25,\"isTimerVisible\":true}",
+    "is_active": true,
+    "id": "54001a50-888b-469b-976f-2da2ea4413dd"
+  },
+  {
     "id": "C11",
     "name": "11th Commerce",
     "code": "11-COM",
@@ -85,6 +93,16 @@ export const CANONICAL_BATCHES = [
     "course_id": "CTY",
     "timing": "02:00 PM - 04:30 PM",
     "classroom": "Room 203",
+    "max_capacity": 40,
+    "is_active": true
+  },
+  {
+    "id": "B11-B",
+    "name": "11th Commerce - Division B",
+    "code": "11COM-B",
+    "course_id": "C11",
+    "timing": "08:00 AM - 10:30 AM",
+    "classroom": "Room 101B",
     "max_capacity": 40,
     "is_active": true
   }
@@ -1890,6 +1908,25 @@ export const CANONICAL_STUDENTS = [
     "status": "Active",
     "created_at": "2026-06-01T08:00:00Z",
     "dob": "2004-04-16"
+  },
+  {
+    "id": "ST1019-DHRUV",
+    "admission_no": "SMS-2026-1165",
+    "roll_no": 1,
+    "full_name": "Dhruv Shah",
+    "batch_id": "B11-B",
+    "batch_name": "11th Commerce - Division B",
+    "batch_code": "11COM-B",
+    "course_id": "C11",
+    "gender": "Male",
+    "contact_number": "9876543210",
+    "phone": "9876543210",
+    "parent_name": "Uday Shah",
+    "email": "admin@institution.edu",
+    "address": "Near City Center, Rajkot, Gujarat",
+    "status": "Active",
+    "created_at": "2026-06-01T08:00:00Z",
+    "dob": "2007-10-23"
   }
 ];
 
@@ -2893,6 +2930,16 @@ export const CANONICAL_PARENTS = [
     "telegram_chat_id": null,
     "is_verified": true,
     "created_at": "2026-06-01T08:00:00Z"
+  },
+  {
+    "id": "P_DHRUV_SHAH",
+    "full_name": "Uday Shah",
+    "phone": "9876543210",
+    "email": "admin@institution.edu",
+    "address": "Near City Center, Rajkot, Gujarat",
+    "telegram_chat_id": null,
+    "is_verified": true,
+    "created_at": "2026-06-01T08:00:00Z"
   }
 ];
 
@@ -3694,6 +3741,14 @@ export const CANONICAL_PARENT_STUDENTS = [
     "parent_id": "P_ST1100",
     "student_id": "ST1100",
     "relationship": "Parent",
+    "is_primary_contact": true,
+    "can_receive_alerts": true
+  },
+  {
+    "id": "PS_DHRUV_SHAH",
+    "parent_id": "P_DHRUV_SHAH",
+    "student_id": "ST1019-DHRUV",
+    "relationship": "Father",
     "is_primary_contact": true,
     "can_receive_alerts": true
   }

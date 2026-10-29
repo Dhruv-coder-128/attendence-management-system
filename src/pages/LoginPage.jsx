@@ -42,7 +42,7 @@ export default function LoginPage({ onLoginSuccess }) {
     const message = encodeURIComponent(
       `Hello Dhruv, I am an Administrator for SMS Student Management System and I need my Master Reset Key to reset my password.\n\nInstitutional Email: ${cleanEmail}\nSoftware Version: SMS v1.0.12`
     );
-    window.open(`https://api.whatsapp.com/send?phone=918866039007&text=${message}`, '_blank');
+    window.open(`https://api.whatsapp.com/send?phone=0000000000&text=${message}`, '_blank');
   };
 
   const handleExecutePasswordReset = async (e) => {

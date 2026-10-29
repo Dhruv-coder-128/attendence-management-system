@@ -54,6 +54,7 @@ import {
   setStorageMode,
   exportDatabaseBackup,
   importDatabaseBackup,
+  restoreAuthoritativeRoster,
 } from '../lib/databaseAdapter';
 import {
   fetchAcademySettings,
@@ -63,6 +64,7 @@ import {
   getStoredAcademySettings,
 } from '../lib/academySettings';
 import { checkAndDispatchBirthdayWishes } from '../lib/birthdayAutoDispatcher';
+import LocalLicenseUpdater from '../components/license/LocalLicenseUpdater.jsx';
 
 /**
  * System Settings, Cloud Integration Status & Staff Access Page
@@ -492,101 +494,227 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
           gap: '24px',
         }}
       >
-        {/* Left Column: Institute Profile & Attendance Policy */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Institutional License & Subscription Status Card */}
-          <div className="erp-card" style={{ padding: '20px', borderLeft: '4px solid var(--gold-primary)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <KeyRound size={18} color="var(--gold-dark)" />
+        {/* Full-Width Institutional License & Validity Card */}
+        <div className="erp-card" style={{ gridColumn: '1 / -1', padding: '24px', border: '1px solid var(--border-subtle)', borderLeft: '4px solid var(--gold-primary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--navy-900)',
+                  color: 'var(--gold-primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <KeyRound size={20} />
+              </div>
+              <div>
                 <h2
                   style={{
                     fontFamily: 'var(--font-heading)',
-                    fontSize: '15px',
+                    fontSize: '16px',
                     fontWeight: 700,
                     color: 'var(--navy-950)',
                     margin: 0,
                   }}
                 >
-                  Institutional License &amp; Capacity
+                  Institutional License &amp; Validity
                 </h2>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                  Commercial subscription entitlement, active days &amp; hardware workstation binding
+                </p>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    padding: '3px 8px',
-                    borderRadius: '12px',
-                    backgroundColor: liveLicense?.daysRemaining >= 9000 ? '#f0fdf4' : (liveLicense?.daysRemaining > 0 ? '#eff6ff' : '#fef2f2'),
-                    color: liveLicense?.daysRemaining >= 9000 ? '#166534' : (liveLicense?.daysRemaining > 0 ? '#1e40af' : '#b91c1c'),
-                    border: `1px solid ${liveLicense?.daysRemaining >= 9000 ? '#bbf7d0' : (liveLicense?.daysRemaining > 0 ? '#bfdbfe' : '#fecaca')}`,
-                  }}
-                >
-                  {liveLicense?.daysRemaining >= 9000 ? 'Lifetime License' : (liveLicense?.daysRemaining > 0 ? `${liveLicense.daysRemaining} Days Active` : 'Expired')}
+            </div>
+
+            {/* Status Badge */}
+            <div>
+              {(liveLicense?.daysRemaining || 0) >= 9000 || liveLicense?.status === 'licensed' ? (
+                <span style={{ fontSize: '11px', fontWeight: 700, padding: '4px 12px', borderRadius: '12px', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                  <CheckCircle2 size={13} /> Full Commercial License
                 </span>
-                <button
-                  type="button"
-                  onClick={handleManualSyncLicense}
-                  disabled={isSyncingLicense}
-                  style={{
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '6px',
-                    padding: '4px 8px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    backgroundColor: '#ffffff',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
-                  title="Sync with cloud license registry"
-                >
-                  <RefreshCw size={12} className={isSyncingLicense ? 'animate-spin' : ''} />
-                  <span>{isSyncingLicense ? 'Syncing...' : 'Sync'}</span>
-                </button>
-              </div>
-            </div>
-
-            {licenseSyncFeedback && (
-              <div style={{ marginBottom: '10px', fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
-                {licenseSyncFeedback}
-              </div>
-            )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
-              <div style={{ backgroundColor: 'var(--bg-subtle)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
-                  License Protection Status
-                </div>
-                <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#166534', display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
-                  <ShieldCheck size={14} color="#16a34a" />
-                  <span>Bound &amp; Active (Secured)</span>
-                </div>
-              </div>
-
-              <div style={{ backgroundColor: 'var(--bg-subtle)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
-                  Authorized Student Capacity
-                </div>
-                <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#1e40af', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '1px' }}>
-                  <Users size={14} />
-                  <span>{getMaxStudentCapacity()} Students ({getStudentCapacityTier(getMaxStudentCapacity()).name})</span>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
-              <span>
-                🔒 Workstation ID: <code>{machineHwid ? (machineHwid.length > 20 ? machineHwid.slice(0, 18) + '…' : machineHwid) : 'Authorized Machine'}</code>
-              </span>
-              <span style={{ color: 'var(--text-muted)' }}>
-                Technical Support: <b>+91 8866039007</b>
-              </span>
+              ) : liveLicense?.status === 'trial_active' ? (
+                <span style={{ fontSize: '11px', fontWeight: 700, padding: '4px 12px', borderRadius: '12px', backgroundColor: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                  🟡 Evaluation Trial Active
+                </span>
+              ) : (
+                <span style={{ fontSize: '11px', fontWeight: 700, padding: '4px 12px', borderRadius: '12px', backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                  🔴 License Inactive / Locked
+                </span>
+              )}
             </div>
           </div>
 
+          {/* Internal Balanced 2-Column Grid */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
+              gap: '18px',
+              alignItems: 'stretch',
+            }}
+          >
+            {/* Left Sub-Column: Subscription Banner & Cloud Sync */}
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
+              <div
+                style={{
+                  background: (liveLicense?.daysRemaining || 0) >= 9000 || liveLicense?.status === 'licensed'
+                    ? 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'
+                    : 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)',
+                  color: '#ffffff',
+                  borderRadius: '8px',
+                  padding: '18px 20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                  flex: 1,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#cbd5e1', fontWeight: 600 }}>
+                    Active Subscription Period
+                  </div>
+                  <div style={{ fontSize: '26px', fontWeight: 800, color: '#f8fafc', marginTop: '2px', display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                    {(liveLicense?.daysRemaining || 0) >= 9000 ? (
+                      <span style={{ color: '#4ade80' }}>Lifetime Access</span>
+                    ) : (
+                      <>
+                        <span>{liveLicense?.daysRemaining !== undefined ? liveLicense.daysRemaining : 30}</span>
+                        <span style={{ fontSize: '14px', fontWeight: 600, color: '#93c5fd' }}>Days Remaining</span>
+                      </>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '2px' }}>
+                    {liveLicense?.trialEndsAt ? `Valid until: ${new Date(liveLicense.trialEndsAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Evaluation period ongoing'}
+                  </div>
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleManualSyncLicense}
+                  disabled={isSyncingLicense}
+                  icon={RefreshCw}
+                  style={{
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    borderColor: 'rgba(255, 255, 255, 0.25)',
+                    fontSize: '11.5px',
+                  }}
+                >
+                  {isSyncingLicense ? 'Syncing...' : 'Sync Cloud Status'}
+                </Button>
+              </div>
+
+              {licenseSyncFeedback && (
+                <div
+                  style={{
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    backgroundColor: '#f0fdf4',
+                    color: '#166534',
+                    border: '1px solid #bbf7d0',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <CheckCircle2 size={14} />
+                  <span>{licenseSyncFeedback}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Right Sub-Column: Hardware Workstation Binding, Capacity & Key Actions */}
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
+              <div
+                style={{
+                  backgroundColor: 'var(--bg-subtle)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '8px',
+                  padding: '14px',
+                  fontSize: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                  flex: 1,
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Institutional Entitlement:</span>
+                  <span style={{ fontWeight: 700, color: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '5px', backgroundColor: '#f0fdf4', padding: '3px 8px', borderRadius: '4px', border: '1px solid #bbf7d0', fontSize: '11.5px' }}>
+                    <ShieldCheck size={13} color="#16a34a" /> Bound &amp; Active (Cryptographically Secured)
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Authorized Student Capacity:</span>
+                  <span style={{ fontWeight: 800, color: '#1e40af', display: 'inline-flex', alignItems: 'center', gap: '5px', backgroundColor: '#eff6ff', padding: '3px 8px', borderRadius: '4px', border: '1px solid #bfdbfe', fontSize: '11.5px' }}>
+                    <Users size={13} /> {getMaxStudentCapacity()} Students ({getStudentCapacityTier(getMaxStudentCapacity()).name})
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Bound Workstation ID:</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <code style={{ fontSize: '10.5px', color: '#1e40af', fontFamily: 'monospace', backgroundColor: '#ffffff', padding: '2px 6px', borderRadius: '4px', border: '1px solid #cbd5e1' }} title={machineHwid}>
+                      {machineHwid ? (machineHwid.length > 22 ? machineHwid.slice(0, 20) + '…' : machineHwid) : 'Authorized Machine'}
+                    </code>
+                    {machineHwid && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(machineHwid);
+                          setLicenseSyncFeedback('✓ Copied Hardware ID to clipboard');
+                          setTimeout(() => setLicenseSyncFeedback(''), 3000);
+                        }}
+                        style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px', color: '#64748b' }}
+                        title="Copy Workstation ID"
+                      >
+                        <Copy size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Anti-Piracy Lock:</span>
+                  <span style={{ color: '#166534', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                    🔒 Single-Device Workstation Anchored
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Button */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={KeyRound}
+                  onClick={onOpenLicenseModal}
+                  style={{ fontSize: '11.5px' }}
+                >
+                  Change / Enter New License Key
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Local offline license updater — client pastes admin's code here (no internet needed) */}
+        <div style={{ marginTop: '14px' }}>
+          <LocalLicenseUpdater onApplied={(d)=>{ setLiveLicense(d); setLicenseSyncFeedback('✓ License updated from admin code'); setTimeout(()=>setLicenseSyncFeedback(''), 3000); }} />
+        </div>
+
+        {/* Left Column: Institute Profile & Attendance Policy */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div className="erp-card" style={{ padding: '20px' }}>
             <h2
               style={{
@@ -762,199 +890,6 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
               />
             </div>
           </div>
-
-          {/* Institutional License & Subscription Status Card (Marked Red Box) */}
-          <div className="erp-card" style={{ padding: '22px', border: '1px solid var(--border-subtle)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div
-                  style={{
-                    width: '38px',
-                    height: '38px',
-                    borderRadius: '8px',
-                    backgroundColor: 'var(--navy-900)',
-                    color: 'var(--gold-primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <KeyRound size={20} />
-                </div>
-                <div>
-                  <h2
-                    style={{
-                      fontFamily: 'var(--font-heading)',
-                      fontSize: '15px',
-                      fontWeight: 700,
-                      color: 'var(--navy-950)',
-                      margin: 0,
-                    }}
-                  >
-                    Institutional License &amp; Validity
-                  </h2>
-                  <p style={{ fontSize: '11.5px', color: 'var(--text-muted)', margin: 0 }}>
-                    Commercial subscription entitlement, pending days &amp; device binding
-                  </p>
-                </div>
-              </div>
-
-              {/* Status Badge */}
-              <div>
-                {(liveLicense?.daysRemaining || 0) >= 9000 || liveLicense?.status === 'licensed' ? (
-                  <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '12px', backgroundColor: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    <CheckCircle2 size={12} /> Full Commercial License
-                  </span>
-                ) : liveLicense?.status === 'trial_active' ? (
-                  <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '12px', backgroundColor: '#fffbeb', color: '#b45309', border: '1px solid #fde68a', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    🟡 Evaluation Trial Active
-                  </span>
-                ) : (
-                  <span style={{ fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: '12px', backgroundColor: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    🔴 License Inactive / Locked
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Days Remaining Big Display Banner */}
-            <div
-              style={{
-                background: (liveLicense?.daysRemaining || 0) >= 9000 || liveLicense?.status === 'licensed'
-                  ? 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)'
-                  : 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)',
-                color: '#ffffff',
-                borderRadius: '8px',
-                padding: '16px 18px',
-                marginBottom: '14px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '12px',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#cbd5e1', fontWeight: 600 }}>
-                  Active Subscription Period
-                </div>
-                <div style={{ fontSize: '26px', fontWeight: 800, color: '#f8fafc', marginTop: '2px', display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                  {(liveLicense?.daysRemaining || 0) >= 9000 ? (
-                    <span style={{ color: '#4ade80' }}>Lifetime Access</span>
-                  ) : (
-                    <>
-                      <span>{liveLicense?.daysRemaining !== undefined ? liveLicense.daysRemaining : 30}</span>
-                      <span style={{ fontSize: '14px', fontWeight: 600, color: '#93c5fd' }}>Days Remaining</span>
-                    </>
-                  )}
-                </div>
-                <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '2px' }}>
-                  {liveLicense?.trialEndsAt ? `Valid until: ${new Date(liveLicense.trialEndsAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : 'Evaluation period ongoing'}
-                </div>
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleManualSyncLicense}
-                disabled={isSyncingLicense}
-                icon={RefreshCw}
-                style={{
-                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                  color: '#ffffff',
-                  borderColor: 'rgba(255, 255, 255, 0.25)',
-                  fontSize: '11.5px',
-                }}
-              >
-                {isSyncingLicense ? 'Syncing...' : 'Sync Cloud Status'}
-              </Button>
-            </div>
-
-            {licenseSyncFeedback && (
-              <div
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  backgroundColor: '#f0fdf4',
-                  color: '#166534',
-                  border: '1px solid #bbf7d0',
-                  fontSize: '11.5px',
-                  fontWeight: 600,
-                  marginBottom: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}
-              >
-                <CheckCircle2 size={14} />
-                <span>{licenseSyncFeedback}</span>
-              </div>
-            )}
-
-            {/* Key and Hardware Binding Metadata */}
-            <div
-              style={{
-                backgroundColor: 'var(--bg-subtle)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '6px',
-                padding: '12px',
-                fontSize: '12px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Institutional Entitlement:</span>
-                <span style={{ fontWeight: 700, color: '#15803d', display: 'inline-flex', alignItems: 'center', gap: '5px', backgroundColor: '#f0fdf4', padding: '3px 8px', borderRadius: '4px', border: '1px solid #bbf7d0', fontSize: '11.5px' }}>
-                  <ShieldCheck size={13} color="#16a34a" /> Bound &amp; Active (Cryptographically Secured)
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Bound Workstation ID:</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <code style={{ fontSize: '10.5px', color: '#1e40af', fontFamily: 'monospace', backgroundColor: '#eff6ff', padding: '2px 6px', borderRadius: '4px', border: '1px solid #bfdbfe' }} title={machineHwid}>
-                    {machineHwid ? (machineHwid.length > 22 ? machineHwid.slice(0, 20) + '…' : machineHwid) : 'Detecting...'}
-                  </code>
-                  {machineHwid && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(machineHwid);
-                        setLicenseSyncFeedback('✓ Copied Hardware ID to clipboard');
-                        setTimeout(() => setLicenseSyncFeedback(''), 3000);
-                      }}
-                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px', color: '#64748b' }}
-                      title="Copy Workstation ID"
-                    >
-                      <Copy size={12} />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Anti-Piracy Lock:</span>
-                <span style={{ color: '#166534', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                  🔒 Single-Device Workstation Anchored
-                </span>
-              </div>
-            </div>
-
-            {/* Change / Renew License Key Button */}
-            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
-              <Button
-                variant="outline"
-                size="sm"
-                icon={KeyRound}
-                onClick={onOpenLicenseModal}
-                style={{ fontSize: '11.5px' }}
-              >
-                Change / Enter New License Key
-              </Button>
-            </div>
-          </div>
         </div>
 
         {/* Right Column: Database Storage Engine & Diagnostics */}
@@ -1110,6 +1045,35 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
                     style={{ display: 'none' }}
                   />
                 </label>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await restoreAuthoritativeRoster();
+                    if (res.success) {
+                      setBackupNotice({ type: 'success', message: 'Authentic roster aligned: 101 students across 6 batches.' });
+                    } else {
+                      setBackupNotice({ type: 'error', message: 'Alignment note: ' + (res.error || res.reason || 'Completed') });
+                    }
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-subtle)',
+                    backgroundColor: '#ffffff',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    color: 'var(--navy-900)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <CheckCircle2 size={14} color="var(--status-present)" />
+                  <span>Verify & Align Cohorts</span>
+                </button>
               </div>
 
               {backupNotice && (

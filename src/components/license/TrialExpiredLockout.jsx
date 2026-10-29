@@ -113,7 +113,7 @@ export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
               }}
             >
               {isClonedOrMismatch
-                ? 'SECURITY LOCKOUT: This software installation was cloned or copied from another computer. The license is strictly bound to the original authorized workstation. Contact Dhruv Shah (+91 8866039007) for license transfer.'
+                ? 'SECURITY LOCKOUT: This software installation was cloned or copied from another computer. The license is strictly bound to the original authorized workstation. contact support for license transfer.'
                 : (isSuspendedOrRevoked
                   ? 'This school installation has been locked by the developer. Contact developer to resolve.'
                   : 'Your trial period has ended. Contact the developer to activate SMS.')}
@@ -186,7 +186,7 @@ export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
                 <button
                   type="button"
                   onClick={() => {
-                    copyToClipboard('8866039007');
+                    copyToClipboard((supportContact?.phone||'').replace(/[^0-9]/g,''));
                     openExternalLink(contactLinks.whatsappLink);
                   }}
                   className="btn btn-outline"
@@ -215,7 +215,7 @@ export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
                 <button
                   type="button"
                   onClick={() => {
-                    copyToClipboard('8866039007');
+                    copyToClipboard((supportContact?.phone||'').replace(/[^0-9]/g,''));
                     openExternalLink(contactLinks.phoneLink);
                   }}
                   className="btn btn-outline"

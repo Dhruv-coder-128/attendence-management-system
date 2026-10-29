@@ -9,7 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  { const allowed=['http://localhost:5173','http://localhost:3000','http://localhost:1420','tauri://localhost','capacitor://localhost','https://localhost']; const origin=req.headers.origin||req.headers.Origin||''; const ok=!origin||origin.includes('localhost')||origin.includes('127.0.0.1')||origin.startsWith('tauri://')||origin.startsWith('capacitor://')||allowed.includes(origin)|| (process.env.ALLOWED_ORIGINS||'').split(',').map(s=>s.trim()).includes(origin); if(ok||!origin) { if(origin) res.setHeader('Access-Control-Allow-Origin', origin); else res.setHeader('Access-Control-Allow-Origin','*'); } res.setHeader('Vary','Origin'); }
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 

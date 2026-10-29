@@ -16,7 +16,20 @@ const PARENT_SETTINGS_KEY = 'sms_parent_portal_settings';
 
 /**
  * Default administrative settings for the Parent Portal
+ * Helpline is dynamic via academy_settings.support_contact or env.
  */
+import runtimeConfig from '../config/runtimeConfig.js';
+import { getStoredAcademySettings } from './academySettings.js';
+
+function resolveHelpline() {
+  try {
+    const academy = getStoredAcademySettings();
+    if (academy?.support_contact?.phone) return academy.support_contact.phone;
+    if (academy?.phone) return academy.phone;
+  } catch {}
+  return runtimeConfig.supportContact.phone || '+91 98765 43210';
+}
+
 export const DEFAULT_PORTAL_SETTINGS = {
   allowMarkSheets: true,
   allowFeeReceipts: true,
@@ -24,7 +37,7 @@ export const DEFAULT_PORTAL_SETTINGS = {
   allowClassDiary: true,
   allowOnlineUPI: true,
   welcomeNotice: 'Welcome to the official Parent & Student Portal. Track live attendance, fee installments, and test results.',
-  helplinePhone: '+91 8866039007',
+  get helplinePhone() { return resolveHelpline(); },
   helplineEmail: 'support@smsacademy.edu',
 };
 
@@ -255,8 +268,9 @@ export async function authenticateParent(phoneInput, identifierInput) {
  */
 function authenticateParentLocally(normPhone, normIdent) {
   try {
-    // A. High-Priority System Seed: Dhruv Shah (ST1019 / Roll 19) & Uday shah (8866039007)
-    if (normPhone === '8866039007') {
+    // No hardcoded bypass numbers - all auth must go through DB or local students
+    // (Removed 8866039007 seed bypass - was critical security issue)
+    if (false && normPhone === '8866039007') {
       if (normIdent && normIdent !== '19' && normIdent !== 'st1019' && !normIdent.includes('dhruv')) {
         return {
           ok: false,

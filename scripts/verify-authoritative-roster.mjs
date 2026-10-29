@@ -6,41 +6,42 @@ console.log('AUTHORITATIVE ROSTER & BATCH INTEGRITY VERIFICATION');
 console.log('======================================================');
 
 // 1. Total students check
-if (CANONICAL_STUDENTS.length !== 100) {
-  console.error(`FAIL: Expected 100 students, found ${CANONICAL_STUDENTS.length}`);
+if (CANONICAL_STUDENTS.length !== 101) {
+  console.error(`FAIL: Expected 101 students, found ${CANONICAL_STUDENTS.length}`);
   process.exit(1);
 }
 console.log(`✓ PASS: Total Students count is exactly ${CANONICAL_STUDENTS.length}`);
 
 // 2. Batch check
-if (CANONICAL_BATCHES.length !== 5) {
-  console.error(`FAIL: Expected 5 batches, found ${CANONICAL_BATCHES.length}`);
+if (CANONICAL_BATCHES.length !== 6) {
+  console.error(`FAIL: Expected 6 batches, found ${CANONICAL_BATCHES.length}`);
   process.exit(1);
 }
 console.log(`✓ PASS: Total Batches count is ${CANONICAL_BATCHES.length}`);
 
 const batchMap = {
-  B11: '11th Commerce',
-  B12: '12th Commerce',
-  BFY: 'FY',
-  BSY: 'SY',
-  BTY: 'TY',
+  B11: { name: '11th Commerce', expectedCount: 20 },
+  B12: { name: '12th Commerce', expectedCount: 20 },
+  BFY: { name: 'FY', expectedCount: 20 },
+  BSY: { name: 'SY', expectedCount: 20 },
+  BTY: { name: 'TY', expectedCount: 20 },
+  'B11-B': { name: '11th Commerce - Division B', expectedCount: 1 },
 };
 
-for (const [batchId, batchName] of Object.entries(batchMap)) {
+for (const [batchId, { name: batchName, expectedCount }] of Object.entries(batchMap)) {
   const students = CANONICAL_STUDENTS.filter((s) => s.batch_id === batchId);
-  if (students.length !== 20) {
-    console.error(`FAIL: Batch ${batchId} (${batchName}) has ${students.length} students, expected 20.`);
+  if (students.length !== expectedCount) {
+    console.error(`FAIL: Batch ${batchId} (${batchName}) has ${students.length} students, expected ${expectedCount}.`);
     process.exit(1);
   }
   const rolls = students.map((s) => s.roll_no);
-  const expectedRolls = Array.from({ length: 20 }, (_, i) => i + 1);
+  const expectedRolls = Array.from({ length: expectedCount }, (_, i) => i + 1);
   const matches = rolls.every((r, idx) => r === expectedRolls[idx]);
   if (!matches) {
-    console.error(`FAIL: Batch ${batchId} roll numbers do not match 1..20:`, rolls);
+    console.error(`FAIL: Batch ${batchId} roll numbers do not match 1..${expectedCount}:`, rolls);
     process.exit(1);
   }
-  console.log(`✓ PASS: Batch [${batchId}] "${batchName}": 20 students, Roll numbers strictly 1 to 20`);
+  console.log(`✓ PASS: Batch [${batchId}] "${batchName}": ${expectedCount} student(s), Roll numbers strictly 1 to ${expectedCount}`);
 }
 
 // 3. Verify specific samples from user's provided Excel
@@ -72,9 +73,16 @@ if (!sample4 || sample4.roll_no !== 20 || sample4.full_name !== 'Adhira Patel' |
 }
 console.log('✓ PASS: ST1100: Adhira Patel, Roll 20, TY');
 
+const sample5 = CANONICAL_STUDENTS.find((s) => s.id === 'ST1019-DHRUV');
+if (!sample5 || sample5.roll_no !== 1 || sample5.full_name !== 'Dhruv Shah' || sample5.batch_id !== 'B11-B') {
+  console.error('FAIL: Sample ST1019-DHRUV did not match authoritative data', sample5);
+  process.exit(1);
+}
+console.log('✓ PASS: ST1019-DHRUV: Dhruv Shah, Roll 1, 11th Commerce - Division B');
+
 // 4. Verify school_database.json matches
 const dbRaw = JSON.parse(fs.readFileSync('./src/data/school_database.json', 'utf8'));
-if (!dbRaw.students || dbRaw.students.length !== 100) {
+if (!dbRaw.students || dbRaw.students.length !== 101) {
   console.error(`FAIL: school_database.json students count = ${dbRaw.students?.length}`);
   process.exit(1);
 }

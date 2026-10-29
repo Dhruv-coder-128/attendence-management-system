@@ -533,7 +533,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
               <button
                 type="button"
                 onClick={async () => {
-                  await copyToClipboard('8866039007');
+                  await copyToClipboard(supportContact.phone?.replace(/[^0-9]/g,'')||'');
                   setCopiedInfo('WhatsApp Number');
                   setTimeout(() => setCopiedInfo(''), 2500);
                   openExternalLink(contactLinks.whatsappLink);
@@ -542,7 +542,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                 style={{ padding: '5px 10px', fontSize: '11.5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px', borderColor: '#22c55e', color: '#15803d', backgroundColor: '#f0fdf4' }}
               >
                 <MessageSquare size={13} />
-                <span>WhatsApp (+91 8866039007)</span>
+                <span>WhatsApp (+91 support)</span>
               </button>
             </div>
           </div>

@@ -57,7 +57,7 @@ if (fs.existsSync(builtApkPath)) {
 // 5. Build Tauri Desktop EXE
 console.log('\n💻 Step 4: Compiling Desktop Executable (Cargo Release)...');
 try {
-  execSync('powershell -Command "Stop-Process -Name \'sms_app\', \'SMS-App\' -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' });
+  execSync('powershell -Command "Get-Process | Where-Object { $_.ProcessName -match \'sms_app|SMS\' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 1500"', { stdio: 'ignore' });
 } catch {}
 
 // Ensure drive S: is mounted for space-free windres compilation
@@ -72,7 +72,7 @@ const webview2DllPath = 'S:\\src-tauri\\target\\release\\WebView2Loader.dll';
 
 if (fs.existsSync(builtExePath)) {
   try {
-    execSync('powershell -Command "Stop-Process -Name \'sms_app\', \'SMS-App\' -Force -ErrorAction SilentlyContinue"', { stdio: 'ignore' });
+    execSync('powershell -Command "Get-Process | Where-Object { $_.ProcessName -match \'sms_app|SMS\' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 1500"', { stdio: 'ignore' });
   } catch {}
 
   const exeTargets = [
