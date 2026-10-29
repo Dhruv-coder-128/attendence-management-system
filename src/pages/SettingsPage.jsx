@@ -64,6 +64,7 @@ import {
   getStoredAcademySettings,
 } from '../lib/academySettings';
 import { checkAndDispatchBirthdayWishes } from '../lib/birthdayAutoDispatcher';
+import LocalLicenseUpdater from '../components/license/LocalLicenseUpdater.jsx';
 
 /**
  * System Settings, Cloud Integration Status & Staff Access Page
@@ -692,7 +693,7 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
               </div>
 
               {/* Action Button */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <Button
                   variant="outline"
                   size="sm"
@@ -705,6 +706,11 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Local offline license updater — client pastes admin's code here (no internet needed) */}
+        <div style={{ marginTop: '14px' }}>
+          <LocalLicenseUpdater onApplied={(d)=>{ setLiveLicense(d); setLicenseSyncFeedback('✓ License updated from admin code'); setTimeout(()=>setLicenseSyncFeedback(''), 3000); }} />
         </div>
 
         {/* Left Column: Institute Profile & Attendance Policy */}

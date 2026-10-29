@@ -488,8 +488,18 @@ export default function App() {
     );
   }
 
-  // 3. Standalone SaaS Master Admin Portal (Pure Super Admin Console — Zero School ERP Sidebar or Clutter)
-  if (activePage === 'master-portal' && !isTauriDesktop()) {
+  // 3. Standalone SaaS Master Admin Portal — available via ?admin=1 or Ctrl+Shift+D, works 100% offline without Supabase
+  useEffect(()=>{
+    // Allow direct link: ?admin=1 or ?admin=true or #admin
+    try{
+      const q = new URLSearchParams(window.location.search);
+      const hash = window.location.hash||'';
+      if(q.get('admin')==='1' || q.get('admin')==='true' || hash.includes('admin') || q.get('page')==='master-portal'){
+        setActivePage('master-portal');
+      }
+    }catch{}
+  },[]);
+  if (activePage === 'master-portal') {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
         <Suspense
