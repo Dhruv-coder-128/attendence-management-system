@@ -20,21 +20,26 @@ const CACHED_STUDENTS_PREFIX = 'sms_cached_hub_students_';
 
 export const DEFAULT_SCHOOL_PC_URL = '';
 
-// Production Supabase credentials (same as desktop EXE — secondary cloud fallback)
-const SUPABASE_URL = 'https://uugvudqbwoyywzbjrfol.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_pd2n3DRFhFgn79-SW6FEPw_vqRz2Jut';
+import runtimeConfig from '../config/runtimeConfig.js';
+import { getActiveDatabaseConfig } from './supabase.js';
 
 let _mobileDb = null;
 function getMobileDb() {
   if (_mobileDb) return _mobileDb;
   try {
-    _mobileDb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    const cfg = getActiveDatabaseConfig();
+    if (!cfg.configured) return null;
+    _mobileDb = createClient(cfg.url, cfg.key, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     return _mobileDb;
   } catch {
     return null;
   }
+}
+// Reset cached mobile DB when license changes
+if (typeof window !== 'undefined') {
+  window.addEventListener('sms_license_updated', () => { _mobileDb = null; });
 }
 
 /**

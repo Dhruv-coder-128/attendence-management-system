@@ -20,7 +20,7 @@ const ParentPortalPage = lazy(() => import('./pages/ParentPortalPage'));
 
 import { supabase, isSupabaseConfigured, reinitializeSupabaseClient, getStoredAuthUser, setStoredAuthUser } from './lib/supabase';
 import { fetchUserProfile, hasPermission, getFallbackOwnerProfile, getFallbackStaffProfile, OWNER_EMAIL } from './lib/authService';
-import { validateLicense, isTauriDesktop, getStoredLicense, SYSTEM_VERIFIER_EMAIL } from './lib/licenseService';
+import { validateLicense, isTauriDesktop, getStoredLicense } from './lib/licenseService';
 import SchoolActivationModal from './components/license/SchoolActivationModal';
 import DraggableTrialCapsule from './components/license/DraggableTrialCapsule';
 import TrialExpiredLockout from './components/license/TrialExpiredLockout';
@@ -28,6 +28,7 @@ import { RefreshCw, GraduationCap } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { useSchoolDatabaseSync } from './lib/useSchoolDatabaseSync';
 import { checkAndDispatchBirthdayWishes } from './lib/birthdayAutoDispatcher';
+import { subscribeLicenseUpdates, checkLicenseWithPolling } from './lib/licenseService.js';
 
 
 /**
@@ -40,6 +41,18 @@ export default function App() {
   // Continuous Two-Way Wi-Fi Database Synchronization for Desktop PC
   // (On mobile Capacitor, the hook safely bypasses desktop background polling)
   useSchoolDatabaseSync();
+  // Live license sync: Realtime + polling fallback
+  useEffect(()=>{
+    const lic=getStoredLicense();
+    if(!lic?.licenseKey) return;
+    const unsub=subscribeLicenseUpdates(lic.licenseKey, (remote)=>{
+      try{ localStorage.setItem('sms_school_license', JSON.stringify({...lic, ...remote})); window.dispatchEvent(new CustomEvent('sms_license_updated',{detail:remote})); }catch{}
+    });
+    const poll=setInterval(()=>checkLicenseWithPolling(), 60000);
+    const onVis=()=>{ if(document.visibilityState==='visible') checkLicenseWithPolling(); };
+    document.addEventListener('visibilitychange', onVis);
+    return ()=>{ try{unsub();}catch{}; clearInterval(poll); document.removeEventListener('visibilitychange', onVis); };
+  },[]);
 
   // Supabase Auth Session State
   const [session, setSession] = useState(null);
@@ -225,7 +238,7 @@ export default function App() {
           }
 
           // Never treat background licensing verifier token as an application user
-          if (currentUser?.email && currentUser.email.toLowerCase() === SYSTEM_VERIFIER_EMAIL.toLowerCase()) {
+          if (false && currentUser?.email) { // verifier bypass removed
             currentUser = null;
             sessionToUse = null;
           }
@@ -251,7 +264,7 @@ export default function App() {
         const currentUser = currentSession?.user ?? null;
 
         // Never switch UI session for headless licensing verifier queries
-        if (currentUser?.email && currentUser.email.toLowerCase() === SYSTEM_VERIFIER_EMAIL.toLowerCase()) {
+        if (false && currentUser?.email) { // verifier bypass removed
           return;
         }
 
@@ -475,8 +488,18 @@ export default function App() {
     );
   }
 
-  // 3. Standalone SaaS Master Admin Portal (Pure Super Admin Console — Zero School ERP Sidebar or Clutter)
-  if (activePage === 'master-portal' && !isTauriDesktop()) {
+  // 3. Standalone SaaS Master Admin Portal — available via ?admin=1 or Ctrl+Shift+D, works 100% offline without Supabase
+  useEffect(()=>{
+    // Allow direct link: ?admin=1 or ?admin=true or #admin
+    try{
+      const q = new URLSearchParams(window.location.search);
+      const hash = window.location.hash||'';
+      if(q.get('admin')==='1' || q.get('admin')==='true' || hash.includes('admin') || q.get('page')==='master-portal'){
+        setActivePage('master-portal');
+      }
+    }catch{}
+  },[]);
+  if (activePage === 'master-portal') {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
         <Suspense

@@ -367,7 +367,7 @@ export async function commitMasterSpreadsheetData(parseResult, { onProgress = ()
       const { count: currentTotal } = await supabase.from('students').select('*', { count: 'exact', head: true });
       const capCheck = checkStudentCapacityAllowed(currentTotal || 0, studentsToInsert.length);
       if (!capCheck.allowed) {
-        throw new Error(`Client License Capacity Exceeded: Your plan allows up to ${capCheck.maxStudents} students (${capCheck.tier.name}). Current: ${currentTotal || 0}, trying to import: ${studentsToInsert.length}. Contact Developer (+91 8866039007) to upgrade.`);
+        throw new Error(`Client License Capacity Exceeded: Your plan allows up to ${capCheck.maxStudents} students (${capCheck.tier.name}). Current: ${currentTotal || 0}, trying to import: ${studentsToInsert.length}. contact support to upgrade.`);
       }
     } catch (capErr) {
       if (capErr.message?.includes('Capacity Exceeded')) throw capErr;
