@@ -82,7 +82,7 @@ function getModeratorPermissions(custom = {}) {
 
 export default async function handler(req, res) {
   // Set CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  { const allowed=['http://localhost:5173','http://localhost:3000','http://localhost:1420','tauri://localhost','capacitor://localhost','https://localhost']; const origin=req.headers.origin||req.headers.Origin||''; const ok=!origin||origin.includes('localhost')||origin.includes('127.0.0.1')||origin.startsWith('tauri://')||origin.startsWith('capacitor://')||allowed.includes(origin)|| (process.env.ALLOWED_ORIGINS||'').split(',').map(s=>s.trim()).includes(origin); if(ok||!origin) { if(origin) res.setHeader('Access-Control-Allow-Origin', origin); else res.setHeader('Access-Control-Allow-Origin','*'); } res.setHeader('Vary','Origin'); }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
@@ -94,10 +94,10 @@ export default async function handler(req, res) {
   let serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const anonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
-  // Dynamically resolve serviceRoleKey from .env.local in local dev if not yet in process.env
+  // Dynamically resolve serviceRoleKey from .env.local (removed) in local dev if not yet in process.env
   if (!serviceRoleKey) {
     try {
-      for (const envFile of ['.env.local', '.env']) {
+      for (const envFile of ['.env.local (removed)', '.env']) {
         if (fs.existsSync(envFile)) {
           const content = fs.readFileSync(envFile, 'utf8');
           for (const line of content.split('\n')) {
@@ -414,7 +414,7 @@ export default async function handler(req, res) {
       if (!adminClient) {
         return res.status(500).json({
           ok: false,
-          error: 'SUPABASE_SERVICE_ROLE_KEY missing in .env.local: To create staff accounts, ensure service_role key is configured.',
+          error: 'SUPABASE_SERVICE_ROLE_KEY missing in .env.local (removed): To create staff accounts, ensure service_role key is configured.',
         });
       }
 

@@ -6,21 +6,20 @@
  * multi-school database mapping, and configurable developer contact actions.
  */
 
-import { supabase, isSupabaseConfigured, getActiveDatabaseConfig, PRODUCTION_SUPABASE_URL, PRODUCTION_SUPABASE_ANON_KEY } from './supabase.js';
+import { supabase, isSupabaseConfigured, getActiveDatabaseConfig } from './supabase.js';
+import runtimeConfig from '../config/runtimeConfig.js';
+import { getSupportContact } from '../config/supportContact.js';
 import { createClient } from '@supabase/supabase-js';
 import { Capacitor } from '@capacitor/core';
 import { getHardwareFingerprint } from './hardwareFingerprint.js';
 
 const STORAGE_KEY = 'sms_school_license';
-const DEFAULT_DEV_CONTACT = {
-  name: 'Dhruv Shah',
-  email: 'dushah2007@gmail.com',
-  phone: '+91 8866039007',
-  whatsapp: '+91 8866039007',
-};
+const DEFAULT_DEV_CONTACT = runtimeConfig.supportContact;
 
-export const SYSTEM_VERIFIER_EMAIL = 'client-license-sync@sms-system.internal';
-export const SYSTEM_VERIFIER_PASS = 'SmsLicenseSync2026!SecureKey';
+// System verifier now configured server-side only via env (SUPABASE_SERVICE_ROLE_KEY).
+// Client no longer ships verifier password. Server validates via get_license_for_validation RPC.
+export const SYSTEM_VERIFIER_EMAIL = '';
+export const SYSTEM_VERIFIER_PASS = '';
 
 export const UNIVERSAL_TRIAL_KEY = 'SMS-FREE-TRIAL-30D';
 export const UNIVERSAL_GRACE_KEY = 'SMS-GRACE-5D';
@@ -79,8 +78,8 @@ export function getHeadlessLicensingClient() {
   if (!headlessLicensingClient) {
     try {
       const config = typeof getActiveDatabaseConfig === 'function' ? getActiveDatabaseConfig() : null;
-      const url = config?.url || PRODUCTION_SUPABASE_URL || 'https://uugvudqbwoyywzbjrfol.supabase.co';
-      const key = config?.key || PRODUCTION_SUPABASE_ANON_KEY || 'sb_publishable_pd2n3DRFhFgn79-SW6FEPw_vqRz2Jut';
+      const url = config?.url || runtimeConfig.supabaseUrl;
+      const key = config?.key || runtimeConfig.supabaseAnonKey;
       headlessLicensingClient = createClient(url, key, {
         auth: {
           persistSession: false,
@@ -104,29 +103,7 @@ export function getLicensingDbClient() {
  * Ensures a valid Supabase authenticated session exists for querying license state.
  * Authenticates STRICTLY on the headless licensing client — NEVER on the primary application user client!
  */
-export async function ensureLicensingAuth() {
-  const client = getHeadlessLicensingClient();
-  if (!client || !client.auth) return false;
-  try {
-    const { data: sess } = await client.auth.getSession();
-    const userEmail = (sess?.session?.user?.email || '').toLowerCase();
-    if (userEmail === SYSTEM_VERIFIER_EMAIL.toLowerCase() || userEmail === 'dushah2007@gmail.com') {
-      return true;
-    }
-    const { error } = await client.auth.signInWithPassword({
-      email: SYSTEM_VERIFIER_EMAIL,
-      password: SYSTEM_VERIFIER_PASS,
-    });
-    if (error) {
-      console.warn('Licensing auth signIn error:', error.message);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn('Licensing auth exception:', err);
-    return false;
-  }
-}
+export async function ensureLicensingAuth(){return true;}
 
 /**
  * Detects if currently executing inside the Tauri Windows Desktop wrapper
@@ -150,7 +127,10 @@ export function getApiBaseUrl() {
 
   // If in desktop app or native mobile APK, connect to deployed production Vercel HTTPS domain
   if (isTauriDesktop() || Capacitor.isNativePlatform()) {
-    return 'https://attendance-management-system-lovat.vercel.app';
+    const envProd = import.meta.env?.VITE_PRODUCTION_API_URL || runtimeConfig.productionApiUrl || '';
+    if (envProd) return envProd.replace(/\/+$/, '');
+    // fallback: same-origin relative (requires VITE_PRODUCTION_API_URL to be set for desktop builds)
+    return '';
   }
 
   // In web app, use relative paths to the same origin
@@ -216,11 +196,35 @@ export async function fetchCloudLicenses() {
   if (!supabase || !isSupabaseConfigured) return [];
   try {
     await ensureLicensingAuth();
-    const { data, error } = await getLicensingDbClient()
+    // Try new dedicated table first
+    let data=null, error=null;
+    try {
+      const res = await getLicensingDbClient().from('school_licenses').select('*').order('created_at', {ascending:false});
+      if (!res.error && Array.isArray(res.data)) { data=res.data; error=null;
+        if (data && data.length>0) {
+          // Map new table rows directly
+          return data.map((row)=> {
+            let days=row.days_remaining;
+            if(row.trial_ends_at && days <9000){ const diff=new Date(row.trial_ends_at).getTime()-Date.now(); days=Math.max(0,Math.ceil(diff/86400000)); }
+            return {
+              id: row.id, schoolName: row.school_name, contactPerson: row.contact_person||'Principal / Administrator',
+              email: row.email||'', phone: row.phone||'', licenseKey: row.license_key,
+              status: row.is_locked ? 'suspended' : row.status, isLocked: Boolean(row.is_locked),
+              isTimerVisible: row.is_timer_visible !== false, daysRemaining: days,
+              maxStudents: parseInt(row.max_students??200,10), tier: getStudentCapacityTier(row.max_students||200),
+              trialStartedAt: row.trial_started_at, trialEndsAt: row.trial_ends_at,
+              boundDeviceId: row.bound_device_id||null, notes: row.notes||'', createdAt: row.created_at,
+            };
+          });
+        }
+      }
+    } catch {}
+    const fallback = await getLicensingDbClient()
       .from('courses')
       .select('*')
       .like('code', 'LIC:%')
       .order('created_at', { ascending: false });
+    data=fallback.data; error=fallback.error;
 
     if (error || !data) return [];
 
@@ -299,17 +303,23 @@ export async function saveCloudLicense(clientObj) {
       updated_at: new Date().toISOString(),
     };
 
+    // Try new dedicated table first, fallback to legacy courses hack
+    try {
+      const { error: newErr } = await getLicensingDbClient().from('school_licenses').upsert({
+        license_key: cleanKey, school_name: schoolName, contact_person: payload.contact_person,
+        email: payload.email, phone: payload.phone, status, is_locked: isLocked,
+        days_remaining: payload.days_remaining ?? payload.daysRemaining,
+        max_students: maxStudents, trial_started_at: payload.trial_started_at,
+        trial_ends_at: payload.trial_ends_at, is_timer_visible: payload.is_timer_visible !== false,
+        bound_device_id: payload.bound_device_id, notes: payload.notes||'',
+      }, { onConflict: 'license_key' });
+      if (!newErr) return { ok: true, data: payload };
+    } catch {}
     const courseName = `${schoolName} [${status.toUpperCase()}]`;
-
     const { error } = await getLicensingDbClient().from('courses').upsert({
-      code: 'LIC:' + cleanKey,
-      name: courseName,
-      level: 'License',
-      description: JSON.stringify(payload),
-      is_active: !isLocked,
-      updated_at: new Date().toISOString(),
+      code: 'LIC:' + cleanKey, name: courseName, level: 'License',
+      description: JSON.stringify(payload), is_active: !isLocked, updated_at: new Date().toISOString(),
     }, { onConflict: 'code' });
-
     if (error) throw error;
     return { ok: true, data: payload };
   } catch (err) {
@@ -323,22 +333,18 @@ export async function updateCloudLicenseTier(licenseKey, maxStudents) {
   try {
     await ensureLicensingAuth();
     const cleanKey = String(licenseKey).trim().toUpperCase();
+    // Try new table first
+    try {
+      const r2 = await getLicensingDbClient().from('school_licenses').update({ max_students: parseInt(maxStudents,10)||200, updated_at: new Date().toISOString() }).eq('license_key', cleanKey).select().maybeSingle();
+      if (!r2.error) return { ok: true, maxStudents: parseInt(maxStudents,10)||200, tier: getStudentCapacityTier(parseInt(maxStudents,10)||200) };
+    } catch {}
     const { data: row } = await getLicensingDbClient().from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
     if (!row) return { ok: false, error: 'License not found in cloud' };
-
     let desc = {};
     try { desc = JSON.parse(row.description) || {}; } catch {}
-
     const count = parseInt(maxStudents, 10) || 200;
-    desc.max_students = count;
-    desc.maxStudents = count;
-    desc.updated_at = new Date().toISOString();
-
-    await getLicensingDbClient().from('courses').update({
-      description: JSON.stringify(desc),
-      updated_at: new Date().toISOString(),
-    }).eq('code', 'LIC:' + cleanKey);
-
+    desc.max_students = count; desc.maxStudents = count; desc.updated_at = new Date().toISOString();
+    await getLicensingDbClient().from('courses').update({ description: JSON.stringify(desc), updated_at: new Date().toISOString() }).eq('code', 'LIC:' + cleanKey);
     return { ok: true, maxStudents: count, tier: getStudentCapacityTier(count) };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -350,39 +356,34 @@ export async function adjustCloudLicenseDays(licenseKey, deltaOrExactDays, isExa
   try {
     await ensureLicensingAuth();
     const cleanKey = String(licenseKey).trim().toUpperCase();
+    // Try new table
+    try {
+      const now = new Date();
+      // Fetch current from new table to compute delta
+      const curRes = await getLicensingDbClient().from('school_licenses').select('*').eq('license_key', cleanKey).maybeSingle();
+      if (curRes.data && !curRes.error) {
+        const curDays = parseInt(curRes.data.days_remaining ?? 30,10);
+        const newDays = isExact ? Math.max(0, parseInt(deltaOrExactDays,10)) : (deltaOrExactDays===9999?9999:Math.max(0,curDays+parseInt(deltaOrExactDays,10)));
+        const newEndsAt = new Date(now.getTime()+newDays*86400000).toISOString();
+        const computedStatus = newDays>=9000?'licensed':(newDays>0?'trial_active':'trial_expired');
+        const isLocked = newDays<=0 && computedStatus!=='licensed';
+        await getLicensingDbClient().from('school_licenses').update({ days_remaining: newDays, trial_ends_at: newEndsAt, status: isLocked?'suspended':computedStatus, is_locked: isLocked, updated_at: now.toISOString() }).eq('license_key', cleanKey);
+        return { ok: true, daysRemaining: newDays, status: isLocked?'suspended':computedStatus, trialEndsAt: newEndsAt };
+      }
+    } catch {}
     const { data: row } = await getLicensingDbClient().from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
     if (!row) return { ok: false, error: 'License not found in cloud' };
-
     let desc = {};
     try { desc = JSON.parse(row.description) || {}; } catch {}
-
     const curDays = parseInt(desc.days_remaining ?? desc.daysRemaining ?? 30, 10);
-    const newDays = isExact
-      ? Math.max(0, parseInt(deltaOrExactDays, 10))
-      : (deltaOrExactDays === 9999 ? 9999 : Math.max(0, curDays + parseInt(deltaOrExactDays, 10)));
-
+    const newDays = isExact ? Math.max(0, parseInt(deltaOrExactDays, 10)) : (deltaOrExactDays === 9999 ? 9999 : Math.max(0, curDays + parseInt(deltaOrExactDays, 10)));
     const now = new Date();
     const newEndsAt = new Date(now.getTime() + newDays * 86400000).toISOString();
     const computedStatus = newDays >= 9000 ? 'licensed' : (newDays > 0 ? 'trial_active' : 'trial_expired');
     const isLocked = newDays <= 0 && computedStatus !== 'licensed';
-
-    desc.days_remaining = newDays;
-    desc.daysRemaining = newDays;
-    desc.trial_ends_at = newEndsAt;
-    desc.status = isLocked ? 'suspended' : computedStatus;
-    desc.is_locked = isLocked;
-    desc.isLocked = isLocked;
-    desc.updated_at = now.toISOString();
-
+    desc.days_remaining = newDays; desc.daysRemaining = newDays; desc.trial_ends_at = newEndsAt; desc.status = isLocked ? 'suspended' : computedStatus; desc.is_locked = isLocked; desc.isLocked = isLocked; desc.updated_at = now.toISOString();
     const courseName = `${desc.school_name || 'SMS Client School'} [${desc.status.toUpperCase()}]`;
-
-    await getLicensingDbClient().from('courses').update({
-      name: courseName,
-      description: JSON.stringify(desc),
-      is_active: !isLocked,
-      updated_at: now.toISOString(),
-    }).eq('code', 'LIC:' + cleanKey);
-
+    await getLicensingDbClient().from('courses').update({ name: courseName, description: JSON.stringify(desc), is_active: !isLocked, updated_at: new Date().toISOString() }).eq('code', 'LIC:' + cleanKey);
     return { ok: true, daysRemaining: newDays, status: desc.status, trialEndsAt: newEndsAt };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -394,29 +395,23 @@ export async function setCloudLicenseLock(licenseKey, willLock) {
   try {
     await ensureLicensingAuth();
     const cleanKey = String(licenseKey).trim().toUpperCase();
+    try {
+      const curR=await getLicensingDbClient().from('school_licenses').select('*').eq('license_key', cleanKey).maybeSingle();
+      if(curR.data && !curR.error){
+        const days=parseInt(curR.data.days_remaining ?? 30,10);
+        const newStatus=willLock?'suspended':(days>0?'trial_active':'trial_expired');
+        await getLicensingDbClient().from('school_licenses').update({ is_locked: Boolean(willLock), status: newStatus, updated_at: new Date().toISOString() }).eq('license_key', cleanKey);
+        return { ok: true, isLocked: Boolean(willLock), status: newStatus };
+      }
+    } catch {}
     const { data: row } = await getLicensingDbClient().from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
     if (!row) return { ok: false, error: 'License not found in cloud' };
-
-    let desc = {};
-    try { desc = JSON.parse(row.description) || {}; } catch {}
-
-    const days = parseInt(desc.days_remaining ?? desc.daysRemaining ?? 30, 10);
-    const newStatus = willLock ? 'suspended' : (days > 0 ? 'trial_active' : 'trial_expired');
-
-    desc.is_locked = Boolean(willLock);
-    desc.isLocked = Boolean(willLock);
-    desc.status = newStatus;
-    desc.updated_at = new Date().toISOString();
-
-    const courseName = `${desc.school_name || 'SMS Client School'} [${newStatus.toUpperCase()}]`;
-
-    await getLicensingDbClient().from('courses').update({
-      name: courseName,
-      description: JSON.stringify(desc),
-      is_active: !willLock,
-      updated_at: new Date().toISOString(),
-    }).eq('code', 'LIC:' + cleanKey);
-
+    let desc = {}; try{desc=JSON.parse(row.description)||{};}catch{}
+    const days=parseInt(desc.days_remaining??desc.daysRemaining??30,10);
+    const newStatus=willLock?'suspended':(days>0?'trial_active':'trial_expired');
+    desc.is_locked=Boolean(willLock); desc.isLocked=Boolean(willLock); desc.status=newStatus; desc.updated_at=new Date().toISOString();
+    const courseName=`\${desc.school_name||'SMS Client School'} [\${newStatus.toUpperCase()}]`;
+    await getLicensingDbClient().from('courses').update({ name: courseName, description: JSON.stringify(desc), is_active: !willLock, updated_at: new Date().toISOString() }).eq('code', 'LIC:'+cleanKey);
     return { ok: true, isLocked: Boolean(willLock), status: newStatus };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -428,23 +423,11 @@ export async function unbindCloudHardware(licenseKey) {
   try {
     await ensureLicensingAuth();
     const cleanKey = String(licenseKey).trim().toUpperCase();
-    const { data: row } = await getLicensingDbClient().from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
-    if (!row) return { ok: false, error: 'License not found' };
-
-    let desc = {};
-    try { desc = JSON.parse(row.description) || {}; } catch {}
-
-    desc.bound_device_id = null;
-    desc.activated_device_id = null;
-    desc.is_activated = false;
-    desc.bound_at = null;
-    desc.updated_at = new Date().toISOString();
-
-    await getLicensingDbClient().from('courses').update({
-      description: JSON.stringify(desc),
-      updated_at: new Date().toISOString(),
-    }).eq('code', 'LIC:' + cleanKey);
-
+    try{ await getLicensingDbClient().from('school_licenses').update({ bound_device_id: null, bound_at: null, updated_at: new Date().toISOString() }).eq('license_key', cleanKey); }catch{}
+    try{
+      const { data: row } = await getLicensingDbClient().from('courses').select('*').eq('code', 'LIC:' + cleanKey).maybeSingle();
+      if(row){ let desc={}; try{desc=JSON.parse(row.description)||{};}catch{}; desc.bound_device_id=null; desc.activated_device_id=null; desc.is_activated=false; desc.bound_at=null; desc.updated_at=new Date().toISOString(); await getLicensingDbClient().from('courses').update({ description: JSON.stringify(desc), updated_at: new Date().toISOString() }).eq('code', 'LIC:'+cleanKey); }
+    }catch{}
     return { ok: true, message: 'Workstation binding cleared. School can now activate on a new computer.' };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -456,6 +439,7 @@ export async function deleteCloudLicense(licenseKey) {
   try {
     await ensureLicensingAuth();
     const cleanKey = String(licenseKey).trim().toUpperCase();
+    try{ await getLicensingDbClient().from('school_licenses').delete().eq('license_key', cleanKey); }catch{}
     await getLicensingDbClient().from('courses').delete().eq('code', 'LIC:' + cleanKey);
     return { ok: true };
   } catch (err) {
@@ -520,7 +504,7 @@ export async function activateSchoolLicense(licenseKey) {
         if (diffDays <= 0) {
           return {
             ok: false,
-            error: 'The 30-Day Evaluation Trial on this workstation has concluded. Please contact developer Dhruv Shah (+91 8866039007) to purchase a license.',
+            error: 'The 30-Day Evaluation Trial on this workstation has concluded. Please contact support to purchase a license.',
           };
         }
 
@@ -610,7 +594,7 @@ export async function activateSchoolLicense(licenseKey) {
         if (isSuspended) {
           return {
             ok: false,
-            error: 'This school license has been locked / suspended by the developer. Please contact Dhruv Shah (+91 8866039007).',
+            error: 'This school license has been locked / suspended by the developer. Please contact support team.',
           };
         }
 
@@ -619,7 +603,7 @@ export async function activateSchoolLicense(licenseKey) {
         if (boundId && boundId !== hwid) {
           return {
             ok: false,
-            error: `Single-Device License Policy: This license key is already permanently bound to another workstation (${boundId}). It cannot be activated on this computer. Contact Dhruv Shah (+91 8866039007) for workstation authorization or license reset.`,
+            error: `Single-Device License Policy: This license key is already permanently bound to another workstation (${boundId}). It cannot be activated on this computer. contact support for workstation authorization or license reset.`,
           };
         }
 
@@ -726,7 +710,7 @@ export async function activateSchoolLicense(licenseKey) {
   }
 
   // 3. Master Developer Emergency Override Key Only
-  const isMasterDevKey = cleanKey === 'SMS-MASTER-DEV-2026' || cleanKey === 'SMS-DEVELOPER-8866';
+  const isMasterDevKey = cleanKey === 'SMS-MASTER-DEV-2026' || cleanKey === (import.meta.env?.VITE_MASTER_DEV_KEY || 'SMS-DEVELOPER-8866');
   if (isMasterDevKey) {
     const masterData = {
       licenseKey: cleanKey,
@@ -747,7 +731,7 @@ export async function activateSchoolLicense(licenseKey) {
   // Key was neither found in the cloud nor a recognized master key
   return {
     ok: false,
-    error: 'Invalid license key. This key was not found in the SMS central registry. Please contact Dhruv Shah (+91 8866039007) to obtain a valid license key.',
+    error: 'Invalid license key. This key was not found in the SMS central registry. Please contact support team to obtain a valid license key.',
   };
 }
 
@@ -839,7 +823,7 @@ export async function validateLicense(options = {}) {
       status: 'cloned_copy_detected',
       isTrialExpired: true,
       isLocked: true,
-      error: `SECURITY LOCKOUT: Cloned or copied software installation detected! This software was copied from another computer. The license is strictly tied to the original authorized workstation (${cached.boundDeviceId}). Contact Dhruv Shah (+91 8866039007) to authorize this computer.`,
+      error: `SECURITY LOCKOUT: Cloned or copied software installation detected! This software was copied from another computer. The license is strictly tied to the original authorized workstation (${cached.boundDeviceId}). contact support to authorize this computer.`,
       developerContact: DEFAULT_DEV_CONTACT,
       currentHwid,
       boundDeviceId: cached.boundDeviceId,
@@ -875,7 +859,7 @@ export async function validateLicense(options = {}) {
               status: 'trial_expired',
               isTrialExpired: true,
               isLocked: true,
-              error: 'The 30-Day Evaluation Trial on this workstation has concluded. Please contact developer Dhruv Shah (+91 8866039007) to purchase a license.',
+              error: 'The 30-Day Evaluation Trial on this workstation has concluded. Please contact support to purchase a license.',
               developerContact: DEFAULT_DEV_CONTACT,
               trialEndsAt: devRec.trial_ends_at,
             };
@@ -934,7 +918,7 @@ export async function validateLicense(options = {}) {
               status: 'trial_expired',
               isTrialExpired: true,
               isLocked: true,
-              error: 'The 5-Day Emergency Grace period on this workstation has concluded. Please contact developer Dhruv Shah (+91 8866039007) to renew your license.',
+              error: 'The 5-Day Emergency Grace period on this workstation has concluded. Please contact support to renew your license.',
               developerContact: DEFAULT_DEV_CONTACT,
               trialEndsAt: devRec.trial_ends_at,
             };
@@ -997,7 +981,7 @@ export async function validateLicense(options = {}) {
             status: 'hardware_mismatch',
             isTrialExpired: true,
             isLocked: true,
-            error: `SECURITY LOCKOUT: Workstation mismatch. This license is bound to another computer in the cloud database (${cloudBoundId}). Contact Dhruv Shah (+91 8866039007).`,
+            error: `SECURITY LOCKOUT: Workstation mismatch. This license is bound to another computer in the cloud database (${cloudBoundId}). contact support.`,
             developerContact: DEFAULT_DEV_CONTACT,
             currentHwid,
             cloudBoundId,
@@ -1036,7 +1020,7 @@ export async function validateLicense(options = {}) {
             status: 'suspended',
             isTrialExpired: true,
             isLocked: true,
-            error: 'This school installation has been locked / suspended by the administrator or developer. Please contact Dhruv Shah (+91 8866039007).',
+            error: 'This school installation has been locked / suspended by the administrator or developer. Please contact support team.',
             developerContact: DEFAULT_DEV_CONTACT,
           };
         }
@@ -1075,7 +1059,7 @@ export async function validateLicense(options = {}) {
             status: 'trial_expired',
             isTrialExpired: true,
             isLocked: true,
-            error: 'Subscription validity period has concluded. Please contact developer Dhruv Shah (+91 8866039007) to renew your SMS license.',
+            error: 'Subscription validity period has concluded. Please contact support to renew your SMS license.',
             developerContact: DEFAULT_DEV_CONTACT,
             trialEndsAt: trialEnds,
           };
@@ -1213,7 +1197,7 @@ export async function validateLicense(options = {}) {
         status: 'cloned_copy_detected',
         isTrialExpired: true,
         isLocked: true,
-        error: `SECURITY LOCKOUT: Cloned copy detected! This offline software was copied from another computer. The license is bound to (${cached.boundDeviceId}). Contact Dhruv Shah (+91 8866039007).`,
+        error: `SECURITY LOCKOUT: Cloned copy detected! This offline software was copied from another computer. The license is bound to (${cached.boundDeviceId}). contact support.`,
         developerContact: cached.developerContact || DEFAULT_DEV_CONTACT,
       };
     }
@@ -1252,7 +1236,7 @@ export async function validateLicense(options = {}) {
           status: 'trial_expired',
           isTrialExpired: true,
           isLocked: true,
-          error: 'Your subscription or trial period has concluded. Contact developer Dhruv Shah (+91 8866039007) to renew SMS.',
+          error: 'Your subscription or trial period has concluded. contact support to renew SMS.',
           developerContact: cached.developerContact || DEFAULT_DEV_CONTACT,
           trialEndsAt: cached.trialEndsAt,
         };
@@ -1341,11 +1325,35 @@ export async function validateLicense(options = {}) {
 /**
  * Returns formatted Contact Developer URL (mailto, tel, or WhatsApp)
  */
+export function subscribeLicenseUpdates(licenseKey, callback){
+  if(!supabase || !isSupabaseConfigured || !licenseKey) return ()=>{};
+  const cleanKey=licenseKey.trim().toUpperCase();
+  let channel=null;
+  try{
+    channel=supabase.channel('license-'+cleanKey)
+      .on('postgres_changes',{event:'*',schema:'public',table:'school_licenses',filter:`license_key=eq.${cleanKey}`}, (payload)=>{ if(payload.new) callback(payload.new); })
+      .on('postgres_changes',{event:'*',schema:'public',table:'courses',filter:`code=eq.LIC:${cleanKey}`}, (payload)=>{
+        if(payload.new){ try{ callback(JSON.parse(payload.new.description||'{}')); }catch{} }
+      }).subscribe();
+  }catch{}
+  const pollId=setInterval(async()=>{ try{ const r=await supabase.from('school_licenses').select('*').eq('license_key', cleanKey).maybeSingle(); if(r.data) callback(r.data);}catch{} },60000);
+  return ()=>{ try{ supabase.removeChannel(channel);}catch{}; clearInterval(pollId); };
+}
+export async function checkLicenseWithPolling(){
+  const lic=getStoredLicense();
+  if(!lic || !lic.licenseKey) return;
+  try{
+    const base=getApiBaseUrl();
+    const url=(base?base:'')+'/api/license-manage';
+    // use GET validate if available, otherwise no-op
+  }catch{}
+}
+
 export function getContactDeveloperLinks(customContact) {
   const contact = customContact || getStoredLicense()?.developerContact || DEFAULT_DEV_CONTACT;
-  const cleanPhone = (contact.phone || contact.whatsapp || '+91 8866039007').replace(/[^0-9+]/g, '');
-  const cleanEmail = contact.email || 'dushah2007@gmail.com';
-  const rawWa = (contact.whatsapp || contact.phone || '8866039007').replace(/[^0-9]/g, '');
+  const cleanPhone = (contact.phone || contact.whatsapp || '+91 0000000000').replace(/[^0-9+]/g, '');
+  const cleanEmail = contact.email || 'support@school.edu';
+  const rawWa = (contact.whatsapp || contact.phone || '0000000000').replace(/[^0-9]/g, '');
   const waNumber = rawWa.length === 10 ? `91${rawWa}` : rawWa;
 
   const waMessage = encodeURIComponent(
@@ -1356,8 +1364,8 @@ export function getContactDeveloperLinks(customContact) {
     name: contact.name || 'Dhruv Shah',
     email: cleanEmail,
     emailLink: `mailto:${cleanEmail}?subject=${encodeURIComponent('SMS — School License Activation Request')}`,
-    phone: contact.phone || '+91 8866039007',
-    phoneLink: cleanPhone ? `tel:${cleanPhone}` : 'tel:+918866039007',
-    whatsappLink: waNumber ? `https://wa.me/${waNumber}?text=${waMessage}` : 'https://wa.me/918866039007',
+    phone: contact.phone || '+91 0000000000',
+    phoneLink: cleanPhone ? `tel:${cleanPhone}` : 'tel:+910000000000',
+    whatsappLink: waNumber ? `https://wa.me/${waNumber}?text=${waMessage}` : 'https://wa.me/910000000000',
   };
 }

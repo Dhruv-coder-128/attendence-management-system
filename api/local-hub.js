@@ -171,7 +171,7 @@ function resolveBatchInfo(batchId, batches) {
 
 export default async function handler(req, res) {
   // CORS & Security headers for Local Wi-Fi network requests
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  { const allowed=['http://localhost:5173','http://localhost:3000','http://localhost:1420','tauri://localhost','capacitor://localhost','https://localhost']; const origin=req.headers.origin||req.headers.Origin||''; const ok=!origin||origin.includes('localhost')||origin.includes('127.0.0.1')||origin.startsWith('tauri://')||origin.startsWith('capacitor://')||allowed.includes(origin)|| (process.env.ALLOWED_ORIGINS||'').split(',').map(s=>s.trim()).includes(origin); if(ok||!origin) { if(origin) res.setHeader('Access-Control-Allow-Origin', origin); else res.setHeader('Access-Control-Allow-Origin','*'); } res.setHeader('Vary','Origin'); }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-school-key, X-Hub-Token, X-School-Token, X-Device-Id, *');
 
@@ -208,7 +208,7 @@ export default async function handler(req, res) {
       otp: localHubOtp,
       registeredDevicesCount: registeredDevicesSet.size,
       connectUrl: `http://${localIp}:5173`,
-      academyName: 'SMS International Academy',
+      academyName: (process.env.ACADEMY_NAME || 'SMS International Academy'),
       timestamp: new Date().toISOString(),
       lastSyncTimestamp,
       lastDatabaseModified: liveSchoolDb.lastModified,
@@ -327,7 +327,7 @@ export default async function handler(req, res) {
 
     if (Array.isArray(courses)) {
       liveSchoolDb.courses = courses.map((c) => {
-        if (c.code && (c.code.includes('NOBLE') || c.code.includes('SMA-NOBLE'))) {
+        if (c.code && c.code.startsWith('LIC:')) { // generic license mapping (was NOBLE-specific)
           return {
             ...c,
             code: 'LIC:SMS-NOBLE-30D-89XK7',
