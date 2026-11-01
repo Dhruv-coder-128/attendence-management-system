@@ -21,6 +21,7 @@ import {
   FileSpreadsheet,
   FileText,
   Users,
+  MessageSquare,
 } from 'lucide-react';
 import DataTable from '../components/common/DataTable';
 import Badge from '../components/common/Badge';
@@ -581,7 +582,55 @@ export default function StudentsPage({ onRefreshCounts }) {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Students</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <h1 className="page-title" style={{ margin: 0 }}>Students</h1>
+            <span
+              style={{
+                fontSize: '12px',
+                fontWeight: 700,
+                padding: '3px 10px',
+                borderRadius: '12px',
+                backgroundColor: getMaxStudentCapacity() >= 5000 ? '#f0fdf4' : (students.length >= getMaxStudentCapacity() ? '#fef2f2' : '#eff6ff'),
+                color: getMaxStudentCapacity() >= 5000 ? '#15803d' : (students.length >= getMaxStudentCapacity() ? '#dc2626' : '#1e40af'),
+                border: `1px solid ${getMaxStudentCapacity() >= 5000 ? '#bbf7d0' : (students.length >= getMaxStudentCapacity() ? '#fecaca' : '#bfdbfe')}`,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
+            >
+              <Users size={13} />
+              <span>
+                {students.length} / {getMaxStudentCapacity() >= 5000 ? '5,000+ Unlimited' : `${getMaxStudentCapacity()} Enrolled`} ({getStudentCapacityTier(getMaxStudentCapacity()).name})
+              </span>
+            </span>
+
+            {getMaxStudentCapacity() < 5000 && students.length >= getMaxStudentCapacity() && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCapacityNotice({
+                    title: 'Student Capacity Limit Reached',
+                    message: `Your current license plan allows up to ${getMaxStudentCapacity()} students (${getStudentCapacityTier(getMaxStudentCapacity()).name}). You currently have ${students.length} students enrolled. To add more students, please contact developer Dhruv Shah (+91 8866039007) to upgrade your plan tier.`,
+                  });
+                }}
+                style={{
+                  backgroundColor: '#dc2626',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '3px 10px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                <span>⚡ Upgrade Plan</span>
+              </button>
+            )}
+          </div>
           <p className="page-description">
             Manage enrolled students, inspect academic profiles, and track tuition status
           </p>
@@ -1668,14 +1717,43 @@ export default function StudentsPage({ onRefreshCounts }) {
                 Email: <b>dushah2007@gmail.com</b>
               </div>
             </div>
-            <Button
-              variant="primary"
-              size="md"
-              style={{ width: '100%' }}
-              onClick={() => setCapacityNotice(null)}
-            >
-              Understood
-            </Button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <Button
+                variant="gold"
+                size="md"
+                style={{
+                  width: '100%',
+                  backgroundColor: '#16a34a',
+                  borderColor: '#15803d',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  fontWeight: 700
+                }}
+                onClick={() => {
+                  const schoolName = localStorage.getItem('erp_institute_name') || 'Our School';
+                  const maxCap = getMaxStudentCapacity();
+                  const text = `Hello Dhruv Shah, our school (${schoolName}) has reached the student capacity limit (${maxCap} students) on SMS. We would like to upgrade our plan to the next slab. Please help us upgrade.`;
+                  const url = `https://api.whatsapp.com/send?phone=918866039007&text=${encodeURIComponent(text)}`;
+                  if (typeof window !== 'undefined') {
+                    window.open(url, '_blank');
+                  }
+                }}
+              >
+                <MessageSquare size={16} />
+                <span>Message Developer on WhatsApp (+91 8866039007)</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="md"
+                style={{ width: '100%' }}
+                onClick={() => setCapacityNotice(null)}
+              >
+                Close
+              </Button>
+            </div>
           </div>
         </Modal>
       )}

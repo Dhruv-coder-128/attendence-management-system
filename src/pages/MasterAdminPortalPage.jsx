@@ -48,18 +48,37 @@ const STORAGE_REGISTRY_KEY = 'sms_saas_clients_registry';
 const DEFAULT_SAMPLE_CLIENTS = [
   {
     id: 'SMS-SCH-001',
-    schoolName: 'Noble Academy',
+    schoolName: 'Noble School',
+    contactPerson: 'Principal / Administrator',
+    email: 'principal@nobleschool.org',
+    phone: '+91 8866039007',
+    licenseKey: 'SMS-NOBLE-5000-UNLIMITED',
+    status: 'licensed',
+    isLocked: false,
+    daysRemaining: 365,
+    maxStudents: 5000,
+    tier: { id: 'tier_5000', name: 'Tier 4 — Enterprise', maxStudents: 5000, label: '5,000+ Students (Unlimited)' },
+    isTimerVisible: false,
+    trialStartedAt: new Date().toISOString(),
+    trialEndsAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+    notes: '5000+ Unlimited Student Tier for Noble School',
+  },
+  {
+    id: 'SMS-SCH-001B',
+    schoolName: 'Noble School (Standard Key)',
     contactPerson: 'Principal Sharma',
     email: 'principal@nobleschool.org',
     phone: '+91 9876543210',
     licenseKey: 'SMS-NOBLE-30D-89XK7',
     status: 'trial_active',
     isLocked: false,
-    daysRemaining: 30,
+    daysRemaining: 365,
+    maxStudents: 5000,
+    tier: { id: 'tier_5000', name: 'Tier 4 — Enterprise', maxStudents: 5000, label: '5,000+ Students (Unlimited)' },
     isTimerVisible: true,
-    trialStartedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    trialEndsAt: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString(),
-    notes: 'Primary Client Cohort',
+    trialStartedAt: new Date().toISOString(),
+    trialEndsAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+    notes: 'Primary Client Cohort — 5000+ Students',
   },
   {
     id: 'SMS-SCH-002',
@@ -1357,17 +1376,34 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--navy-950)', marginBottom: '4px' }}>
                     Student Plan Tier (Capacity Limit) *
                   </label>
-                  <select
-                    value={newMaxStudents}
-                    onChange={(e) => setNewMaxStudents(e.target.value)}
-                    style={{ width: '100%', padding: '9px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#ffffff' }}
-                  >
-                    {STUDENT_CAPACITY_TIERS.map((tier) => (
-                      <option key={tier.id} value={tier.maxStudents}>
-                        {tier.label} — {tier.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginTop: '6px' }}>
+                    {STUDENT_CAPACITY_TIERS.map((tier) => {
+                      const isSelected = String(newMaxStudents) === String(tier.maxStudents);
+                      return (
+                        <button
+                          key={tier.id}
+                          type="button"
+                          onClick={() => setNewMaxStudents(String(tier.maxStudents))}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            border: `2px solid ${isSelected ? '#0284c7' : '#e2e8f0'}`,
+                            backgroundColor: isSelected ? '#f0f9ff' : '#ffffff',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{ fontSize: '13px', fontWeight: 800, color: isSelected ? '#0369a1' : '#0f172a' }}>
+                            {tier.maxStudents >= 5000 ? '5,000+ Students' : `${tier.maxStudents} Students`}
+                          </div>
+                          <div style={{ fontSize: '11px', color: isSelected ? '#0284c7' : '#64748b', marginTop: '2px' }}>
+                            {tier.name} {tier.maxStudents >= 5000 ? '(Unlimited)' : ''}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1510,17 +1546,34 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '6px' }}>
                     Authorized Student Limit
                   </label>
-                  <select
-                    value={tierInputValue}
-                    onChange={(e) => setTierInputValue(e.target.value)}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', backgroundColor: '#ffffff' }}
-                  >
-                    {STUDENT_CAPACITY_TIERS.map((tier) => (
-                      <option key={tier.id} value={tier.maxStudents}>
-                        {tier.label} — {tier.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginTop: '6px' }}>
+                    {STUDENT_CAPACITY_TIERS.map((tier) => {
+                      const isSelected = String(tierInputValue) === String(tier.maxStudents);
+                      return (
+                        <button
+                          key={tier.id}
+                          type="button"
+                          onClick={() => setTierInputValue(String(tier.maxStudents))}
+                          style={{
+                            padding: '12px 14px',
+                            borderRadius: '8px',
+                            border: `2px solid ${isSelected ? '#0284c7' : '#e2e8f0'}`,
+                            backgroundColor: isSelected ? '#f0f9ff' : '#ffffff',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{ fontSize: '14px', fontWeight: 800, color: isSelected ? '#0369a1' : '#0f172a' }}>
+                            {tier.maxStudents >= 5000 ? '5,000+ Students' : `${tier.maxStudents} Students`}
+                          </div>
+                          <div style={{ fontSize: '11.5px', color: isSelected ? '#0284c7' : '#64748b', marginTop: '2px' }}>
+                            {tier.name} {tier.maxStudents >= 5000 ? '(Unlimited)' : ''}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div style={{ padding: '12px', backgroundColor: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe', fontSize: '12px', color: '#1e40af' }}>
                   💡 <b>Instant Cloud Sync:</b> Once saved, the school&apos;s installation will immediately reflect this tier upon its next automatic sync.

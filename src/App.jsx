@@ -295,9 +295,7 @@ export default function App() {
   // Secret Developer Portal Shortcut: Ctrl + Shift + D
   useEffect(() => {
     const handleDevKeyDown = (e) => {
-      // In Desktop EXE, shortcut is disabled to keep EXE 100% focused on school management
-      if (isTauriDesktop()) return;
-      if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+      if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd' || e.key === 'A' || e.key === 'a')) {
         e.preventDefault();
         try {
           sessionStorage.setItem('sms_dev_console_unlocked', 'true');
@@ -336,11 +334,7 @@ export default function App() {
 
   // Navigation Handler with Notification Read Tracking
   const handleNavigate = (page) => {
-    // Strictly forbid navigating to master-portal inside Desktop EXE
-    if (isTauriDesktop() && page === 'master-portal') {
-      setActivePage('dashboard');
-      return;
-    }
+    // Master portal is accessible when unlocked by developer PIN 8866
     if (page === 'notifications') {
       try {
         localStorage.setItem('sms_last_viewed_notifications', new Date().toISOString());
@@ -453,6 +447,7 @@ export default function App() {
           checkLicense();
           refreshCounts();
         }}
+        onOpenAdmin={() => setActivePage('master-portal')}
       />
     );
   }
@@ -476,7 +471,7 @@ export default function App() {
   }
 
   // 3. Standalone SaaS Master Admin Portal (Pure Super Admin Console — Zero School ERP Sidebar or Clutter)
-  if (activePage === 'master-portal' && !isTauriDesktop()) {
+  if (activePage === 'master-portal') {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
         <Suspense

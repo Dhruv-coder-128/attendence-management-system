@@ -4,7 +4,7 @@ import { getContactDeveloperLinks, getStoredLicense } from '../../lib/licenseSer
 import { openExternalLink, copyToClipboard } from '../../lib/externalOpener';
 import SchoolActivationModal from './SchoolActivationModal';
 
-export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
+export default function TrialExpiredLockout({ onReactivated, licenseStatus, onOpenAdmin }) {
   const [showActivationModal, setShowActivationModal] = useState(false);
   const license = getStoredLicense();
   const contactLinks = getContactDeveloperLinks(licenseStatus?.developerContact || license?.developerContact);
@@ -259,6 +259,27 @@ export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
             <KeyRound size={17} />
             <span>Enter Renewal or Full License Key</span>
           </button>
+
+          {onOpenAdmin && (
+            <button
+              type="button"
+              onClick={onOpenAdmin}
+              style={{
+                marginTop: '12px',
+                background: 'none',
+                border: 'none',
+                color: '#64748b',
+                fontSize: '12.5px',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <span>Developer Admin Console (PIN 8866) →</span>
+            </button>
+          )}
         </div>
 
         {/* Modal for Entering Key */}

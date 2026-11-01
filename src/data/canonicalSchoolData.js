@@ -6,12 +6,20 @@
 
 export const CANONICAL_COURSES = [
   {
+    "code": "LIC:SMS-NOBLE-5000-UNLIMITED",
+    "name": "Noble School",
+    "level": "License",
+    "description": "{\"status\":\"licensed\",\"isLocked\":false,\"is_locked\":false,\"schoolId\":\"LIC-SMS-NOBLE-5000-UNLIMITED\",\"schoolName\":\"Noble School\",\"licenseKey\":\"SMS-NOBLE-5000-UNLIMITED\",\"daysRemaining\":365,\"maxStudents\":5000,\"isTimerVisible\":false}",
+    "is_active": true,
+    "id": "54001a50-888b-469b-976f-2da2ea4413dd"
+  },
+  {
     "code": "LIC:SMS-NOBLE-30D-89XK7",
     "name": "Noble School",
     "level": "License",
-    "description": "{\"status\":\"trial_active\",\"isLocked\":false,\"is_locked\":false,\"schoolId\":\"LIC-SMS-NOBLE-30D-89XK7\",\"schoolName\":\"Noble School\",\"licenseKey\":\"SMS-NOBLE-30D-89XK7\",\"daysRemaining\":25,\"isTimerVisible\":true}",
+    "description": "{\"status\":\"trial_active\",\"isLocked\":false,\"is_locked\":false,\"schoolId\":\"LIC-SMS-NOBLE-30D-89XK7\",\"schoolName\":\"Noble School\",\"licenseKey\":\"SMS-NOBLE-30D-89XK7\",\"daysRemaining\":365,\"maxStudents\":5000,\"isTimerVisible\":true}",
     "is_active": true,
-    "id": "54001a50-888b-469b-976f-2da2ea4413dd"
+    "id": "54001a50-888b-469b-976f-2da2ea4413de"
   },
   {
     "id": "C11",

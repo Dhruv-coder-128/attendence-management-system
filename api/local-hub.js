@@ -330,18 +330,19 @@ export default async function handler(req, res) {
         if (c.code && (c.code.includes('NOBLE') || c.code.includes('SMA-NOBLE'))) {
           return {
             ...c,
-            code: 'LIC:SMS-NOBLE-30D-89XK7',
+            code: 'LIC:SMS-NOBLE-5000-UNLIMITED',
             name: 'Noble School',
             level: 'License',
             description: JSON.stringify({
-              status: 'trial_active',
+              status: 'licensed',
               isLocked: false,
               is_locked: false,
-              schoolId: 'LIC-SMS-NOBLE-30D-89XK7',
+              schoolId: 'LIC-SMS-NOBLE-5000-UNLIMITED',
               schoolName: 'Noble School',
-              licenseKey: 'SMS-NOBLE-30D-89XK7',
-              daysRemaining: 25,
-              isTimerVisible: true,
+              licenseKey: 'SMS-NOBLE-5000-UNLIMITED',
+              daysRemaining: 365,
+              maxStudents: 5000,
+              isTimerVisible: false,
             }),
             is_active: true,
           };

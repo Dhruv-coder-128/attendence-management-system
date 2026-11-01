@@ -8,7 +8,7 @@ import { isTauriDesktop, getStoredLicense } from '../lib/licenseService';
 /**
  * Enterprise Admin Login Screen with Real Supabase Auth & Local Offline Fallback
  */
-export default function LoginPage({ onLoginSuccess }) {
+export default function LoginPage({ onLoginSuccess, onOpenLicenseModal, onOpenAdmin }) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -537,6 +537,25 @@ export default function LoginPage({ onLoginSuccess }) {
               Protected by Supabase Auth with Row Level Security. Only authenticated administrative users can access the student registry and attendance records.
             </div>
           </div>
+
+          {onOpenAdmin && (
+            <div style={{ textAlign: 'center', marginTop: '14px' }}>
+              <button
+                type="button"
+                onClick={onOpenAdmin}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94a3b8',
+                  fontSize: '11.5px',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                }}
+              >
+                Developer Master Console (PIN 8866) →
+              </button>
+            </div>
+          )}
         </form>
       </div>
 

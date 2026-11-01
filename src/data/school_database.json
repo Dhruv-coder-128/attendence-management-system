@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "lastModified": "2026-10-28T06:05:31.065Z",
+  "lastModified": "2026-11-01T12:54:46.597Z",
   "academy": {
     "name": "SMS International Academy",
     "code": "SMS-DEMO-2026",
@@ -9,14 +9,24 @@
   },
   "courses": [
     {
+      "code": "LIC:SMS-NOBLE-5000-UNLIMITED",
+      "name": "Noble School",
+      "level": "License",
+      "description": "{\"status\":\"licensed\",\"isLocked\":false,\"is_locked\":false,\"schoolId\":\"LIC-SMS-NOBLE-5000-UNLIMITED\",\"schoolName\":\"Noble School\",\"licenseKey\":\"SMS-NOBLE-5000-UNLIMITED\",\"daysRemaining\":365,\"maxStudents\":5000,\"isTimerVisible\":false}",
+      "is_active": true,
+      "id": "54001a50-888b-469b-976f-2da2ea4413dd",
+      "created_at": "2026-11-01T12:54:46.596Z",
+      "updated_at": "2026-11-01T12:54:46.597Z"
+    },
+    {
       "code": "LIC:SMS-NOBLE-30D-89XK7",
       "name": "Noble School",
       "level": "License",
-      "description": "{\"status\":\"trial_active\",\"isLocked\":false,\"is_locked\":false,\"schoolId\":\"LIC-SMS-NOBLE-30D-89XK7\",\"schoolName\":\"Noble School\",\"licenseKey\":\"SMS-NOBLE-30D-89XK7\",\"daysRemaining\":25,\"isTimerVisible\":true}",
+      "description": "{\"status\":\"trial_active\",\"isLocked\":false,\"is_locked\":false,\"schoolId\":\"LIC-SMS-NOBLE-30D-89XK7\",\"schoolName\":\"Noble School\",\"licenseKey\":\"SMS-NOBLE-30D-89XK7\",\"daysRemaining\":365,\"maxStudents\":5000,\"isTimerVisible\":true}",
       "is_active": true,
-      "id": "54001a50-888b-469b-976f-2da2ea4413dd",
-      "created_at": "2026-10-28T06:02:30.953Z",
-      "updated_at": "2026-10-28T06:02:30.953Z"
+      "id": "54001a50-888b-469b-976f-2da2ea4413de",
+      "created_at": "2026-11-01T12:54:46.597Z",
+      "updated_at": "2026-11-01T12:54:46.597Z"
     },
     {
       "id": "C11",
@@ -77,16 +87,6 @@
       "id": "cd547456-d9fc-4aa6-a07d-8e2d23752e55",
       "created_at": "2026-10-23T13:11:03.321Z",
       "updated_at": "2026-10-23T13:11:03.321Z"
-    },
-    {
-      "code": "LIC:SMS-NOBLE-30D-89XK7",
-      "name": "Noble School",
-      "level": "License",
-      "description": "{\"status\":\"trial_active\",\"isLocked\":false,\"is_locked\":false,\"schoolId\":\"LIC-SMS-NOBLE-30D-89XK7\",\"schoolName\":\"Noble School\",\"licenseKey\":\"SMS-NOBLE-30D-89XK7\",\"daysRemaining\":25,\"isTimerVisible\":true}",
-      "is_active": true,
-      "id": "e97fc48c-54df-4f79-9f0f-c1e3cc897ed3",
-      "created_at": "2026-10-23T13:11:00.722Z",
-      "updated_at": "2026-10-27T11:21:05.280Z"
     }
   ],
   "batches": [
