@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import {
   LayoutDashboard,
   Users,
@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import { hasPermission } from '../../lib/authService';
 import { useAcademySettings } from '../../lib/academySettings';
-import { isTauriDesktop } from '../../lib/licenseService';
 
 /**
  * Simplified Enterprise Navigation Sidebar
@@ -36,7 +35,6 @@ export default function Sidebar({
   currentUserProfile,
 }) {
   const branding = useAcademySettings();
-  const logoClicksRef = useRef({ count: 0, lastTime: 0 });
 
   const rawStaffName =
     currentUserProfile?.full_name ||
@@ -65,26 +63,6 @@ export default function Sidebar({
     .join('')
     .substring(0, 2)
     .toUpperCase();
-
-  // Secret 5-click unlock for Developer SaaS Portal
-  const handleBrandClick = () => {
-    const now = Date.now();
-    if (now - logoClicksRef.current.lastTime < 1000) {
-      logoClicksRef.current.count += 1;
-    } else {
-      logoClicksRef.current.count = 1;
-    }
-    logoClicksRef.current.lastTime = now;
-
-    if (logoClicksRef.current.count >= 5) {
-      logoClicksRef.current.count = 0;
-      if (isTauriDesktop()) return;
-      try {
-        sessionStorage.setItem('sms_dev_console_unlocked', 'true');
-      } catch {}
-      onNavigate('master-portal');
-    }
-  };
 
   // Exact 9 primary navigation modules
   const allNavItems = [
@@ -160,22 +138,7 @@ export default function Sidebar({
       icon: Settings,
       permission: 'manage_settings',
     },
-    {
-      id: 'master-portal',
-      label: 'Admin Control Center',
-      icon: ShieldCheck,
-      badge: 'Admin',
-      permission: null,
-    },
   ];
-
-  // Strictly filter out Admin Control Center on Desktop EXE
-  const visibleNavItems = allNavItems.filter((item) => {
-    if (item.id === 'master-portal' && isTauriDesktop()) {
-      return false;
-    }
-    return true;
-  });
 
   const handleNavClick = (id) => {
     onNavigate(id);
@@ -190,7 +153,7 @@ export default function Sidebar({
       <aside className={`erp-sidebar ${isOpen ? 'open' : ''}`}>
         {/* Brand Header */}
         <div className="sidebar-header">
-          <div className="brand-wrapper" onClick={handleBrandClick} style={{ cursor: 'pointer' }}>
+          <div className="brand-wrapper">
             <div className="brand-crest">
               {branding.logo_url ? (
                 <img
@@ -220,7 +183,7 @@ export default function Sidebar({
         {/* Navigation Section */}
         <nav className="sidebar-nav">
           <div className="nav-section-title">Navigation</div>
-          {visibleNavItems.map((item) => {
+          {allNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activePage === item.id;
             return (

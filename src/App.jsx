@@ -15,7 +15,6 @@ const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const BulkImportPage = lazy(() => import('./pages/BulkImportPage'));
-const MasterAdminPortalPage = lazy(() => import('./pages/MasterAdminPortalPage'));
 const ParentPortalPage = lazy(() => import('./pages/ParentPortalPage'));
 
 import { supabase, isSupabaseConfigured, reinitializeSupabaseClient, setStoredAuthUser } from './lib/supabase';
@@ -54,13 +53,9 @@ export default function App() {
   // Active View / Navigation State
   // Desktop EXE: Pure School Client (dashboard)
   // Android Native APK: Pure Teacher Mobile Roll Call (teacher-portal)
-  // Vercel Web Cloud: Strictly Super Admin SaaS Console (master-portal)
   const [activePage, setActivePage] = useState(() => {
     if (Capacitor.isNativePlatform() || (typeof window !== 'undefined' && window.location.search.includes('portal=teacher'))) {
       return 'teacher-portal';
-    }
-    if (!isTauriDesktop()) {
-      return 'master-portal';
     }
     return 'dashboard';
   });
@@ -265,26 +260,11 @@ export default function App() {
     }
   }, [user]);
 
-  // Secret Developer Portal Shortcut: Ctrl + Shift + D
-  useEffect(() => {
-    const handleDevKeyDown = (e) => {
-      if (e.ctrlKey && e.shiftKey && (e.key === 'D' || e.key === 'd' || e.key === 'A' || e.key === 'a')) {
-        e.preventDefault();
-        try {
-          sessionStorage.setItem('sms_dev_console_unlocked', 'true');
-        } catch {}
-        setActivePage('master-portal');
-      }
-    };
-    window.addEventListener('keydown', handleDevKeyDown);
-    return () => window.removeEventListener('keydown', handleDevKeyDown);
-  }, []);
-
   // Authentication Handlers
   const handleLoginSuccess = (authenticatedUser) => {
     setUser(authenticatedUser);
     loadProfile(authenticatedUser);
-    setActivePage(!isTauriDesktop() ? 'master-portal' : 'dashboard');
+    setActivePage('dashboard');
   };
 
   const handleLogout = async () => {
@@ -299,7 +279,7 @@ export default function App() {
       setSession(null);
       setUser(null);
       setCurrentUserProfile(null);
-      setActivePage(!isTauriDesktop() ? 'master-portal' : 'dashboard');
+      setActivePage('dashboard');
     }
   };
 
@@ -417,7 +397,6 @@ export default function App() {
           checkLicense();
           refreshCounts();
         }}
-        onOpenAdmin={() => setActivePage('master-portal')}
       />
     );
   }
@@ -440,33 +419,7 @@ export default function App() {
     );
   }
 
-  // 3. Standalone SaaS Master Admin Portal (Pure Super Admin Console — Zero School ERP Sidebar or Clutter)
-  if (activePage === 'master-portal') {
-    return (
-      <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-        <Suspense
-          fallback={
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#94a3b8' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
-                <RefreshCw size={28} style={{ animation: 'spin 1s linear infinite', color: '#0284c7' }} />
-                <span style={{ fontSize: '14px', fontWeight: 600, color: '#64748b' }}>
-                  Loading Master Admin Console...
-                </span>
-              </div>
-            </div>
-          }
-        >
-          <MasterAdminPortalPage
-            onNavigate={handleNavigate}
-            onPreviewSchool={() => setActivePage('dashboard')}
-            user={user}
-          />
-        </Suspense>
-      </div>
-    );
-  }
-
-  // 4. Route Protection: If unauthenticated in School ERP mode, render Login Page
+  // 3. Route Protection: If unauthenticated in School ERP mode, render Login Page
   if (!user) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
@@ -502,45 +455,6 @@ export default function App() {
   // 5. Render Protected Administrative ERP Console (For Desktop EXE or School Preview)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', position: 'relative' }}>
-      {/* Return to Master Admin Bar (Only visible when previewing School ERP in web browser) */}
-      {!isTauriDesktop() && !Capacitor.isNativePlatform() && (
-        <div
-          style={{
-            backgroundColor: '#0f172a',
-            color: '#f8fafc',
-            padding: '8px 20px',
-            fontSize: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            zIndex: 9999,
-            borderBottom: '1px solid #1e293b',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ backgroundColor: '#0284c7', color: '#fff', padding: '2px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '11px' }}>
-              PREVIEW MODE
-            </span>
-            <span>You are previewing the School ERP Client as seen by Institutions.</span>
-          </div>
-          <button
-            onClick={() => setActivePage('master-portal')}
-            style={{
-              backgroundColor: '#38bdf8',
-              color: '#0f172a',
-              border: 'none',
-              borderRadius: '6px',
-              padding: '4px 12px',
-              fontSize: '12px',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            ← Return to Super Admin Console
-          </button>
-        </div>
-      )}
-
       {showTrialCapsule && (
         <DraggableTrialCapsule
           daysRemaining={licenseStatus?.daysRemaining || storedLic?.daysRemaining}
