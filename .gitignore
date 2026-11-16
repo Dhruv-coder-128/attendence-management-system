@@ -12,9 +12,17 @@ dist
 dist-ssr
 *.local
 src-tauri/target/
-# Binary releases
-!release-exe/
-!release-apk/
+# Binary releases: publish on GitHub Releases, never commit
+release-exe/
+release-apk/
+*.exe
+*.apk
+WebView2Loader.dll
+
+# Live school data written by the dev hub (student PII)
+src/data/school_database.json
+src/data/attendance_sync.json
+*.tmp
 
 # Editor directories and files
 .vscode/*

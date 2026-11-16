@@ -3,10 +3,14 @@
  * Calls Telegram Bot API setWebhook or deleteWebhook with secret validation.
  */
 
+import { staffCheck, telegramWebhookSecret } from './_lib/auth.js';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'Method not allowed. Use POST.' });
   }
+  const denied = await staffCheck(req, 'manage_settings');
+  if (denied) return res.status(denied.status).json({ ok: false, error: denied.error });
 
   const rawToken = process.env.TELEGRAM_BOT_TOKEN;
   const botToken = rawToken ? String(rawToken).trim().replace(/^["']|["']$/g, '') : '';
@@ -43,6 +47,7 @@ export default async function handler(req, res) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url: webhookUrl,
+        secret_token: telegramWebhookSecret(botToken),
         allowed_updates: ['message', 'callback_query'],
         drop_pending_updates: false,
       }),

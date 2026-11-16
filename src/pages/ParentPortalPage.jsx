@@ -472,7 +472,7 @@ export default function ParentPortalPage({
               >
                 <div style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>Fee Dues</div>
                 <div style={{ fontSize: '16px', fontWeight: 800, color: (feesData?.pending_amount || 0) > 0 ? '#b45309' : '#047857', marginTop: '2px' }}>
-                  ₹{(feesData?.pending_amount || 15000).toLocaleString('en-IN')}
+                  ₹{(feesData?.pending_amount || 0).toLocaleString('en-IN')}
                 </div>
                 <div style={{ fontSize: '10px', color: (feesData?.pending_amount || 0) > 0 ? '#b45309' : '#16a34a' }}>
                   {(feesData?.pending_amount || 0) > 0 ? 'Due Soon' : 'Cleared'}
@@ -487,10 +487,10 @@ export default function ParentPortalPage({
               >
                 <div style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>Recent Rank</div>
                 <div style={{ fontSize: '16px', fontWeight: 800, color: '#4338ca', marginTop: '2px' }}>
-                  Rank #{examsData[0]?.rank || 3}
+                  {examsData[0]?.rank ? `Rank #${examsData[0].rank}` : '—'}
                 </div>
                 <div style={{ fontSize: '10px', color: '#6366f1' }}>
-                  Top {100 - (examsData[0]?.percentile || 93)}% Batch
+                  {examsData[0]?.rank ? `of ${examsData[0].totalStudents} students` : 'No results yet'}
                 </div>
               </div>
             </div>
@@ -576,11 +576,11 @@ export default function ParentPortalPage({
                   Have questions or doubts?
                 </div>
                 <div style={{ fontSize: '11px', color: '#64748b' }}>
-                  Call Academy Office: {settings.phone || '+91 8866039007'}
+                  Call Academy Office: {settings.phone || 'ask the school office'}
                 </div>
               </div>
               <a
-                href={`tel:${settings.phone || '+918866039007'}`}
+                href={settings.phone ? `tel:${settings.phone}` : undefined}
                 className="btn btn-outline"
                 style={{ padding: '6px 10px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
               >
@@ -793,7 +793,7 @@ export default function ParentPortalPage({
                 <div style={{ backgroundColor: '#fffbeb', padding: '10px', borderRadius: '6px', border: '1px solid #fef3c7', textAlign: 'center' }}>
                   <div style={{ fontSize: '10.5px', color: '#92400e' }}>Pending Dues</div>
                   <div style={{ fontSize: '15px', fontWeight: 700, color: '#92400e' }}>
-                    ₹{(feesData?.pending_amount || 15000).toLocaleString('en-IN')}
+                    ₹{(feesData?.pending_amount || 0).toLocaleString('en-IN')}
                   </div>
                 </div>
               </div>
@@ -925,7 +925,7 @@ export default function ParentPortalPage({
                       textAlign: 'center',
                     }}>
                       <div style={{ fontSize: '12px', fontWeight: 800, color: '#1d4ed8' }}>
-                        Rank #{exam.rank}
+                        {exam.rank ? `Rank #${exam.rank}` : '—'}
                       </div>
                       <div style={{ fontSize: '9px', color: '#3b82f6' }}>
                         of {exam.totalStudents} students
@@ -938,23 +938,27 @@ export default function ParentPortalPage({
                     <div>
                       <span style={{ fontSize: '11px', color: '#64748b' }}>Score: </span>
                       <strong style={{ fontSize: '14px', color: '#0f172a' }}>
-                        {exam.marks_obtained} / {exam.max_marks}
+                        {exam.is_absent ? '—' : exam.marks_obtained} / {exam.max_marks}
                       </strong>
-                      <span style={{ fontSize: '11px', color: '#16a34a', marginLeft: '6px' }}>
-                        ({Math.round((exam.marks_obtained / exam.max_marks) * 100)}%)
-                      </span>
+                      {!exam.is_absent && (
+                        <span style={{ fontSize: '11px', color: '#16a34a', marginLeft: '6px' }}>
+                          ({Math.round((exam.marks_obtained / exam.max_marks) * 100)}%)
+                        </span>
+                      )}
                     </div>
 
-                    <span style={{
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      backgroundColor: '#dcfce7',
-                      color: '#166534',
-                      padding: '2px 8px',
-                      borderRadius: '10px',
-                    }}>
-                      Grade: {exam.grade}
-                    </span>
+                    {exam.is_absent && (
+                      <span style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        backgroundColor: '#fee2e2',
+                        color: '#991b1b',
+                        padding: '2px 8px',
+                        borderRadius: '10px',
+                      }}>
+                        Absent
+                      </span>
+                    )}
                   </div>
 
                   {/* Remarks */}

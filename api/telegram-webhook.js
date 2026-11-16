@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { telegramWebhookSecret } from './_lib/auth.js';
 
 /**
  * Vercel Serverless Function — Telegram Bot Webhook
@@ -31,6 +32,10 @@ export default async function handler(req, res) {
 
   const rawToken = process.env.TELEGRAM_BOT_TOKEN;
   const botToken = rawToken ? String(rawToken).trim().replace(/^["']|["']$/g, '') : '';
+  // Only Telegram knows the secret we registered in setWebhook; reject forged updates.
+  if (!botToken || req.headers['x-telegram-bot-api-secret-token'] !== telegramWebhookSecret(botToken)) {
+    return res.status(401).send('Unauthorized');
+  }
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 

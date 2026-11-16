@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { staffCheck } from './_lib/auth.js';
 
 /**
  * Vercel Serverless Function — Secure Telegram Attendance Alert Dispatcher
@@ -94,6 +95,10 @@ export default async function handler(req, res) {
       error: 'Supabase credentials are not configured in server environment variables.',
     });
   }
+
+  // Only active staff with the send_notifications permission may message parents.
+  const denied = await staffCheck(req, 'send_notifications');
+  if (denied) return res.status(denied.status).json({ ok: false, error: denied.error });
 
   const body = req.body || {};
   const {

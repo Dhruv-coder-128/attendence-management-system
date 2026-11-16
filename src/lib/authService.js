@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
 import { getStorageMode } from './databaseAdapter.js';
 import { getStoredAcademySettings } from './academySettings.js';
+import { hashPassword } from './localPassword.js';
 
 /**
  * Standard Granular Permission Keys & Human-Readable Labels
@@ -114,13 +115,9 @@ export async function fetchUserProfile(user) {
     return null;
   }
 
-  const cleanEmail = (user.email || '').trim().toLowerCase();
-  const isExplicitOwner = cleanEmail === OWNER_EMAIL ||
-    cleanEmail.startsWith('owner') ||
-    user.role === 'owner' ||
-    user.app_metadata?.role === 'owner' ||
-    user.user_metadata?.role === 'owner';
-  const appRole = isExplicitOwner ? 'owner' : (user.app_metadata?.role || 'owner');
+  // Role comes only from app_metadata (server-controlled) or the local session; never from the email text.
+  const isExplicitOwner = user.role === 'owner' || user.app_metadata?.role === 'owner';
+  const appRole = isExplicitOwner ? 'owner' : (user.app_metadata?.role || 'moderator');
   const appPermissions = user.app_metadata?.permissions;
 
   if (!supabase || !isSupabaseConfigured) {
@@ -146,16 +143,14 @@ export async function fetchUserProfile(user) {
     }
 
     // 2. If table is missing, inaccessible, or row doesn't exist
-    const isOwnerRole = isExplicitOwner || user.app_metadata?.role === 'owner' || user.user_metadata?.role === 'owner';
-    if (isOwnerRole) {
+    if (isExplicitOwner) {
       return getFallbackOwnerProfile(user);
     }
 
     return getFallbackStaffProfile(user, appRole, appPermissions);
   } catch (err) {
     console.warn('Error fetching user profile:', err);
-    const isOwnerRole = isExplicitOwner || user.app_metadata?.role === 'owner' || user.user_metadata?.role === 'owner';
-    if (isOwnerRole) {
+    if (isExplicitOwner) {
       return getFallbackOwnerProfile(user);
     }
     return getFallbackStaffProfile(user, appRole, appPermissions);
@@ -299,11 +294,13 @@ export async function createUserAccount(token, payload) {
       role: payload.role || 'moderator',
       permissions,
       is_active: true,
+      // Offline accounts are checked locally, so they need a hash. Cloud accounts use Supabase Auth.
+      password_hash: getStorageMode() !== 'cloud' && payload.password ? await hashPassword(payload.password) : undefined,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase.from('user_profiles').insert(newUser);
+    const { error } = await supabase.from('user_profiles').insert(newUser);
     if (error) {
       return { ok: false, error: error.message || 'Failed to insert user profile.' };
     }

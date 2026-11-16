@@ -9,6 +9,7 @@
  * so PC Desktop EXE and Mobile APK always share 100% identical data.
  */
 
+import crypto from 'crypto';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
@@ -17,7 +18,7 @@ import { createClient } from '@supabase/supabase-js';
 // Cache for in-memory / local session attendance store when completely offline
 const memoryAttendanceStore = new Map();
 let lastSyncTimestamp = new Date().toISOString();
-const hubSessionToken = 'sms-hub-session-token';
+const hubSessionToken = crypto.randomBytes(16).toString('hex');
 
 // Persistent file paths on the School PC
 const PERSISTENT_ATTENDANCE_FILE = path.resolve(process.cwd(), 'src/data/attendance_sync.json');
@@ -65,7 +66,9 @@ function saveSchoolDatabase() {
     const dir = path.dirname(SCHOOL_DATABASE_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     liveSchoolDb.lastModified = new Date().toISOString();
-    fs.writeFileSync(SCHOOL_DATABASE_FILE, JSON.stringify(liveSchoolDb, null, 2), 'utf-8');
+    // Write to a temp file then rename, so a crash mid-write never leaves a half-written database.
+    fs.writeFileSync(SCHOOL_DATABASE_FILE + '.tmp', JSON.stringify(liveSchoolDb, null, 2), 'utf-8');
+    fs.renameSync(SCHOOL_DATABASE_FILE + '.tmp', SCHOOL_DATABASE_FILE);
   } catch (err) {
     console.error('Failed to persist school_database.json:', err.message);
   }
@@ -93,7 +96,8 @@ function savePersistentAttendance() {
     }
     const dir = path.dirname(PERSISTENT_ATTENDANCE_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(PERSISTENT_ATTENDANCE_FILE, JSON.stringify(obj, null, 2), 'utf-8');
+    fs.writeFileSync(PERSISTENT_ATTENDANCE_FILE + '.tmp', JSON.stringify(obj, null, 2), 'utf-8');
+    fs.renameSync(PERSISTENT_ATTENDANCE_FILE + '.tmp', PERSISTENT_ATTENDANCE_FILE);
   } catch {}
 }
 
@@ -101,7 +105,9 @@ function savePersistentAttendance() {
 loadSchoolDatabase();
 loadPersistentAttendance();
 
-let localHubOtp = '482910';
+const newOtp = () => String(100000 + crypto.randomInt(900000));
+let localHubOtp = newOtp();
+let failedPairAttempts = 0;
 const registeredDevicesSet = new Set();
 
 /**
@@ -169,18 +175,31 @@ function resolveBatchInfo(batchId, batches) {
   );
 }
 
-export default async function handler(req, res) {
-  // CORS & Security headers for Local Wi-Fi network requests
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-school-key, X-Hub-Token, X-School-Token, X-Device-Id, *');
+const isLoopback = (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket?.remoteAddress);
 
+export default async function handler(req, res) {
+  // Development-only simulation of the desktop app's Rust hub (src-tauri/src/hub_server.rs).
+  // It must never run on Vercel, where it would publish the school roster to the internet.
+  if (process.env.VERCEL) {
+    return res.status(404).json({ ok: false, error: 'Not found' });
+  }
+
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, X-Hub-Token, X-Device-Id');
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    return res.status(204).end();
   }
 
   const query = req.query || {};
   const action = (query.action || req.body?.action || 'status').toLowerCase();
+  const trustedLocal = isLoopback(req);
+  const tokenOk = req.headers['x-hub-token'] === hubSessionToken;
+  if (!['status', 'check_device', 'pair_device'].includes(action) && !trustedLocal && !tokenOk) {
+    return res.status(401).json({ ok: false, error: 'This phone is not paired. Enter the 6-digit code shown on the School PC.' });
+  }
+  if (action === 'regenerate_otp' && !trustedLocal) {
+    return res.status(403).json({ ok: false, error: 'Only the School PC can regenerate the pairing code.' });
+  }
   const localIp = getLocalNetworkIp();
 
   // Re-read school database if updated on disk
@@ -204,8 +223,8 @@ export default async function handler(req, res) {
       ip: localIp,
       localIp,
       port: 5173,
-      token: hubSessionToken,
-      otp: localHubOtp,
+      token: trustedLocal ? hubSessionToken : null,
+      otp: trustedLocal ? localHubOtp : null,
       registeredDevicesCount: registeredDevicesSet.size,
       connectUrl: `http://${localIp}:5173`,
       academyName: 'SMS International Academy',
@@ -223,11 +242,16 @@ export default async function handler(req, res) {
     const { device_id, otp } = req.body || {};
     if (!device_id) return res.status(400).json({ ok: false, error: 'Missing device_id' });
     if (!otp || String(otp).trim() !== String(localHubOtp).trim()) {
+      if (++failedPairAttempts >= 5) {
+        failedPairAttempts = 0;
+        localHubOtp = newOtp();
+      }
       return res.status(400).json({
         ok: false,
         error: 'Invalid 6-digit OTP pairing code. Please enter the code shown on the School PC screen.',
       });
     }
+    failedPairAttempts = 0;
     registeredDevicesSet.add(device_id);
     return res.status(200).json({
       ok: true,
@@ -246,7 +270,7 @@ export default async function handler(req, res) {
 
   // 1.3 REGENERATE OTP
   if (action === 'regenerate_otp') {
-    localHubOtp = String(Math.floor(100000 + Math.random() * 900000));
+    localHubOtp = newOtp();
     return res.status(200).json({ ok: true, otp: localHubOtp });
   }
 
@@ -326,29 +350,7 @@ export default async function handler(req, res) {
     }
 
     if (Array.isArray(courses)) {
-      liveSchoolDb.courses = courses.map((c) => {
-        if (c.code && (c.code.includes('NOBLE') || c.code.includes('SMA-NOBLE'))) {
-          return {
-            ...c,
-            code: 'LIC:SMS-NOBLE-5000-UNLIMITED',
-            name: 'Noble School',
-            level: 'License',
-            description: JSON.stringify({
-              status: 'licensed',
-              isLocked: false,
-              is_locked: false,
-              schoolId: 'LIC-SMS-NOBLE-5000-UNLIMITED',
-              schoolName: 'Noble School',
-              licenseKey: 'SMS-NOBLE-5000-UNLIMITED',
-              daysRemaining: 365,
-              maxStudents: 5000,
-              isTimerVisible: false,
-            }),
-            is_active: true,
-          };
-        }
-        return c;
-      });
+      liveSchoolDb.courses = courses;
       updated = true;
     }
 

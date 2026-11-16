@@ -33,6 +33,7 @@ import {
   getStoredHubUrl,
   setStoredHubUrl,
   getStoredHubToken,
+  hubHeaders,
   setStoredHubToken,
   checkHubConnection,
   autoDiscoverSchoolPC,
@@ -115,7 +116,15 @@ function setStoredBatchStatuses(date, statuses) {
 export default function TeacherAttendancePage() {
   const academySettings = useAcademySettings();
   const [hubUrl, setHubUrl] = useState(getStoredHubUrl());
-  const [isDevicePaired] = useState(true);
+  // The hub only serves data to phones that paired with the 6-digit code shown on the School PC.
+  const [isPaired, setIsPaired] = useState(() => Boolean(getStoredHubToken()));
+  const [pairCode, setPairCode] = useState('');
+  const [pairError, setPairError] = useState('');
+  useEffect(() => {
+    const onUnpaired = () => setIsPaired(false);
+    window.addEventListener('sms-hub-unpaired', onUnpaired);
+    return () => window.removeEventListener('sms-hub-unpaired', onUnpaired);
+  }, []);
   const [isAutoDiscovering, setIsAutoDiscovering] = useState(false);
 
   const [connectionStatus, setConnectionStatus] = useState({
@@ -333,7 +342,7 @@ export default function TeacherAttendancePage() {
     const activeUrl = targetUrl || getStoredHubUrl();
     if (!activeUrl) return;
     try {
-      const res = await fetch(`${activeUrl.replace(/\/+$/, '')}/api/local-hub?action=updates&date=${encodeURIComponent(date)}`);
+      const res = await fetch(`${activeUrl.replace(/\/+$/, '')}/api/local-hub?action=updates&date=${encodeURIComponent(date)}`, { headers: hubHeaders() });
       if (res.ok) {
         const data = await res.json();
         const records = data.records || data.allRecords || [];
@@ -880,6 +889,7 @@ export default function TeacherAttendancePage() {
         setStoredHubUrl(target);
         if (token) {
           setStoredHubToken(token);
+          setIsPaired(true);
         }
         setHubUrl(target);
         setUrlInput(target);
@@ -1321,6 +1331,43 @@ export default function TeacherAttendancePage() {
           )}
 
           {/* STATE 2: Wi-Fi On, but School PC Not Configured or Unreachable */}
+          {connectionStatus.ok && !isPaired && (
+            <div style={{ margin: '12px 0', padding: '14px', borderRadius: '12px', backgroundColor: '#fffbeb', border: '1px solid #fcd34d' }}>
+              <div style={{ fontSize: '13px', fontWeight: 800, color: '#92400e', marginBottom: '6px' }}>Pair this phone with the School PC</div>
+              <div style={{ fontSize: '12px', color: '#78350f', marginBottom: '10px' }}>
+                Enter the 6-digit code shown on the School PC (Connect Teacher App), or scan its QR code.
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={pairCode}
+                  onChange={(e) => setPairCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="123456"
+                  style={{ flex: 1, padding: '9px 12px', fontSize: '16px', letterSpacing: '4px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: 'monospace' }}
+                />
+                <button
+                  className="touch-action-btn"
+                  disabled={pairCode.length !== 6}
+                  onClick={async () => {
+                    setPairError('');
+                    const r = await pairDeviceWithHub(hubUrl, pairCode);
+                    if (!r.ok) return setPairError(r.error);
+                    setIsPaired(true);
+                    setPairCode('');
+                    showToast('✓ Phone paired with School PC');
+                    verifyConnection(hubUrl, false);
+                  }}
+                  style={{ backgroundColor: '#0f172a', border: 'none', color: '#ffffff', padding: '9px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 700 }}
+                >
+                  Pair
+                </button>
+              </div>
+              {pairError && <div style={{ marginTop: '8px', fontSize: '12px', color: '#b91c1c' }}>{pairError}</div>}
+            </div>
+          )}
+
           {connectionStatus.state === 'pc_unreachable' && (
             <div
               style={{

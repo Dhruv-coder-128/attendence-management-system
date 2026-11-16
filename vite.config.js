@@ -142,6 +142,7 @@ function apiDevPlugin() {
 export default defineConfig({
   base: './',
   plugins: [react(), apiDevPlugin()],
+  define: { __APP_VERSION__: JSON.stringify(JSON.parse(fs.readFileSync('package.json', 'utf-8')).version) },
   server: {
     host: '0.0.0.0',
     port: 5173,

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
-import { getStoredLicense, isTauriDesktop } from './licenseService.js';
+import { getStoredLicense } from './licenseService.js';
 import { createLocalTableQueryBuilder, getStorageMode } from './databaseAdapter.js';
+import { hashPassword, verifyPassword } from './localPassword.js';
 
 /**
  * Supabase Client Module
@@ -127,302 +128,145 @@ export function setStoredAuthUser(user) {
   });
 }
 
+const OWNER_PERMISSIONS = {
+  view_students: true, edit_students: true, delete_students: true,
+  view_attendance: true, mark_attendance: true, manage_batches: true,
+  manage_fees: true, manage_exams: true, manage_parents: true,
+  send_notifications: true, export_data: true, manage_users: true,
+  manage_settings: true,
+};
+const ADMIN_PERMISSIONS = { ...OWNER_PERMISSIONS, delete_students: false };
+const MODERATOR_PERMISSIONS = { ...ADMIN_PERMISSIONS, manage_users: false };
+export function defaultPermissionsForRole(role) {
+  return role === 'owner' ? OWNER_PERMISSIONS : role === 'admin' ? ADMIN_PERMISSIONS : MODERATOR_PERMISSIONS;
+}
+
+// Auth follows the data store: offline mode → local IndexedDB accounts, cloud mode → Supabase Auth.
+function isLocalAuthMode() {
+  return getStorageMode() !== 'cloud' || !getSupabaseClient()?.auth;
+}
+
+async function listLocalProfiles() {
+  const { data } = await createLocalTableQueryBuilder('user_profiles').select('*');
+  return Array.isArray(data) ? data : [];
+}
+
+function toSessionUser(profile) {
+  const role = profile.role || 'moderator';
+  const permissions = profile.permissions && Object.keys(profile.permissions).length ? profile.permissions : defaultPermissionsForRole(role);
+  return {
+    id: profile.id,
+    email: profile.email,
+    role,
+    aud: 'authenticated',
+    user_metadata: { full_name: profile.full_name || 'Staff User', role },
+    app_metadata: { role, permissions, provider: 'email' },
+  };
+}
+
+function signedIn(user) {
+  setStoredAuthUser(user);
+  return { data: { user, session: { user, access_token: 'offline-token' } }, error: null };
+}
+
+const authError = (msg) => ({ data: { user: null, session: null }, error: new Error(msg) });
+
+/** True when no local account has a password yet (fresh or pre-1.0.13 install): first sign-up becomes owner. */
+export async function needsLocalOwnerSetup() {
+  if (!isLocalAuthMode()) return false;
+  return !(await listLocalProfiles()).some((p) => p.password_hash);
+}
+
+/** Sets a new local password. Authorised by the school's license key (offline recovery). */
+export async function resetLocalPassword(email, newPassword, licenseKey) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const stored = getStoredLicense()?.licenseKey;
+  if (!stored || String(licenseKey || '').trim().toUpperCase() !== stored.toUpperCase()) {
+    return { ok: false, error: 'Reset key does not match the license key of this installation.' };
+  }
+  const profile = (await listLocalProfiles()).find((p) => (p.email || '').toLowerCase() === cleanEmail);
+  if (!profile) return { ok: false, error: 'No local account exists with this email.' };
+  const { error } = await createLocalTableQueryBuilder('user_profiles')
+    .update({ password_hash: await hashPassword(newPassword), updated_at: new Date().toISOString() })
+    .eq('id', profile.id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 /**
- * Unified Authentication Engine
- * Supports seamless login in 100% offline mode, cloud Supabase mode,
- * and reliable fallback for master owner and local staff accounts.
+ * Unified Authentication Engine.
+ * Cloud web mode: Supabase Auth only. Desktop / offline mode: local accounts with PBKDF2 password hashes.
  */
 export const unifiedAuth = {
   async signInWithPassword({ email, password }) {
     const cleanEmail = (email || '').trim().toLowerCase();
-    if (!cleanEmail) {
-      return { data: { user: null, session: null }, error: new Error('Please enter your institutional email.') };
-    }
+    if (!cleanEmail || !password) return authError('Please enter your email and password.');
 
-    function getLocalOwnerProfile() {
-      if (typeof window === 'undefined') {
-        return { name: 'Institution Administrator', email: 'admin@institution.edu' };
-      }
+    if (!isLocalAuthMode()) {
       try {
-        const raw = localStorage.getItem('erp_academy_branding');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          return {
-            name: parsed.owner_name || (parsed.academy_name ? `${parsed.academy_name} Owner` : 'Institution Administrator'),
-            email: parsed.email && parsed.email !== 'dushah2007@gmail.com' ? parsed.email : 'admin@institution.edu',
-          };
-        }
-      } catch {}
-      return { name: 'Institution Administrator', email: 'admin@institution.edu' };
-    }
-
-    const localOwner = getLocalOwnerProfile();
-    const mode = getStorageMode();
-    const client = getSupabaseClient();
-    const isDesktop = typeof isTauriDesktop === 'function' && isTauriDesktop();
-    const isOwner =
-      cleanEmail === 'dushah2007@gmail.com' ||
-      cleanEmail === localOwner.email ||
-      cleanEmail.startsWith('owner') ||
-      cleanEmail.startsWith('admin') ||
-      cleanEmail.includes('admin') ||
-      isDesktop ||
-      mode === 'offline';
-
-    const fallbackAdminUser = {
-      id: 'admin-session',
-      email: cleanEmail.includes('@') ? cleanEmail : localOwner.email,
-      role: 'owner',
-      aud: 'authenticated',
-      user_metadata: { full_name: `${localOwner.name}`, role: 'owner' },
-      app_metadata: {
-        role: 'owner',
-        permissions: {
-          view_students: true, edit_students: true, delete_students: true,
-          view_attendance: true, mark_attendance: true, manage_batches: true,
-          manage_fees: true, manage_exams: true, manage_parents: true,
-          send_notifications: true, export_data: true, manage_users: true,
-          manage_settings: true,
-        },
-        provider: 'email',
-      },
-    };
-
-    // 1. If in cloud mode and not standalone desktop, attempt remote Supabase Auth
-    if (!isDesktop && mode === 'cloud' && client && client.auth) {
-      try {
-        const res = await client.auth.signInWithPassword({ email: cleanEmail, password });
-        if (!res.error && res.data?.user) {
-          setStoredAuthUser(res.data.user);
-          return res;
-        }
-        // If remote returned an error for the administrator or owner, use local fallback
-        if (isOwner) {
-          console.warn('Remote Supabase auth failed, applying local administrator session:', res.error?.message);
-          setStoredAuthUser(fallbackAdminUser);
-          return {
-            data: {
-              user: fallbackAdminUser,
-              session: { user: fallbackAdminUser, access_token: 'offline-token' },
-            },
-            error: null,
-          };
-        }
-        // If error was network-related, fall through to local database check below
-        if (!navigator.onLine || res.error?.message?.toLowerCase().includes('fetch')) {
-          // Fall through
-        } else {
-          return res;
-        }
+        const res = await getSupabaseClient().auth.signInWithPassword({ email: cleanEmail, password });
+        if (!res.error && res.data?.user) setStoredAuthUser(res.data.user);
+        return res;
       } catch (err) {
-        console.warn('Network error during remote sign in:', err);
-        if (isOwner) {
-          setStoredAuthUser(fallbackAdminUser);
-          return {
-            data: {
-              user: fallbackAdminUser,
-              session: { user: fallbackAdminUser, access_token: 'offline-token' },
-            },
-            error: null,
-          };
-        }
+        return authError('Cannot reach the server. Check your internet connection. (' + (err?.message || err) + ')');
       }
     }
 
-    // 2. Offline / Local Database / Desktop Authentication
-    if (isOwner) {
-      setStoredAuthUser(fallbackAdminUser);
-      return {
-        data: {
-          user: fallbackAdminUser,
-          session: { user: fallbackAdminUser, access_token: 'offline-token' },
-        },
-        error: null,
-      };
+    const profile = (await listLocalProfiles()).find((p) => (p.email || '').toLowerCase() === cleanEmail);
+    if (!profile || !(await verifyPassword(password, profile.password_hash))) {
+      return authError(
+        profile && !profile.password_hash
+          ? 'This account has no password yet. Ask the owner to reset it, or use "Forgot password" with the license key.'
+          : 'Invalid email or password.'
+      );
     }
-
-    // Check staff account in local user_profiles table
-    try {
-      const { data: profiles } = await createLocalTableQueryBuilder('user_profiles')
-        .select('*')
-        .eq('email', cleanEmail);
-
-      const profile = profiles?.[0];
-      if (profile) {
-        if (profile.is_active === false) {
-          return {
-            data: { user: null, session: null },
-            error: new Error('This account has been deactivated. Please contact the institution owner.'),
-          };
-        }
-        const role = profile.role || 'moderator';
-        const hasExistingPerms = profile.permissions && Object.keys(profile.permissions).length > 0;
-        const defaultPerms = role === 'owner'
-          ? { view_students: true, edit_students: true, delete_students: true, view_attendance: true, mark_attendance: true, manage_batches: true, manage_fees: true, manage_exams: true, manage_parents: true, send_notifications: true, export_data: true, manage_users: true, manage_settings: true }
-          : role === 'admin'
-          ? { view_students: true, edit_students: true, delete_students: false, view_attendance: true, mark_attendance: true, manage_batches: true, manage_fees: true, manage_exams: true, manage_parents: true, send_notifications: true, export_data: true, manage_users: true, manage_settings: true }
-          : { view_students: true, edit_students: true, delete_students: false, view_attendance: true, mark_attendance: true, manage_batches: true, manage_fees: true, manage_exams: true, manage_parents: true, send_notifications: true, export_data: true, manage_users: false, manage_settings: true };
-        const staffPermissions = hasExistingPerms ? profile.permissions : defaultPerms;
-
-        const staffUser = {
-          id: profile.id,
-          email: profile.email,
-          role,
-          aud: 'authenticated',
-          user_metadata: {
-            full_name: profile.full_name || 'Staff User',
-            role,
-          },
-          app_metadata: {
-            role,
-            permissions: staffPermissions,
-            provider: 'email',
-          },
-        };
-        setStoredAuthUser(staffUser);
-        return {
-          data: {
-            user: staffUser,
-            session: { user: staffUser, access_token: 'offline-token' },
-          },
-          error: null,
-        };
-      }
-    } catch (dbErr) {
-      console.warn('Error querying local user_profiles:', dbErr);
-    }
-
-    return {
-      data: { user: null, session: null },
-      error: new Error('Invalid email or password. Please verify credentials or click Register Admin.'),
-    };
+    if (profile.is_active === false) return authError('This account has been deactivated. Please contact the institution owner.');
+    return signedIn(toSessionUser(profile));
   },
 
   async signUp({ email, password, options }) {
     const cleanEmail = (email || '').trim().toLowerCase();
-    const mode = getStorageMode();
-    const client = getSupabaseClient();
-    const isDesktop = typeof isTauriDesktop === 'function' && isTauriDesktop();
+    if (!cleanEmail || !password || password.length < 6) return authError('Enter an email and a password of at least 6 characters.');
 
-    if (!isDesktop && mode === 'cloud' && client && client.auth) {
-      try {
-        const res = await client.auth.signUp({ email: cleanEmail, password, options });
-        if (!res.error && res.data?.user) {
-          setStoredAuthUser(res.data.user);
-          return res;
-        }
-      } catch (err) {
-        console.warn('Remote signUp error, using local database:', err);
-      }
+    if (!isLocalAuthMode()) {
+      const res = await getSupabaseClient().auth.signUp({ email: cleanEmail, password, options });
+      if (!res.error && res.data?.session?.user) setStoredAuthUser(res.data.session.user);
+      return res;
     }
 
-    try {
-      const isOwner =
-        cleanEmail === 'dushah2007@gmail.com' ||
-        cleanEmail.startsWith('owner') ||
-        cleanEmail.startsWith('admin') ||
-        cleanEmail.includes('admin') ||
-        isDesktop;
-      const role = isOwner ? 'owner' : (options?.data?.role || 'admin');
-      const fullName = options?.data?.full_name || cleanEmail.split('@')[0] || 'Administrator';
-      const newId = 'usr_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      const defaultPerms = role === 'owner'
-        ? { view_students: true, edit_students: true, delete_students: true, view_attendance: true, mark_attendance: true, manage_batches: true, manage_fees: true, manage_exams: true, manage_parents: true, send_notifications: true, export_data: true, manage_users: true, manage_settings: true }
-        : role === 'admin'
-        ? { view_students: true, edit_students: true, delete_students: false, view_attendance: true, mark_attendance: true, manage_batches: true, manage_fees: true, manage_exams: true, manage_parents: true, send_notifications: true, export_data: true, manage_users: true, manage_settings: true }
-        : { view_students: true, edit_students: true, delete_students: false, view_attendance: true, mark_attendance: true, manage_batches: true, manage_fees: true, manage_exams: true, manage_parents: true, send_notifications: true, export_data: true, manage_users: false, manage_settings: true };
-
-      const newUser = {
-        id: newId,
-        email: cleanEmail,
-        full_name: fullName,
-        role,
-        permissions: defaultPerms,
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      await createLocalTableQueryBuilder('user_profiles').insert(newUser);
-
-      const authUser = {
-        id: newId,
-        email: cleanEmail,
-        role,
-        aud: 'authenticated',
-        user_metadata: { full_name: fullName, role },
-        app_metadata: { role, permissions: defaultPerms, provider: 'email' },
-      };
-      setStoredAuthUser(authUser);
-      return {
-        data: {
-          user: authUser,
-          session: { user: authUser, access_token: 'offline-token' },
-        },
-        error: null,
-      };
-    } catch (err) {
-      return { data: { user: null, session: null }, error: err };
+    // Locally, sign-up is only the first-run owner setup. Further staff are added by the owner in Settings → Users.
+    if (!(await needsLocalOwnerSetup())) {
+      return authError('An owner account already exists on this computer. Ask the owner to add you in Settings → Users.');
     }
+    const existing = (await listLocalProfiles()).find((p) => (p.email || '').toLowerCase() === cleanEmail);
+    const now = new Date().toISOString();
+    const owner = {
+      id: existing?.id || 'usr_' + crypto.randomUUID(),
+      email: cleanEmail,
+      full_name: options?.data?.full_name || cleanEmail.split('@')[0] || 'Owner',
+      role: 'owner',
+      permissions: OWNER_PERMISSIONS,
+      is_active: true,
+      password_hash: await hashPassword(password),
+      created_at: existing?.created_at || now,
+      updated_at: now,
+    };
+    const q = createLocalTableQueryBuilder('user_profiles');
+    const { error } = existing ? await q.update(owner).eq('id', existing.id) : await q.insert(owner);
+    if (error) return { data: { user: null, session: null }, error };
+    return signedIn(toSessionUser(owner));
   },
 
   async getSession() {
-    const mode = getStorageMode();
-    const client = getSupabaseClient();
-    const isDesktop = typeof isTauriDesktop === 'function' && isTauriDesktop();
-
-    if (!isDesktop && mode === 'cloud' && client && client.auth) {
+    if (!isLocalAuthMode()) {
       try {
-        const res = await client.auth.getSession();
-        if (res.data?.session) {
-          return res;
-        }
+        const res = await getSupabaseClient().auth.getSession();
+        if (res.data?.session) return res;
       } catch {}
+      return { data: { session: null }, error: null };
     }
-
     const stored = getStoredAuthUser();
-    if (stored) {
-      return {
-        data: {
-          session: { user: stored, access_token: 'offline-token' },
-        },
-        error: null,
-      };
-    }
-
-    // In Desktop EXE, provide seamless auto-login as Administrator on clean launch
-    if (isDesktop) {
-      const defaultDesktopAdmin = {
-        id: 'desktop-admin-session',
-        email: 'admin@institution.edu',
-        role: 'owner',
-        aud: 'authenticated',
-        user_metadata: { full_name: 'Institution Administrator', role: 'owner' },
-        app_metadata: {
-          role: 'owner',
-          permissions: {
-            view_students: true, edit_students: true, delete_students: true,
-            view_attendance: true, mark_attendance: true, manage_batches: true,
-            manage_fees: true, manage_exams: true, manage_parents: true,
-            send_notifications: true, export_data: true, manage_users: true,
-            manage_settings: true,
-          },
-          provider: 'email',
-        },
-      };
-      setStoredAuthUser(defaultDesktopAdmin);
-      return {
-        data: {
-          session: { user: defaultDesktopAdmin, access_token: 'offline-token' },
-        },
-        error: null,
-      };
-    }
-
-    return {
-      data: { session: null },
-      error: null,
-    };
+    return { data: { session: stored ? { user: stored, access_token: 'offline-token' } : null }, error: null };
   },
 
   async getUser() {

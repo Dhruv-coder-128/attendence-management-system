@@ -37,11 +37,6 @@ import { exportDailyRegisterToExcel } from '../lib/attendanceExporter';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { getActiveHubBaseUrl } from '../lib/useSchoolDatabaseSync';
 import {
-  ensureDhruvShahTestStudent,
-  TEST_STUDENT_NAME,
-  TEST_STUDENT_ADMISSION_NO,
-} from '../lib/testStudent';
-import {
   getParentTelegramDeepLink,
   linkParentTelegramAccount,
   sendVerifiedAttendanceNotice,
@@ -676,32 +671,6 @@ export default function AttendancePage({ onRefreshCounts }) {
     }
   };
 
-  // 5. Ensure Test Student (Dhruv Shah) Handler
-  const handleEnsureTestStudent = async () => {
-    setLoading(true);
-    try {
-      const res = await ensureDhruvShahTestStudent();
-      if (!res.success) {
-        alert(res.error);
-        return;
-      }
-      showToast(res.message);
-      if (onRefreshCounts) onRefreshCounts();
-
-      // If Dhruv Shah is assigned to another batch, switch to that batch to display him
-      if (res.student && res.student.batch_id && res.student.batch_id !== selectedBatchId) {
-        setSelectedBatchId(res.student.batch_id);
-      } else {
-        await fetchBatchAttendance();
-      }
-    } catch (err) {
-      console.error('Error ensuring test student:', err);
-      alert('Error: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // 6. Telegram Modal Handlers
   const handleOpenTelegramModal = (student) => {
     setActiveTestStudent(student);
@@ -1319,21 +1288,6 @@ export default function AttendancePage({ onRefreshCounts }) {
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                           <strong style={{ color: 'var(--navy-950)' }}>{student.full_name}</strong>
-                          {(student.full_name === TEST_STUDENT_NAME || student.admission_no === TEST_STUDENT_ADMISSION_NO) && (
-                            <span
-                              style={{
-                                fontSize: '10px',
-                                fontWeight: 700,
-                                padding: '1px 6px',
-                                borderRadius: '4px',
-                                backgroundColor: 'var(--gold-subtle-bg)',
-                                color: 'var(--gold-dark)',
-                                border: '1px solid var(--gold-border)',
-                              }}
-                            >
-                              ⭐ Test Student
-                            </span>
-                          )}
                         </div>
                       </td>
                       <td style={{ fontSize: '12px', fontFamily: 'var(--font-mono)' }}>

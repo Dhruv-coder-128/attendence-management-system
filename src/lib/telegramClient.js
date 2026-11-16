@@ -1178,7 +1178,7 @@ export async function setupTelegramWebhook(webhookUrl, action = 'set') {
   try {
     const res = await fetch('/api/telegram-webhook-setup', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthHeaders(),
       body: JSON.stringify({ webhookUrl, action }),
     });
     const contentType = res.headers.get('content-type') || '';

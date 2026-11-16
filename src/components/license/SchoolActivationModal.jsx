@@ -60,7 +60,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
     }
   };
 
-  const handleConnectCustomDb = (e) => {
+  const handleConnectCustomDb = async (e) => {
     e.preventDefault();
     if (!customDbUrl.trim() || !customDbAnonKey.trim()) {
       setError('Both Supabase URL and Publishable Anon Key are required.');
@@ -70,8 +70,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
     setLoading(true);
     setError('');
 
-    const res = configureCustomSchoolDatabase({
-      schoolName: schoolName.trim() || 'Institutional Database',
+    const res = await configureCustomSchoolDatabase({
       supabaseUrl: customDbUrl.trim(),
       supabaseAnonKey: customDbAnonKey.trim(),
       licenseKey: licenseKey.trim(),
@@ -337,14 +336,14 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
               <div className="form-group" style={{ marginBottom: '16px' }}>
                 <label className="form-label" style={{ fontWeight: 600, fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
                   <span>School License Key</span>
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '11.5px' }}>e.g. SMS-MASTER-2026 or SMS-TRIAL-2026</span>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '11.5px' }}>e.g. SMS-FREE-TRIAL-30D</span>
                 </label>
                 <div style={{ position: 'relative' }}>
                   <input
                     type="text"
                     value={licenseKey}
                     onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
-                    placeholder="SMS-TRIAL-2026"
+                    placeholder="SMS-XXXX-XXXX"
                     className="form-input"
                     style={{
                       fontFamily: 'var(--font-mono)',

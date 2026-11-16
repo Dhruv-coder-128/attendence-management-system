@@ -191,7 +191,7 @@ export function useSchoolDatabaseSync() {
       } else {
         // If local database is empty, attempt initial hydration from hub
         try {
-          const res = await fetch(`${hub.url}/api/local-hub?action=export_school_data`);
+          const res = await fetch(`${hub.url}/api/local-hub?action=export_school_data`, { headers: hub.token ? { 'X-Hub-Token': hub.token } : {} });
           if (res.ok) {
             const data = await res.json();
             if (data.ok && Array.isArray(data.batches) && data.batches.length > 0) {
@@ -222,7 +222,7 @@ export function useSchoolDatabaseSync() {
       const hub = await resolveHubInfo();
       const today = new Date().toISOString().split('T')[0];
 
-      const res = await fetch(`${hub.url}/api/local-hub?action=updates&date=${encodeURIComponent(today)}`);
+      const res = await fetch(`${hub.url}/api/local-hub?action=updates&date=${encodeURIComponent(today)}`, { headers: hub.token ? { 'X-Hub-Token': hub.token } : {} });
       if (res.ok) {
         const data = await res.json();
         const incoming = data.records || data.allRecords || data.updates || [];

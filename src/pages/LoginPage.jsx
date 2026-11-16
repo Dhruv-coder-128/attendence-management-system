@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { GraduationCap, Shield, Lock, Mail, ArrowRight, CheckCircle2, AlertCircle, UserPlus, LogIn, MessageCircle, KeyRound, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { GraduationCap, ArrowRight, CheckCircle2, AlertCircle, UserPlus, LogIn, MessageCircle, KeyRound, X } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
-import { supabase, isSupabaseConfigured, getActiveDatabaseConfig, setStoredAuthUser } from '../lib/supabase';
-import { isTauriDesktop, getStoredLicense } from '../lib/licenseService';
+import { supabase, resetLocalPassword, needsLocalOwnerSetup } from '../lib/supabase';
+import { getStorageMode } from '../lib/databaseAdapter';
 
 /**
  * Enterprise Admin Login Screen with Real Supabase Auth & Local Offline Fallback
@@ -26,6 +26,17 @@ export default function LoginPage({ onLoginSuccess, onOpenLicenseModal, onOpenAd
   const [forgotError, setForgotError] = useState('');
   const [forgotSuccess, setForgotSuccess] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+  const isCloudMode = getStorageMode() === 'cloud';
+
+  // First run (or upgrade from a build without passwords): the owner must create a password.
+  useEffect(() => {
+    needsLocalOwnerSetup().then((needed) => {
+      if (needed) {
+        setIsSignUp(true);
+        setSuccessMessage('First-time setup: create the owner account and password for this computer.');
+      }
+    }).catch(() => {});
+  }, []);
 
   const handleOpenForgotModal = () => {
     setForgotEmail(email || 'admin@sms.edu');
@@ -40,7 +51,7 @@ export default function LoginPage({ onLoginSuccess, onOpenLicenseModal, onOpenAd
   const handleWhatsAppContact = () => {
     const cleanEmail = forgotEmail.trim() || email.trim() || 'admin@sms.edu';
     const message = encodeURIComponent(
-      `Hello Dhruv, I am an Administrator for SMS Student Management System and I need my Master Reset Key to reset my password.\n\nInstitutional Email: ${cleanEmail}\nSoftware Version: SMS v1.0.12`
+      `Hello Dhruv, I am an Administrator for SMS Student Management System and I need my school license key to reset my password.\n\nInstitutional Email: ${cleanEmail}\nSoftware Version: SMS v${__APP_VERSION__}`
     );
     window.open(`https://api.whatsapp.com/send?phone=918866039007&text=${message}`, '_blank');
   };
@@ -50,86 +61,40 @@ export default function LoginPage({ onLoginSuccess, onOpenLicenseModal, onOpenAd
     setForgotError('');
     setForgotSuccess('');
 
-    if (!forgotEmail || !resetKey || !newPassword) {
-      setForgotError('Please fill in your email, reset key, and new password.');
-      return;
+    if (getStorageMode() === 'cloud') {
+      if (!forgotEmail) return setForgotError('Please enter your email.');
+      setIsResetting(true);
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim().toLowerCase());
+      setIsResetting(false);
+      if (error) return setForgotError(error.message);
+      return setForgotSuccess('✓ A password reset link has been sent to your email.');
     }
 
+    if (!forgotEmail || !resetKey || !newPassword) {
+      setForgotError('Please fill in your email, license key, and new password.');
+      return;
+    }
     if (newPassword.length < 6) {
       setForgotError('New password must be at least 6 characters long.');
       return;
     }
-
     if (newPassword !== confirmPassword) {
       setForgotError('Passwords do not match. Please re-check.');
       return;
     }
 
-    const cleanKey = resetKey.trim().toUpperCase();
-    const storedLic = getStoredLicense();
-    const allowedKeys = [
-      'SMS-RESET-8866',
-      'SMS-DEVELOPER-8866',
-      'SMS-MASTER-DEV-2026',
-      'SMS-RECOVERY-8866',
-      storedLic?.licenseKey?.toUpperCase(),
-    ].filter(Boolean);
-
-    const isKeyAuthorized = allowedKeys.includes(cleanKey);
-
-    if (!isKeyAuthorized) {
-      setForgotError('Invalid Reset Key. Click the green WhatsApp button above to request your official reset key from Dhruv Shah.');
-      return;
-    }
-
     setIsResetting(true);
     try {
-      // 1. Attempt Supabase Auth Password Update if session exists or update admin
-      const cleanEmail = forgotEmail.trim().toLowerCase();
-      const updatedUser = {
-        id: 'admin-reset-' + Date.now().toString(36),
-        email: cleanEmail,
-        role: 'owner',
-        aud: 'authenticated',
-        user_metadata: { full_name: 'Institution Administrator', role: 'owner' },
-        app_metadata: { role: 'owner', provider: 'email' },
-      };
-
-      setStoredAuthUser(updatedUser);
-      setForgotSuccess('✓ Password updated successfully! Logging you in...');
-
-      setTimeout(() => {
-        setIsForgotModalOpen(false);
-        if (onLoginSuccess) onLoginSuccess(updatedUser);
-      }, 1200);
+      const res = await resetLocalPassword(forgotEmail, newPassword, resetKey);
+      if (!res.ok) return setForgotError(res.error);
+      setForgotSuccess('✓ Password updated. Please sign in with your new password.');
+      setEmail(forgotEmail.trim().toLowerCase());
+      setTimeout(() => setIsForgotModalOpen(false), 1200);
     } catch (err) {
       setForgotError(err.message || 'Failed to update password.');
     } finally {
       setIsResetting(false);
     }
-  };
-
-  const handleInstantAdminLogin = () => {
-    const adminUser = {
-      id: 'local-direct-admin',
-      email: 'admin@institution.edu',
-      role: 'owner',
-      aud: 'authenticated',
-      user_metadata: { full_name: 'Institution Administrator', role: 'owner' },
-      app_metadata: {
-        role: 'owner',
-        permissions: {
-          view_students: true, edit_students: true, delete_students: true,
-          view_attendance: true, mark_attendance: true, manage_batches: true,
-          manage_fees: true, manage_exams: true, manage_parents: true,
-          send_notifications: true, export_data: true, manage_users: true,
-          manage_settings: true,
-        },
-        provider: 'email',
-      },
-    };
-    setStoredAuthUser(adminUser);
-    if (onLoginSuccess) onLoginSuccess(adminUser);
   };
 
   const handleSubmit = async (e) => {
@@ -143,107 +108,34 @@ export default function LoginPage({ onLoginSuccess, onOpenLicenseModal, onOpenAd
     }
 
     setIsLoading(true);
-
-    const isDesktop = typeof isTauriDesktop === 'function' && isTauriDesktop();
     const cleanEmail = email.trim().toLowerCase();
-    const isAdminAccount = cleanEmail.startsWith('admin') || cleanEmail.includes('admin') || cleanEmail.startsWith('owner') || isDesktop;
 
     try {
       if (isSignUp) {
-        // Register administrator account
         const { data, error } = await supabase.auth.signUp({
           email: cleanEmail,
           password,
-          options: {
-            data: {
-              full_name: fullName.trim() || 'Administrator',
-              role: 'Administrator',
-            },
-          },
+          options: { data: { full_name: fullName.trim() || 'Administrator' } },
         });
-
-        if (error) {
-          // If remote hits email rate limit or fails, fall back to local admin immediately
-          if (isAdminAccount || error.message?.includes('rate limit')) {
-            console.warn('Supabase signup rate limited or unavailable, logging in locally:', error.message);
-            const localUser = {
-              id: 'local-admin-' + Date.now().toString(36),
-              email: cleanEmail,
-              role: 'owner',
-              aud: 'authenticated',
-              user_metadata: { full_name: fullName.trim() || 'Administrator', role: 'owner' },
-              app_metadata: { role: 'owner', provider: 'email' },
-            };
-            setStoredAuthUser(localUser);
-            setSuccessMessage('Admin account ready! Entering console...');
-            if (onLoginSuccess) onLoginSuccess(localUser);
-            return;
-          }
-          throw error;
-        }
-
-        if (data?.session) {
-          setSuccessMessage('Admin account created! Entering ERP console...');
-          if (onLoginSuccess) onLoginSuccess(data.user);
-        } else if (data?.user) {
-          setSuccessMessage('Admin account created! Entering ERP console...');
-          if (onLoginSuccess) onLoginSuccess(data.user);
+        if (error) throw error;
+        if (data?.session?.user) {
+          setSuccessMessage('Account created! Entering console...');
+          if (onLoginSuccess) onLoginSuccess(data.session.user);
         } else {
-          setSuccessMessage('Account registered! Logging in...');
+          setSuccessMessage('Account registered. Confirm your email, then sign in.');
           setIsSignUp(false);
         }
       } else {
-        // Sign In with Supabase Auth or Local Administrator
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password,
-        });
-
-        if (error) {
-          if (isAdminAccount) {
-            console.warn('Remote auth error, falling back to local Administrator session:', error.message);
-            const localUser = {
-              id: 'local-admin-session',
-              email: cleanEmail,
-              role: 'owner',
-              aud: 'authenticated',
-              user_metadata: { full_name: 'Administrator', role: 'owner' },
-              app_metadata: { role: 'owner', provider: 'email' },
-            };
-            setStoredAuthUser(localUser);
-            if (onLoginSuccess) onLoginSuccess(localUser);
-            return;
-          }
-          throw error;
-        }
-
-        if (data?.user) {
-          if (onLoginSuccess) onLoginSuccess(data.user);
-        }
+        const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+        if (error) throw error;
+        if (data?.user && onLoginSuccess) onLoginSuccess(data.user);
       }
     } catch (err) {
       console.error('Auth error:', err);
-      if (isAdminAccount) {
-        // Never lock out an administrator
-        const fallbackUser = {
-          id: 'admin-recovery-session',
-          email: cleanEmail,
-          role: 'owner',
-          aud: 'authenticated',
-          user_metadata: { full_name: fullName.trim() || 'Administrator', role: 'owner' },
-          app_metadata: { role: 'owner', provider: 'email' },
-        };
-        setStoredAuthUser(fallbackUser);
-        if (onLoginSuccess) onLoginSuccess(fallbackUser);
-        return;
-      }
-
       if (err.message?.includes('Invalid login credentials')) {
-        setErrorMessage('Invalid login credentials. Please verify your email and password, or click "Register Admin" above to create this account.');
+        setErrorMessage('Invalid email or password.');
       } else if (err.message?.includes('Email not confirmed')) {
-        setErrorMessage('Email address has not been confirmed yet. Please check your inbox or disable email confirmation in Supabase Dashboard.');
-      } else if (err.message?.includes('rate limit')) {
-        setErrorMessage('Email rate limit reached on remote server. You can click "Direct Administrator Sign In" below to enter immediately.');
+        setErrorMessage('Email address has not been confirmed yet. Please check your inbox.');
       } else {
         setErrorMessage(err.message || 'Authentication failed. Please check your credentials.');
       }
@@ -493,30 +385,6 @@ export default function LoginPage({ onLoginSuccess, onOpenLicenseModal, onOpenAd
               : 'Sign In to Console'}
           </Button>
 
-          <button
-            type="button"
-            onClick={handleInstantAdminLogin}
-            style={{
-              marginTop: '10px',
-              width: '100%',
-              padding: '10px 14px',
-              backgroundColor: '#f8fafc',
-              border: '1px dashed var(--gold-border, #c5a880)',
-              borderRadius: '6px',
-              color: 'var(--navy-900, #0f172a)',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <Shield size={15} color="var(--gold-primary, #b48c36)" />
-            <span>Direct Administrator Sign In (Local / Offline Mode)</span>
-          </button>
 
           <div
             style={{
@@ -552,7 +420,7 @@ export default function LoginPage({ onLoginSuccess, onOpenLicenseModal, onOpenAd
                   textDecoration: 'underline',
                 }}
               >
-                Developer Master Console (PIN 8866) →
+                Developer Master Console →
               </button>
             </div>
           )}
@@ -670,14 +538,15 @@ export default function LoginPage({ onLoginSuccess, onOpenLicenseModal, onOpenAd
                   required
                 />
 
+                {!isCloudMode && (<>
                 <Input
-                  label="Master Reset Key"
+                  label="School License Key"
                   type="text"
                   value={resetKey}
                   onChange={(e) => setResetKey(e.target.value)}
-                  placeholder="e.g. SMS-RESET-8866"
+                  placeholder="The license key used to activate this computer"
                   required
-                  helperText="Provided by developer Dhruv Shah via WhatsApp"
+                  helperText="Lost it? Request it from the developer via WhatsApp above."
                 />
 
                 <Input
@@ -698,6 +567,8 @@ export default function LoginPage({ onLoginSuccess, onOpenLicenseModal, onOpenAd
                   placeholder="••••••••••••"
                   required
                 />
+
+                </>)}
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
                   <Button

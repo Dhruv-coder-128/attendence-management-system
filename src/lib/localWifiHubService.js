@@ -82,6 +82,22 @@ export function setStoredHubUrl(url) {
 /**
  * Returns stored pairing token
  */
+/** Headers for hub requests: the paired token authorises this phone on the School PC hub. */
+export function hubHeaders() {
+  const token = getStoredHubToken();
+  return token ? { Accept: 'application/json', 'X-Hub-Token': token } : { Accept: 'application/json' };
+}
+
+/** fetch() for hub data calls: a 401 means our token is stale, so forget it and ask the teacher to pair again. */
+async function hubFetch(url, opts) {
+  const res = await fetch(url, opts);
+  if (res.status === 401) {
+    setStoredHubToken('');
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sms-hub-unpaired'));
+  }
+  return res;
+}
+
 export function getStoredHubToken() {
   if (typeof window === 'undefined') return '';
   return localStorage.getItem(HUB_TOKEN_KEY) || '';
@@ -138,15 +154,23 @@ export function setDevicePairedLocally(_paired) {
  * Auto-registers this phone with the School PC Hub.
  * Zero OTP friction — immediate authorization on local Wi-Fi.
  */
-export async function pairDeviceWithHub(hubUrl = null, _otp = '') {
+export async function pairDeviceWithHub(hubUrl = null, otp = '') {
   const targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
-  const deviceId = getOrCreateDeviceId();
-  if (targetUrl) {
-    try {
-      await fetch(`${targetUrl}/api/local-hub?action=check_device&device_id=${encodeURIComponent(deviceId)}`);
-    } catch {}
+  if (!targetUrl) return { ok: false, error: 'Connect to the School PC first.' };
+  try {
+    const res = await fetch(`${targetUrl}/api/local-hub?action=pair_device`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: getOrCreateDeviceId(), otp: String(otp).trim() }),
+    });
+    const data = await res.json();
+    if (!data.ok || !data.token) return { ok: false, error: data.error || 'Pairing failed.' };
+    setStoredHubToken(data.token);
+    setDevicePairedLocally(true);
+    return { ok: true, token: data.token };
+  } catch {
+    return { ok: false, error: 'Cannot reach the School PC.' };
   }
-  return { ok: true, registered: true, message: 'Device successfully registered on School Wi-Fi.' };
 }
 
 /**
@@ -301,7 +325,7 @@ export async function autoDiscoverSchoolPC(onProgress = null) {
             try {
               const res = await fetch(`${testUrl}/api/local-hub?action=status`, {
                 method: 'GET',
-                headers: { Accept: 'application/json' },
+                headers: hubHeaders(),
                 signal: controller ? controller.signal : undefined,
               });
               if (tId) clearTimeout(tId);
@@ -366,7 +390,7 @@ export async function checkHubConnection(hubUrl = null, tryAutoDiscover = false)
   try {
     const res = await fetch(`${targetUrl}/api/local-hub?action=status`, {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      headers: hubHeaders(),
       signal: controller ? controller.signal : undefined,
     });
     if (timeoutId) clearTimeout(timeoutId);
@@ -423,9 +447,9 @@ export async function fetchBatchesFromHub(hubUrl = null) {
   try {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timeout = controller ? setTimeout(() => controller.abort(), 2500) : null;
-    const res = await fetch(`${targetUrl}/api/local-hub?action=batches`, {
+    const res = await hubFetch(`${targetUrl}/api/local-hub?action=batches`, {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      headers: hubHeaders(),
       signal: controller ? controller.signal : undefined,
     });
     if (timeout) clearTimeout(timeout);
@@ -487,11 +511,11 @@ export async function fetchStudentsFromHub(batchId, hubUrl = null) {
   try {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timeout = controller ? setTimeout(() => controller.abort(), 2500) : null;
-    const res = await fetch(
+    const res = await hubFetch(
       `${targetUrl}/api/local-hub?action=students&batch_id=${encodeURIComponent(batchId)}`,
       {
         method: 'GET',
-        headers: { Accept: 'application/json' },
+        headers: hubHeaders(),
         signal: controller ? controller.signal : undefined,
       }
     );
@@ -555,13 +579,13 @@ export async function fetchExistingAttendanceFromHub(batchId, date, hubUrl = nul
   try {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timeout = controller ? setTimeout(() => controller.abort(), 2000) : null;
-    const res = await fetch(
+    const res = await hubFetch(
       `${targetUrl}/api/local-hub?action=attendance&batch_id=${encodeURIComponent(
         batchId
       )}&date=${encodeURIComponent(targetDate)}`,
       {
         method: 'GET',
-        headers: { Accept: 'application/json' },
+        headers: hubHeaders(),
         signal: controller ? controller.signal : undefined,
       }
     );
@@ -632,7 +656,7 @@ export async function submitAttendanceToHub(batchId, date, records, hubUrl = nul
         headers['X-Hub-Token'] = token;
       }
 
-      const res = await fetch(`${targetUrl}/api/local-hub?action=attendance`, {
+      const res = await hubFetch(`${targetUrl}/api/local-hub?action=attendance`, {
       method: 'POST',
       headers,
       body: JSON.stringify({

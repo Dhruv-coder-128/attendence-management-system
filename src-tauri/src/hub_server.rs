@@ -35,25 +35,48 @@ pub struct HubState {
     pub students: Vec<Value>,
     pub attendance: HashMap<String, Value>,
     pub is_locked: bool,
+    pub failed_pair_attempts: u32,
 }
+
+/// Origins of our own apps (Tauri desktop webview, Capacitor APK). Anything else is a foreign website.
+const ALLOWED_ORIGINS: [&str; 5] = [
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+    "tauri://localhost",
+    "http://localhost",
+    "https://localhost",
+];
+const MAX_FAILED_PAIRS: u32 = 5;
 
 pub type SharedHubState = Arc<RwLock<HubState>>;
 
+fn random_bytes<const N: usize>() -> [u8; N] {
+    let mut buf = [0u8; N];
+    getrandom::fill(&mut buf).expect("OS random number generator unavailable");
+    buf
+}
+
 fn generate_simple_token() -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(123456789);
-    format!("sms-{:x}", now % 0xffffffffffff)
+    random_bytes::<16>().iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// Token is kept on disk so paired phones stay paired across PC restarts.
+fn load_or_create_token(app_data_dir: &Path) -> String {
+    let path = app_data_dir.join("hub_token.txt");
+    if let Ok(existing) = fs::read_to_string(&path) {
+        let t = existing.trim().to_string();
+        if t.len() >= 32 {
+            return t;
+        }
+    }
+    let token = generate_simple_token();
+    let _ = fs::write(&path, &token);
+    token
 }
 
 fn generate_pairing_otp() -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(482910);
-    let code = 100000 + (now % 900000);
-    format!("{:06}", code)
+    let n = u32::from_le_bytes(random_bytes::<4>());
+    format!("{:06}", 100000 + (n % 900000))
 }
 
 static LAST_DETECTED_IP: RwLock<Option<(String, u64)>> = RwLock::new(None);
@@ -201,7 +224,7 @@ pub fn detect_local_ip() -> String {
     "127.0.0.1".to_string()
 }
 
-fn atomic_write_json(file_path: &Path, data: &Value) -> Result<(), String> {
+pub fn atomic_write_json(file_path: &Path, data: &Value) -> Result<(), String> {
     if let Some(parent) = file_path.parent() {
         let _ = fs::create_dir_all(parent);
     }
@@ -229,7 +252,7 @@ pub fn start_hub_server(app_data_dir: PathBuf, preferred_port: u16) -> (SharedHu
     let _ = fs::create_dir_all(&app_data_dir);
 
     let local_ip = detect_local_ip();
-    let token = generate_simple_token();
+    let token = load_or_create_token(&app_data_dir);
 
     // Load existing database from app_data_dir if present
     let db_path = app_data_dir.join("school_database.json");
@@ -343,6 +366,7 @@ pub fn start_hub_server(app_data_dir: PathBuf, preferred_port: u16) -> (SharedHu
                 students: initial_students,
                 attendance: initial_attendance,
                 is_locked: false,
+                failed_pair_attempts: 0,
             }));
             let info = HubServerInfo {
                 ok: false,
@@ -387,6 +411,7 @@ pub fn start_hub_server(app_data_dir: PathBuf, preferred_port: u16) -> (SharedHu
         students: initial_students.clone(),
         attendance: initial_attendance.clone(),
         is_locked: false,
+        failed_pair_attempts: 0,
     }));
 
     let info = HubServerInfo {
@@ -455,22 +480,38 @@ fn handle_connection(mut stream: TcpStream, state: SharedHubState) {
         }
     }
 
-    // CORS preflight
+    // CORS: only our own app origins may read responses. No Origin header = native/non-browser client.
+    let origin = headers.get("origin").cloned().unwrap_or_default();
+    let origin_ok = origin.is_empty() || ALLOWED_ORIGINS.contains(&origin.as_str());
+    let cors_headers = if origin_ok && !origin.is_empty() {
+        format!(
+            "Access-Control-Allow-Origin: {}\r\nVary: Origin\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Accept, X-Hub-Token, X-Device-Id\r\nAccess-Control-Max-Age: 86400\r\n",
+            origin
+        )
+    } else {
+        String::new()
+    };
+
     if method == "OPTIONS" {
-        let response = "HTTP/1.1 204 No Content\r\n\
-Access-Control-Allow-Origin: *\r\n\
-Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
-Access-Control-Allow-Headers: Content-Type, Accept, Authorization, X-Hub-Token, X-School-Token, X-Device-Id, *\r\n\
-Access-Control-Max-Age: 86400\r\n\
-Connection: close\r\n\r\n";
+        let response = format!("HTTP/1.1 204 No Content\r\n{}Connection: close\r\n\r\n", cors_headers);
         let _ = stream.write_all(response.as_bytes());
         return;
     }
 
-    // Read body if Content-Length specified
+    // The PC itself (loopback, from our own app) is trusted. LAN clients must present the paired token.
+    let trusted_local = is_loopback && origin_ok;
+    let token_ok = {
+        let presented = headers.get("x-hub-token").map(|s| s.trim()).unwrap_or("");
+        state.read().map(|g| !presented.is_empty() && presented == g.token).unwrap_or(false)
+    };
+
+    // Read body if Content-Length specified (capped at 20 MB to avoid memory exhaustion)
     let mut body_bytes = Vec::new();
     if let Some(len_str) = headers.get("content-length") {
         if let Ok(content_len) = len_str.parse::<usize>() {
+            if content_len > 20 * 1024 * 1024 {
+                return;
+            }
             body_bytes.resize(content_len, 0);
             let _ = reader.read_exact(&mut body_bytes);
         }
@@ -499,15 +540,15 @@ Connection: close\r\n\r\n";
     let (status_code, response_json) = if path.starts_with("/api/local-hub") {
         match method.as_str() {
             "OPTIONS" => (200, json!({ "ok": true, "status": "preflight_ok" })),
-            "GET" => handle_get_action(&action, &query_params, &headers, &state),
-            "POST" => handle_post_action(&action, &body_bytes, &headers, is_loopback, &state),
+            "GET" => handle_get_action(&action, &query_params, trusted_local, token_ok, &state),
+            "POST" => handle_post_action(&action, &body_bytes, &headers, trusted_local, token_ok, &state),
             _ => (405, json!({ "ok": false, "error": "Method Not Allowed" })),
         }
     } else if path == "/" || path == "/status" || path == "/health" || path.is_empty() {
         if method == "OPTIONS" {
             (200, json!({ "ok": true, "status": "preflight_ok" }))
         } else {
-            handle_get_action("status", &query_params, &headers, &state)
+            handle_get_action("status", &query_params, trusted_local, token_ok, &state)
         }
     } else {
         (404, json!({ "ok": false, "error": "Endpoint not found" }))
@@ -518,13 +559,10 @@ Connection: close\r\n\r\n";
         "HTTP/1.1 {} OK\r\n\
 Content-Type: application/json; charset=utf-8\r\n\
 Content-Length: {}\r\n\
-Access-Control-Allow-Origin: *\r\n\
-Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
-Access-Control-Allow-Headers: Content-Type, Accept, Authorization, X-Hub-Token, X-School-Token, X-Device-Id, *\r\n\
-Access-Control-Max-Age: 86400\r\n\
-Connection: close\r\n\r\n{}",
+{}Connection: close\r\n\r\n{}",
         status_code,
         body_str.len(),
+        cors_headers,
         body_str
     );
 
@@ -556,9 +594,17 @@ fn percent_decode(input: &str) -> String {
 fn handle_get_action(
     action: &str,
     params: &HashMap<String, String>,
-    _headers: &HashMap<String, String>,
+    trusted_local: bool,
+    token_ok: bool,
     state: &SharedHubState,
 ) -> (u16, Value) {
+    let public_action = matches!(action, "status" | "check_device");
+    if action == "regenerate_otp" && !trusted_local {
+        return (403, json!({ "ok": false, "error": "Only the School PC can regenerate the pairing code." }));
+    }
+    if !public_action && !trusted_local && !token_ok {
+        return (401, json!({ "ok": false, "error": "This phone is not paired. Enter the 6-digit code shown on the School PC." }));
+    }
     let guard = match state.read() {
         Ok(g) => g,
         Err(_) => return (500, json!({ "ok": false, "error": "Lock error" })),
@@ -581,8 +627,9 @@ fn handle_get_action(
                         "localIp": write_guard.local_ip,
                         "port": write_guard.port,
                         "connectUrl": format!("http://{}:{}", write_guard.local_ip, write_guard.port),
-                        "token": write_guard.token,
-                        "otp": write_guard.pairing_otp,
+                        // Secrets only for the PC's own UI; LAN callers must pair with the OTP shown on screen.
+                        "token": if trusted_local { json!(write_guard.token) } else { Value::Null },
+                        "otp": if trusted_local { json!(write_guard.pairing_otp) } else { Value::Null },
                         "registeredDevicesCount": write_guard.registered_devices.len(),
                         "batchesCount": write_guard.batches.len(),
                         "studentsCount": write_guard.students.len(),
@@ -863,7 +910,8 @@ fn handle_post_action(
     action: &str,
     body_bytes: &[u8],
     headers: &HashMap<String, String>,
-    _is_loopback: bool,
+    trusted_local: bool,
+    token_ok: bool,
     state: &SharedHubState,
 ) -> (u16, Value) {
     let payload: Value = match serde_json::from_slice(body_bytes) {
@@ -882,7 +930,14 @@ fn handle_post_action(
         Err(_) => return (500, json!({ "ok": false, "error": "Lock error" })),
     };
 
+    if effective_action != "pair_device" && !trusted_local && !token_ok {
+        return (401, json!({ "ok": false, "error": "This phone is not paired. Enter the 6-digit code shown on the School PC." }));
+    }
+
     if effective_action == "set_lock_status" {
+        if !trusted_local {
+            return (403, json!({ "ok": false, "error": "Only the School PC can change the lock status." }));
+        }
         let is_locked = payload.get("is_locked").and_then(|v| v.as_bool()).unwrap_or(false);
         guard.is_locked = is_locked;
         return (200, json!({ "ok": true, "is_locked": is_locked }));
@@ -906,6 +961,12 @@ fn handle_post_action(
             return (400, json!({ "ok": false, "error": "Missing device_id" }));
         }
         if otp.is_empty() || otp != guard.pairing_otp {
+            // Rotate the code after repeated wrong guesses so it cannot be brute-forced.
+            guard.failed_pair_attempts += 1;
+            if guard.failed_pair_attempts >= MAX_FAILED_PAIRS {
+                guard.failed_pair_attempts = 0;
+                guard.pairing_otp = generate_pairing_otp();
+            }
             return (
                 400,
                 json!({
@@ -914,6 +975,7 @@ fn handle_post_action(
                 }),
             );
         }
+        guard.failed_pair_attempts = 0;
         guard.registered_devices.insert(device_id.to_string());
         let devices_path = guard.app_data_dir.join("registered_devices.json");
         let dev_arr: Vec<String> = guard.registered_devices.iter().cloned().collect();

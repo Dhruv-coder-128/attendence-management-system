@@ -18,9 +18,9 @@ const BulkImportPage = lazy(() => import('./pages/BulkImportPage'));
 const MasterAdminPortalPage = lazy(() => import('./pages/MasterAdminPortalPage'));
 const ParentPortalPage = lazy(() => import('./pages/ParentPortalPage'));
 
-import { supabase, isSupabaseConfigured, reinitializeSupabaseClient, getStoredAuthUser, setStoredAuthUser } from './lib/supabase';
-import { fetchUserProfile, hasPermission, getFallbackOwnerProfile, getFallbackStaffProfile, OWNER_EMAIL } from './lib/authService';
-import { validateLicense, isTauriDesktop, getStoredLicense, SYSTEM_VERIFIER_EMAIL } from './lib/licenseService';
+import { supabase, isSupabaseConfigured, reinitializeSupabaseClient, setStoredAuthUser } from './lib/supabase';
+import { fetchUserProfile, hasPermission, getFallbackStaffProfile } from './lib/authService';
+import { validateLicense, isTauriDesktop, getStoredLicense } from './lib/licenseService';
 import SchoolActivationModal from './components/license/SchoolActivationModal';
 import DraggableTrialCapsule from './components/license/DraggableTrialCapsule';
 import TrialExpiredLockout from './components/license/TrialExpiredLockout';
@@ -180,16 +180,9 @@ export default function App() {
     try {
       const profile = await fetchUserProfile(authUser);
       setCurrentUserProfile(profile);
-    } catch (err) {
-      const cleanEmail = (authUser.email || '').toLowerCase();
-      const isOwnerAccount = cleanEmail === OWNER_EMAIL ||
-        cleanEmail.startsWith('owner') ||
-        cleanEmail.startsWith('admin') ||
-        cleanEmail.includes('admin') ||
-        isTauriDesktop() ||
-        authUser.role === 'owner' ||
-        authUser.app_metadata?.role === 'owner';
-      setCurrentUserProfile(isOwnerAccount ? getFallbackOwnerProfile(authUser) : getFallbackStaffProfile(authUser, 'owner'));
+    } catch {
+      const role = authUser.app_metadata?.role || authUser.role || 'moderator';
+      setCurrentUserProfile(getFallbackStaffProfile(authUser, role, authUser.app_metadata?.permissions));
     }
   }, []);
 
@@ -212,23 +205,8 @@ export default function App() {
         .getSession()
         .then(({ data: { session: initialSession } = {} }) => {
           clearTimeout(safetyTimer);
-          let sessionToUse = initialSession || null;
-          let currentUser = sessionToUse?.user ?? null;
-
-          // Only restore offline user if explicitly saved by user sign-in
-          if (!currentUser) {
-            const stored = typeof getStoredAuthUser === 'function' ? getStoredAuthUser() : null;
-            if (stored && stored.email) {
-              currentUser = stored;
-              sessionToUse = { user: currentUser, access_token: 'offline-token' };
-            }
-          }
-
-          // Never treat background licensing verifier token as an application user
-          if (currentUser?.email && currentUser.email.toLowerCase() === SYSTEM_VERIFIER_EMAIL.toLowerCase()) {
-            currentUser = null;
-            sessionToUse = null;
-          }
+          const sessionToUse = initialSession || null;
+          const currentUser = sessionToUse?.user ?? null;
 
           setSession(sessionToUse);
           setUser(currentUser);
@@ -249,11 +227,6 @@ export default function App() {
       } = supabase.auth.onAuthStateChange((_event, currentSession) => {
         clearTimeout(safetyTimer);
         const currentUser = currentSession?.user ?? null;
-
-        // Never switch UI session for headless licensing verifier queries
-        if (currentUser?.email && currentUser.email.toLowerCase() === SYSTEM_VERIFIER_EMAIL.toLowerCase()) {
-          return;
-        }
 
         setSession(currentSession || null);
         setUser(currentUser);
@@ -322,9 +295,7 @@ export default function App() {
     } catch (err) {
       console.error('Logout error:', err);
     } finally {
-      if (typeof setStoredAuthUser === 'function') {
-        setStoredAuthUser(null);
-      }
+      setStoredAuthUser(null);
       setSession(null);
       setUser(null);
       setCurrentUserProfile(null);
@@ -334,7 +305,6 @@ export default function App() {
 
   // Navigation Handler with Notification Read Tracking
   const handleNavigate = (page) => {
-    // Master portal is accessible when unlocked by developer PIN 8866
     if (page === 'notifications') {
       try {
         localStorage.setItem('sms_last_viewed_notifications', new Date().toISOString());

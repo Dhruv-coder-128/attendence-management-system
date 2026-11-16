@@ -23,10 +23,7 @@ import {
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
 import Badge from '../components/common/Badge';
-import { supabase } from '../lib/supabase';
 import {
-  getApiBaseUrl,
-  activateSchoolLicense,
   fetchCloudLicenses,
   saveCloudLicense,
   adjustCloudLicenseDays,
@@ -34,122 +31,21 @@ import {
   unbindCloudHardware,
   deleteCloudLicense,
   updateCloudLicenseTier,
+  setCloudLicenseTimer,
+  getDeveloperSecret,
+  setDeveloperSecret,
   STUDENT_CAPACITY_TIERS,
   UNIVERSAL_TRIAL_KEY,
   UNIVERSAL_GRACE_KEY,
   getStudentCapacityTier,
 } from '../lib/licenseService';
 
-const MASTER_DEV_PIN = '8866';
-const DEVELOPER_EMAIL = 'dushah2007@gmail.com';
 const STORAGE_REGISTRY_KEY = 'sms_saas_clients_registry';
-
-
-const DEFAULT_SAMPLE_CLIENTS = [
-  {
-    id: 'SMS-SCH-001',
-    schoolName: 'Noble School',
-    contactPerson: 'Principal / Administrator',
-    email: 'principal@nobleschool.org',
-    phone: '+91 8866039007',
-    licenseKey: 'SMS-NOBLE-5000-UNLIMITED',
-    status: 'licensed',
-    isLocked: false,
-    daysRemaining: 365,
-    maxStudents: 5000,
-    tier: { id: 'tier_5000', name: 'Tier 4 — Enterprise', maxStudents: 5000, label: '5,000+ Students (Unlimited)' },
-    isTimerVisible: false,
-    trialStartedAt: new Date().toISOString(),
-    trialEndsAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-    notes: '5000+ Unlimited Student Tier for Noble School',
-  },
-  {
-    id: 'SMS-SCH-001B',
-    schoolName: 'Noble School (Standard Key)',
-    contactPerson: 'Principal Sharma',
-    email: 'principal@nobleschool.org',
-    phone: '+91 9876543210',
-    licenseKey: 'SMS-NOBLE-30D-89XK7',
-    status: 'trial_active',
-    isLocked: false,
-    daysRemaining: 365,
-    maxStudents: 5000,
-    tier: { id: 'tier_5000', name: 'Tier 4 — Enterprise', maxStudents: 5000, label: '5,000+ Students (Unlimited)' },
-    isTimerVisible: true,
-    trialStartedAt: new Date().toISOString(),
-    trialEndsAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-    notes: 'Primary Client Cohort — 5000+ Students',
-  },
-  {
-    id: 'SMS-SCH-002',
-    schoolName: 'Saraswati Vidhyalay',
-    contactPerson: 'Director Patel',
-    email: 'info@saraswati.edu',
-    phone: '+91 9823456789',
-    licenseKey: 'SMS-SARASWATI-1Y-3M4N9',
-    status: 'licensed',
-    isLocked: false,
-    daysRemaining: 340,
-    isTimerVisible: false,
-    trialStartedAt: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString(),
-    trialEndsAt: new Date(Date.now() + 340 * 24 * 60 * 60 * 1000).toISOString(),
-    notes: 'Licensed Client Cohort',
-  },
-  {
-    id: 'SMS-SCH-003',
-    schoolName: 'Green Valley International',
-    contactPerson: 'Admin Mehta',
-    email: 'admin@greenvalley.com',
-    phone: '+91 9811223344',
-    licenseKey: 'SMS-GREENVALLEY-TRIAL-01',
-    status: 'trial_expired',
-    isLocked: true,
-    daysRemaining: 0,
-    isTimerVisible: false,
-    trialStartedAt: new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString(),
-    trialEndsAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    notes: 'Awaiting renewal fee payment',
-  },
-  {
-    id: 'SMS-SCH-004',
-    schoolName: 'Eklavya Global Academy',
-    contactPerson: 'Principal Joshi',
-    email: 'contact@eklavya.edu',
-    phone: '+91 9898112233',
-    licenseKey: 'SMS-EKLAVYAS-15D-PXQR',
-    status: 'trial_active',
-    isLocked: false,
-    daysRemaining: 15,
-    isTimerVisible: true,
-    notes: '15-day evaluation setup',
-  },
-  {
-    id: 'SMS-SCH-005',
-    schoolName: 'Noble Public School',
-    contactPerson: 'Headmaster Verma',
-    email: 'verma@nobleschool.in',
-    phone: '+91 9909012345',
-    licenseKey: 'SMA-NOBLE-2026',
-    status: 'licensed',
-    isLocked: false,
-    daysRemaining: 365,
-    isTimerVisible: false,
-    notes: 'Annual license batch',
-  },
-];
 
 export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, user }) {
   // Security Access State (Auto-authenticates on local development machine or via Master Developer credentials)
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const savedAuth = sessionStorage.getItem('sms_master_portal_auth');
-      if (savedAuth === 'true') return true;
-      if (user?.email?.toLowerCase() === DEVELOPER_EMAIL) return true;
-      const host = window.location.hostname;
-      if (host === 'localhost' || host === '127.0.0.1') return true;
-    }
-    return false;
-  });
+  // Unlocked only while a developer secret accepted by /api/license-manage is in sessionStorage.
+  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(getDeveloperSecret()));
 
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState('');
@@ -170,9 +66,9 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
   const [clients, setClients] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_REGISTRY_KEY);
-      return saved ? JSON.parse(saved) : DEFAULT_SAMPLE_CLIENTS;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return DEFAULT_SAMPLE_CLIENTS;
+      return [];
     }
   });
 
@@ -213,34 +109,44 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
     }
   };
 
-  const handlePinSubmit = (e) => {
-    e.preventDefault();
-    if (pinInput.trim() === MASTER_DEV_PIN || pinInput.trim() === '8866') {
-      setIsAuthenticated(true);
-      sessionStorage.setItem('sms_master_portal_auth', 'true');
-      setPinError('');
-    } else {
-      setPinError('Invalid Master Developer Security PIN. (Default is 8866)');
-    }
+  const applyLicenses = (list) => {
+    setClients(list);
+    try {
+      localStorage.setItem(STORAGE_REGISTRY_KEY, JSON.stringify(list));
+    } catch {}
   };
 
-  // Fetch Remote Cloud Licenses directly from Supabase Cloud
+  const handlePinSubmit = async (e) => {
+    e.preventDefault();
+    setDeveloperSecret(pinInput.trim());
+    setIsActionLoading(true);
+    const res = await fetchCloudLicenses();
+    setIsActionLoading(false);
+    if (!res.ok) {
+      setDeveloperSecret('');
+      setPinError(res.error || 'Invalid developer secret.');
+      return;
+    }
+    applyLicenses(res.licenses);
+    setPinError('');
+    setPinInput('');
+    setIsAuthenticated(true);
+  };
+
+  // Fetch licenses from the licensing server
   const loadRemoteLicenses = useCallback(async () => {
     setIsActionLoading(true);
-    try {
-      const cloudLicenses = await fetchCloudLicenses();
-      if (Array.isArray(cloudLicenses) && cloudLicenses.length > 0) {
-        setClients(cloudLicenses);
-        try {
-          localStorage.setItem(STORAGE_REGISTRY_KEY, JSON.stringify(cloudLicenses));
-        } catch {}
-      }
-    } catch (err) {
-      console.warn('Could not query cloud licenses:', err);
-    } finally {
-      setIsActionLoading(false);
+    const res = await fetchCloudLicenses();
+    setIsActionLoading(false);
+    if (res.ok) {
+      applyLicenses(res.licenses);
+    } else if (res.httpStatus === 401) {
+      setDeveloperSecret('');
+      setIsAuthenticated(false);
+    } else {
+      showToast(`⚠️ Could not load licenses: ${res.error}`);
     }
-  }, []);
+  }, [showToast]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -252,7 +158,8 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
   const generateCryptographicKey = (schoolName, durationDays) => {
     const slug = schoolName.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'SCH';
     const durCode = durationDays === 9999 ? 'LIFE' : `${durationDays}D`;
-    const randomChars = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const randomChars = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => alphabet[b % alphabet.length]).join('');
     return `SMS-${slug}-${durCode}-${randomChars}`;
   };
 
@@ -468,27 +375,8 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
     });
     saveClients(updated);
 
-    // Direct Supabase Sync
-    if (supabase) {
-      try {
-        await supabase.from('courses').upsert({
-          code: 'LIC:' + target.licenseKey,
-          name: `${target.schoolName} [${String(target.status || '').toUpperCase()}]`,
-          level: 'License',
-          description: JSON.stringify({
-            status: target.status,
-            isLocked: target.isLocked || target.status === 'suspended',
-            is_locked: target.isLocked || target.status === 'suspended',
-            school_name: target.schoolName,
-            schoolName: target.schoolName,
-            licenseKey: target.licenseKey,
-            days_remaining: target.daysRemaining,
-            is_timer_visible: newVisible,
-          }),
-          is_active: target.status !== 'suspended',
-        }, { onConflict: 'code' });
-      } catch (err) {}
-    }
+    const timerRes = await setCloudLicenseTimer(target.licenseKey, newVisible);
+    if (!timerRes.ok) showToast(`⚠️ Server did not save the change: ${timerRes.error}`);
 
     showToast(
       newVisible
@@ -538,37 +426,13 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
   };
 
   // 8. Full Client Edit Save
-  const handleSaveEditClient = () => {
+  const handleSaveEditClient = async () => {
     if (!editingClientData) return;
     const updated = clients.map((c) => (c.id === editingClientData.id ? editingClientData : c));
     saveClients(updated);
 
-    // Direct Supabase Sync
-    if (supabase) {
-      try {
-        supabase.from('courses').upsert({
-          code: 'LIC:' + editingClientData.licenseKey,
-          name: `${editingClientData.schoolName} [${String(editingClientData.status || '').toUpperCase()}]`,
-          level: 'License',
-          description: JSON.stringify({
-            status: editingClientData.status,
-            isLocked: editingClientData.isLocked || editingClientData.status === 'suspended',
-            is_locked: editingClientData.isLocked || editingClientData.status === 'suspended',
-            school_name: editingClientData.schoolName,
-            schoolName: editingClientData.schoolName,
-            contact_person: editingClientData.contactPerson,
-            phone: editingClientData.phone,
-            email: editingClientData.email,
-            licenseKey: editingClientData.licenseKey,
-            days_remaining: editingClientData.daysRemaining,
-            max_students: editingClientData.maxStudents || 200,
-            maxStudents: editingClientData.maxStudents || 200,
-            is_timer_visible: editingClientData.isTimerVisible !== false,
-          }),
-          is_active: editingClientData.status !== 'suspended',
-        }, { onConflict: 'code' }).then(() => {});
-      } catch (err) {}
-    }
+    const saveRes = await saveCloudLicense(editingClientData);
+    if (!saveRes.ok) showToast(`⚠️ Server did not save the change: ${saveRes.error}`);
 
     setIsEditClientModalOpen(false);
     setEditingClientData(null);
@@ -616,15 +480,15 @@ export default function MasterAdminPortalPage({ onNavigate, onPreviewSchool, use
             Master Developer Access
           </h2>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '24px' }}>
-            Enter Master Developer Security PIN to open the Multi-School SaaS Fleet Management Console.
+            Enter the developer secret (the DEVELOPER_SECRET set on the server) to open the license console.
           </p>
 
           <form onSubmit={handlePinSubmit}>
             <div style={{ marginBottom: '16px', textAlign: 'left' }}>
               <Input
-                label="Master PIN (Default 8866)"
+                label="Developer Secret"
                 type="password"
-                placeholder="Enter PIN"
+                placeholder="Enter developer secret"
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value)}
                 autoFocus

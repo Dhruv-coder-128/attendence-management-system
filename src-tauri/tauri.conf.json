@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "SMS - Student Management System",
-  "version": "1.0.0",
+  "version": "../package.json",
   "identifier": "com.sms.desktopapp",
   "build": {
     "frontendDist": "../dist",
@@ -27,7 +27,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob: mediastream:; connect-src 'self' ipc: http://ipc.localhost https://*.supabase.co wss://*.supabase.co https://api.telegram.org https://attendence-management-system-lovat.vercel.app http: ws:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'self'"
     }
   },
   "bundle": {

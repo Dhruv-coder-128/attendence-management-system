@@ -5,64 +5,31 @@
  * Supabase database (URL & publishable anon key), and issues a unique 30-day trial License Key.
  */
 
-import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
+import { applyCors, rateLimited, overLimit, clientIp, safeEqual, getServerDb, DEVELOPER_CONTACT } from './_lib/license.js';
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
+  if (applyCors(req, res, 'POST, OPTIONS', 'Content-Type, x-developer-secret')) return;
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'Method Not Allowed' });
   }
 
-  // Authorize caller: Must be System Owner (dushah2007@gmail.com) or provide valid DEVELOPER_SECRET
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  const devSecretHeader = req.headers['x-developer-secret'] || '';
-
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const developerSecret = process.env.DEVELOPER_SECRET || process.env.OWNER_EMAIL || 'dushah2007@gmail.com';
-
-  if (!supabaseUrl || !serviceKey) {
-    return res.status(500).json({
-      ok: false,
-      error: 'Central licensing server configuration missing: SUPABASE_SERVICE_ROLE_KEY is required.',
-    });
+  const secret = process.env.DEVELOPER_SECRET;
+  if (!secret || secret.length < 16) {
+    return res.status(500).json({ ok: false, error: 'DEVELOPER_SECRET is not configured on the server (min 16 characters).' });
+  }
+  const failKey = 'onboard-fail:' + clientIp(req);
+  if (overLimit(failKey, 10, 15 * 60 * 1000)) {
+    return res.status(429).json({ ok: false, error: 'Too many failed attempts. Try again in 15 minutes.' });
+  }
+  if (!safeEqual(req.headers['x-developer-secret'], secret)) {
+    rateLimited(failKey, 10, 15 * 60 * 1000);
+    return res.status(403).json({ ok: false, error: 'Access Denied: developer secret required.' });
   }
 
-  const serverDb = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false },
-  });
-
-  let isAuthorized = false;
-
-  // Option A: Direct Developer Secret Match
-  if (devSecretHeader && devSecretHeader === developerSecret) {
-    isAuthorized = true;
-  }
-
-  // Option B: Supabase Auth Token verification for dushah2007@gmail.com
-  if (!isAuthorized && token) {
-    try {
-      const { data: { user } } = await serverDb.auth.getUser(token);
-      if (user && user.email?.trim().toLowerCase() === (process.env.OWNER_EMAIL || 'dushah2007@gmail.com').toLowerCase()) {
-        isAuthorized = true;
-      }
-    } catch {}
-  }
-
-  if (!isAuthorized) {
-    return res.status(403).json({
-      ok: false,
-      error: 'Access Denied: Only the system developer / primary owner can onboard new school databases.',
-    });
+  const serverDb = getServerDb();
+  if (!serverDb) {
+    return res.status(500).json({ ok: false, error: 'SUPABASE_SERVICE_ROLE_KEY is not configured on the server.' });
   }
 
   const {
@@ -94,24 +61,18 @@ export default async function handler(req, res) {
   const licenseKey = `SMS-${randomMiddle}-${randomSuffix}`;
   const schoolId = `SMS-SCH-${Date.now().toString(36).toUpperCase()}-${randomSuffix}`;
 
-  const defaultContact = {
-    name: 'Dhruv Shah',
-    email: 'dushah2007@gmail.com',
-    phone: '+91 8866039007',
-    whatsapp: '+91 8866039007',
-  };
-
   const payload = {
     id: schoolId,
     school_name: schoolName.trim(),
     license_key: licenseKey,
     school_supabase_url: cleanUrl,
     school_supabase_anon_key: cleanAnonKey,
+    kind: 'school',
     is_activated: false,
     trial_started_at: null,
     trial_ends_at: null,
-    status: 'pending',
-    contact_developer: contactDeveloper || defaultContact,
+    status: 'trial_active',
+    contact_developer: contactDeveloper || DEVELOPER_CONTACT,
     notes: notes.trim(),
   };
 

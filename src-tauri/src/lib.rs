@@ -44,10 +44,7 @@ fn sync_school_data_to_hub(
         "students": guard.students
     });
 
-    if let Some(parent) = db_file.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(&db_file, payload.to_string());
+    hub_server::atomic_write_json(&db_file, &payload)?;
 
     Ok(json!({
         "ok": true,

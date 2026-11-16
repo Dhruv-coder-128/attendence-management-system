@@ -1,52 +1,36 @@
-import React, { useState, useEffect } from 'react';
-import { Smartphone, Hash, ShieldCheck, AlertCircle, Loader2, School, PhoneCall } from 'lucide-react';
-import { authenticateParent } from '../../lib/parentPortalService';
+import React, { useState } from 'react';
+import { AlertCircle, Loader2, School, ShieldCheck } from 'lucide-react';
+import { requestParentOtp, verifyParentOtp } from '../../lib/parentPortalService';
 import { useAcademySettings } from '../../lib/academySettings';
 
 export default function ParentAuthScreen({ onAuthenticated, initialPhone = '', initialAdm = '' }) {
   const settings = useAcademySettings();
   const [phone, setPhone] = useState(initialPhone || '');
   const [identifier, setIdentifier] = useState(initialAdm || '');
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  // Auto-authenticate if initialPhone & initialAdm are passed from WhatsApp magic link
-  useEffect(() => {
-    if (initialPhone && initialAdm) {
-      handleAutoLogin(initialPhone, initialAdm);
-    }
-  }, [initialPhone, initialAdm]);
-
-  const handleAutoLogin = async (p, id) => {
-    setLoading(true);
-    setError('');
-    const res = await authenticateParent(p, id);
-    setLoading(false);
-    if (res.ok) {
-      onAuthenticated(res);
-    } else {
-      setError(res.error || 'Failed to authenticate via link. Please enter manually.');
-    }
-  };
+  const [info, setInfo] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!phone.trim()) {
-      setError('Please enter your 10-digit registered mobile number.');
-      return;
-    }
-
     setLoading(true);
     setError('');
 
-    const res = await authenticateParent(phone.trim(), identifier.trim());
-    setLoading(false);
-
-    if (res.ok) {
-      onAuthenticated(res);
-    } else {
-      setError(res.error || 'No matching student found. Please verify details.');
+    if (!codeSent) {
+      const res = await requestParentOtp(phone.trim(), identifier.trim());
+      setLoading(false);
+      if (!res.ok) return setError(res.error || 'Could not send the login code.');
+      setCodeSent(true);
+      setInfo(res.message || 'A 6-digit code was sent to your Telegram.');
+      return;
     }
+
+    const res = await verifyParentOtp(phone.trim(), code);
+    setLoading(false);
+    if (res.ok) onAuthenticated(res);
+    else setError(res.error || 'Wrong code.');
   };
 
   return (
@@ -191,7 +175,7 @@ export default function ParentAuthScreen({ onAuthenticated, initialPhone = '', i
                     fontFamily: 'var(--font-mono, monospace)',
                     letterSpacing: '0.5px',
                   }}
-                  disabled={loading}
+                  disabled={loading || codeSent}
                   autoFocus
                   required
                 />
@@ -221,7 +205,8 @@ export default function ParentAuthScreen({ onAuthenticated, initialPhone = '', i
                     fontFamily: 'var(--font-mono, monospace)',
                     letterSpacing: '0.5px',
                   }}
-                  disabled={loading}
+                  disabled={loading || codeSent}
+                  required
                 />
               </div>
               <p style={{ margin: '5px 0 0 0', fontSize: '11px', color: '#64748b' }}>
@@ -229,10 +214,37 @@ export default function ParentAuthScreen({ onAuthenticated, initialPhone = '', i
               </p>
             </div>
 
+            {codeSent && (
+              <div style={{ marginBottom: '20px' }}>
+                {info && <div style={{ fontSize: '12px', color: '#166534', marginBottom: '8px' }}>{info}</div>}
+                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 600, color: '#1e293b', marginBottom: '6px' }}>
+                  6-digit code from Telegram
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                  placeholder="123456"
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '18px', letterSpacing: '6px', fontFamily: 'var(--font-mono, monospace)' }}
+                  disabled={loading}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => { setCodeSent(false); setCode(''); setInfo(''); }}
+                  style={{ marginTop: '6px', background: 'none', border: 'none', color: '#2563eb', fontSize: '11.5px', cursor: 'pointer', padding: 0 }}
+                >
+                  Change number / send a new code
+                </button>
+              </div>
+            )}
+
             {/* Login Action Button */}
             <button
               type="submit"
-              disabled={loading || phone.length < 10}
+              disabled={loading || phone.length < 10 || !identifier.trim() || (codeSent && code.length !== 6)}
               className="btn btn-primary"
               style={{
                 width: '100%',
@@ -247,18 +259,18 @@ export default function ParentAuthScreen({ onAuthenticated, initialPhone = '', i
                 backgroundColor: '#0a1424',
                 color: '#ffffff',
                 border: '1px solid var(--gold-border, #c5a880)',
-                cursor: loading || phone.length < 10 ? 'not-allowed' : 'pointer',
+                cursor: loading ? 'not-allowed' : 'pointer',
               }}
             >
               {loading ? (
                 <>
                   <Loader2 size={16} className="animate-spin" />
-                  <span>Verifying Details...</span>
+                  <span>{codeSent ? 'Verifying Code...' : 'Sending Code...'}</span>
                 </>
               ) : (
                 <>
                   <ShieldCheck size={17} color="#c5a880" />
-                  <span>Access Student Portal</span>
+                  <span>{codeSent ? 'Verify & Open Portal' : 'Send Login Code on Telegram'}</span>
                 </>
               )}
             </button>
@@ -274,9 +286,11 @@ export default function ParentAuthScreen({ onAuthenticated, initialPhone = '', i
             color: '#64748b',
           }}>
             <span>Need assistance? Contact Academy Office:</span>
-            <div style={{ marginTop: '4px', fontWeight: 600, color: '#0f172a' }}>
-              📞 {settings.phone || '+91 8866039007'}
-            </div>
+            {settings.phone && (
+              <div style={{ marginTop: '4px', fontWeight: 600, color: '#0f172a' }}>
+                📞 {settings.phone}
+              </div>
+            )}
           </div>
         </div>
       </div>

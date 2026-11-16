@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
+import { applyCors } from './_lib/license.js';
 
 /**
  * Vercel Serverless Function — Secure Role-Based Access & Staff Management
@@ -82,13 +83,7 @@ function getModeratorPermissions(custom = {}) {
 
 export default async function handler(req, res) {
   // Set CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (applyCors(req, res, 'GET, POST, OPTIONS')) return;
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
   let serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -157,25 +152,6 @@ export default async function handler(req, res) {
     console.warn('Direct token verification warning:', authErr?.message);
   }
 
-  // Resilient fallback: decode valid JWT issued by this project and verify with adminClient
-  if (!callerUser && adminClient) {
-    try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
-        const nowSec = Math.floor(Date.now() / 1000);
-        if (payload.sub && (!payload.exp || payload.exp > nowSec)) {
-          const { data: { user: adminFoundUser } } = await adminClient.auth.admin.getUserById(payload.sub);
-          if (adminFoundUser) {
-            callerUser = adminFoundUser;
-          }
-        }
-      }
-    } catch (jwtErr) {
-      console.warn('JWT fallback decode error:', jwtErr?.message);
-    }
-  }
-
   if (!callerUser) {
     return res.status(401).json({
       ok: false,
@@ -209,17 +185,13 @@ export default async function handler(req, res) {
   // TRUSTED SERVER-SIDE OWNER VERIFICATION
   // -------------------------------------------------------------
   // 1. Explicit server environment variable OWNER_EMAIL (trusted server config)
-  const serverOwnerEmail = (process.env.OWNER_EMAIL || 'dushah2007@gmail.com').trim().toLowerCase();
-  const isServerOwnerEmail = Boolean(callerUser.email?.trim().toLowerCase() === serverOwnerEmail);
+  const serverOwnerEmail = (process.env.OWNER_EMAIL || '').trim().toLowerCase();
+  const isServerOwnerEmail = Boolean(serverOwnerEmail) && callerUser.email?.trim().toLowerCase() === serverOwnerEmail;
 
-  // 2. Cryptographically signed app_metadata claim (set ONLY via Supabase Admin API with service_role)
-  const isAppMetadataOwner = callerUser.app_metadata?.role === 'owner' && isServerOwnerEmail;
+  // 2. Database record in public.user_profiles with role 'owner' (users cannot change their own role: see RLS migration)
+  const isDatabaseOwner = callerProfile?.role === 'owner' && callerProfile?.is_active !== false;
 
-  // 3. Verified database record in public.user_profiles with role 'owner'
-  const isDatabaseOwner = callerProfile?.role === 'owner' && isServerOwnerEmail;
-
-  // Sole owner is Dhruv Shah
-  const isCallerOwner = isServerOwnerEmail || isAppMetadataOwner || isDatabaseOwner;
+  const isCallerOwner = isServerOwnerEmail || isDatabaseOwner;
 
   // If caller is verified as Owner, ensure callerProfile is fully populated and synced
   if (isCallerOwner) {
@@ -274,7 +246,7 @@ export default async function handler(req, res) {
   }
 
   // Caller role & permission check
-  const hasUserManagementPerm = isCallerOwner || Boolean(callerProfile?.permissions?.manage_users);
+  const hasUserManagementPerm = isCallerOwner || (callerProfile?.is_active !== false && Boolean(callerProfile?.permissions?.manage_users));
 
   if (!hasUserManagementPerm) {
     return res.status(403).json({

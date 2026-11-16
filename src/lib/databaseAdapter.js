@@ -26,40 +26,6 @@ const ROSTER_MIGRATION_KEY = 'sms_roster_dataset_v7';
 let rosterMigrationPromise = null;
 
 /**
- * Detects if the current IndexedDB students collection exhibits the round-robin modulo scramble
- */
-function isRosterScrambled(existingStudents) {
-  if (!existingStudents || existingStudents.length === 0) return true;
-  
-  // 1. Check Dhruv Shah's cohort assignment
-  const dhruv = existingStudents.find(
-    (s) =>
-      (s.full_name && s.full_name.toLowerCase().includes('dhruv')) ||
-      s.admission_no === 'SMS-2026-1165' ||
-      s.id === 'ST1019-DHRUV'
-  );
-  if (dhruv && (dhruv.batch_id !== 'B11-B' || Number(dhruv.roll_no) !== 1)) {
-    return true;
-  }
-
-  // 2. Check for +6 modulo cross-batch bleeding in 11th Commerce (B11)
-  const badB11 = existingStudents.some(
-    (s) => s.batch_id === 'B11' && ['ST1024', 'ST1042', 'ST1066', 'ST1084'].includes(s.id)
-  );
-  if (badB11) return true;
-
-  // 3. Check for 17-student modulo artifact (100 % 6 = 17)
-  const b11Count = existingStudents.filter((s) => s.batch_id === 'B11').length;
-  if (b11Count === 17) return true;
-
-  // 4. Ensure B11-B has its designated student
-  const b11bCount = existingStudents.filter((s) => s.batch_id === 'B11-B').length;
-  if (b11bCount === 0) return true;
-
-  return false;
-}
-
-/**
  * Authentically aligns canonical student cohorts (20 per batch + 1 in 11th B)
  * while strictly PRESERVING any custom school client records (Zero Hardcoding).
  */
@@ -87,20 +53,6 @@ export async function restoreAuthoritativeRoster() {
 
     // Realign canonical records to authentic cohorts while preserving custom client records
     const updatedStudents = existingStudents.map((s) => {
-      const isDhruv =
-        (s.full_name && s.full_name.toLowerCase().includes('dhruv')) ||
-        s.admission_no === 'SMS-2026-1165' ||
-        s.id === 'ST1019-DHRUV';
-      if (isDhruv) {
-        return {
-          ...s,
-          batch_id: 'B11-B',
-          batch_name: '11th Commerce - Division B',
-          batch_code: '11COM-B',
-          roll_no: 1,
-          course_id: 'C11',
-        };
-      }
       const canon = canonicalMap.get(s.id) || (s.admission_no ? canonicalMap.get(s.admission_no) : null);
       if (canon) {
         return {
@@ -165,11 +117,13 @@ async function ensureAuthoritativeRosterMigration() {
           req.onerror = () => resolve([]);
         });
 
-        const scrambled = isRosterScrambled(existingStudents);
+        // Seed the demo roster only into a brand-new, empty database. Never touch a school's real data
+        // automatically; the "restore roster" buttons in Settings/Batches remain for manual use.
         const migrationDone = localStorage.getItem(ROSTER_MIGRATION_KEY) === 'true';
-
-        if (scrambled || !migrationDone) {
+        if (!migrationDone && existingStudents.length === 0) {
           await restoreAuthoritativeRoster();
+        } else if (!migrationDone) {
+          localStorage.setItem(ROSTER_MIGRATION_KEY, 'true');
         }
       } catch (err) {
         console.warn('[SMS Database Engine] Roster auto-healing check warning:', err);
