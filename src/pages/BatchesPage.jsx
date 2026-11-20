@@ -25,7 +25,6 @@ import BulkImportModal from '../components/importer/BulkImportModal';
 import Pagination from '../components/common/Pagination';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { autoDistributeMisassignedStudents, repairBatchCourseLinkages } from '../lib/batchRepairService';
-import { restoreAuthoritativeRoster } from '../lib/databaseAdapter';
 import { extractStandardAndSection } from '../lib/classHierarchyHelper';
 
 /**
@@ -89,9 +88,6 @@ export default function BatchesPage({ onRefreshCounts }) {
         .select('id, name, code, level')
         .order('name');
       if (coursesErr) throw coursesErr;
-
-      // Auto-repair batch course linkages so cohorts link to their matching courses
-      await repairBatchCourseLinkages();
 
       // 2. Fetch batches with joined courses and student count
       const { data: batchesData, error: batchesErr } = await supabase
@@ -281,26 +277,6 @@ export default function BatchesPage({ onRefreshCounts }) {
   };
 
   const [isDistributing, setIsDistributing] = useState(false);
-  const [isRestoringRoster, setIsRestoringRoster] = useState(false);
-
-  const handleRestoreAuthoritativeRoster = async () => {
-    setIsRestoringRoster(true);
-    try {
-      const res = await restoreAuthoritativeRoster();
-      if (res.success) {
-        showToast('Authentic roster restored: 101 students aligned across 6 cohorts (20 per cohort + 1 in 11th B).');
-        await fetchData();
-        if (onRefreshCounts) onRefreshCounts();
-      } else {
-        alert('Roster realignment note: ' + (res.error || res.reason || 'Completed'));
-      }
-    } catch (err) {
-      alert('Failed to restore authentic roster: ' + err.message);
-    } finally {
-      setIsRestoringRoster(false);
-    }
-  };
-
   const handleAutoDistributeStudents = async () => {
     setIsDistributing(true);
     try {
@@ -327,17 +303,6 @@ export default function BatchesPage({ onRefreshCounts }) {
         </div>
 
         <div className="page-actions">
-          <Button
-            variant="outline"
-            size="md"
-            icon={CheckCircle2}
-            onClick={handleRestoreAuthoritativeRoster}
-            disabled={isRestoringRoster || loading}
-            style={{ borderColor: 'var(--status-present)', color: 'var(--status-present)' }}
-          >
-            {isRestoringRoster ? 'Restoring Roster...' : 'Restore Authentic Roster'}
-          </Button>
-
           <Button
             variant="gold"
             size="md"

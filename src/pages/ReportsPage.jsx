@@ -20,7 +20,11 @@ import Badge from '../components/common/Badge';
 import Pagination from '../components/common/Pagination';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { getStoredAcademySettings } from '../lib/academySettings';
+import { exportTableToExcel, exportTableToCSV } from '../lib/attendanceExporter';
+import { printDocument } from '../lib/printDocument';
+import { DocumentHeader, DocumentFooter } from '../components/print/DocumentHeader';
 import { extractStandardAndSection } from '../lib/classHierarchyHelper';
+import { computeGrade } from '../lib/examService';
 
 /**
  * Enterprise Reports & Analytics Hub (v3.0)
@@ -64,8 +68,6 @@ export default function ReportsPage() {
 
   const academySettings = getStoredAcademySettings();
   const schoolName = academySettings.academy_name || 'SMS — Student Management System';
-  const schoolAddress = academySettings.address || 'Academic Campus & Learning Center';
-  const schoolPhone = academySettings.phone || '+91 98765 43210';
 
   // Load authoritative data
   const loadReportsData = async () => {
@@ -88,9 +90,11 @@ export default function ReportsPage() {
           supabase.from('courses').select('*').order('name'),
           supabase.from('parents').select('*').order('full_name'),
           supabase.from('parent_students').select('*'),
-          supabase.from('fee_records').select('*'),
-          supabase.from('exams').select('*').order('date', { ascending: false }),
-          supabase.from('exam_results').select('*'),
+          // Same tables the Fees and Exams pages write to (fee_records = rows from the Excel importer).
+          Promise.all([supabase.from('student_fees').select('*'), supabase.from('fee_records').select('*')])
+            .then(([a, b]) => ({ data: [...(a.data || []), ...(b.data || [])] })),
+          supabase.from('exams').select('*').order('exam_date', { ascending: false }),
+          supabase.from('exam_marks').select('*'),
           supabase.from('attendance').select('*').eq('date', selectedDate),
         ]);
 
@@ -249,8 +253,8 @@ export default function ReportsPage() {
         batchName: batch.name,
         standard,
         section,
-        timing: batch.timing || '08:00 AM – 11:00 AM',
-        classroom: batch.classroom || 'Room 101',
+        timing: batch.timing || '',
+        classroom: batch.classroom || '',
         totalEnrolled,
         present,
         late,
@@ -263,12 +267,14 @@ export default function ReportsPage() {
     });
   }, [batches, students, attendanceRecords]);
 
+  // The batch dropdown holds the batch id (or code); every tab filters the same way.
+  const matchesBatch = (batchId, batchCode) =>
+    selectedBatch === 'All' || (batchId && batchId === selectedBatch) || (batchCode && batchCode === selectedBatch);
+
   // Filtered attendance data
   const filteredAttendanceData = useMemo(() => {
     return attendanceReportData.filter((b) => {
-      if (selectedBatch !== 'All' && b.batchId !== selectedBatch && b.batchCode !== selectedBatch) {
-        return false;
-      }
+      if (!matchesBatch(b.batchId, b.batchCode)) return false;
       if (attendanceFilter === 'high' && b.attendanceRate < 80) return false;
       if (attendanceFilter === 'critical' && (b.attendanceRate >= 50 || b.totalEnrolled === 0)) return false;
       if (attendanceFilter === 'pending' && b.pending === 0) return false;
@@ -289,12 +295,13 @@ export default function ReportsPage() {
       const batch = batchLookup.get(s.batch_id) || batchLookup.get(s.batch_code);
       const { standard, section } = extractStandardAndSection(batch);
 
+      // Same rule as the Fees page: fee record first, then the student's own fee; never an invented amount.
       const feeRec = feeRecords.find((f) => f.student_id === s.id);
-      const totalFee = feeRec ? Number(feeRec.total_amount) : Number(s.tuition_fee) || 25000;
-      const paidFee = feeRec ? Number(feeRec.paid_amount) : Number(s.fee_paid) || 0;
+      const totalFee = Number(feeRec?.total_amount ?? s.tuition_fee ?? 0) || 0;
+      const paidFee = Number(feeRec?.paid_amount ?? s.fee_paid ?? 0) || 0;
       const balanceDue = Math.max(0, totalFee - paidFee);
 
-      let status = 'Pending';
+      let status = totalFee === 0 ? 'Not set' : 'Pending';
       if (balanceDue === 0 && totalFee > 0) status = 'Paid';
       else if (paidFee > 0) status = 'Partial';
 
@@ -303,7 +310,9 @@ export default function ReportsPage() {
         admissionNo: s.admission_no || s.id,
         fullName: s.full_name || s.name || '',
         rollNo: s.roll_no || '-',
-        batchName: batch?.name || 'General Batch',
+        batchId: batch?.id || s.batch_id || '',
+        batchCode: batch?.code || s.batch_code || '',
+        batchName: batch?.name || '—',
         standard,
         section,
         phone: s.phone || '',
@@ -311,16 +320,14 @@ export default function ReportsPage() {
         paidFee,
         balanceDue,
         status,
-        dueDate: feeRec?.due_date || '2026-11-30',
+        dueDate: feeRec?.next_due_date || feeRec?.due_date || s.fee_due_date || '',
       };
     });
   }, [students, batchLookup, feeRecords]);
 
   const filteredFeeData = useMemo(() => {
     return feeReportData.filter((item) => {
-      if (selectedBatch !== 'All' && !item.batchName.includes(selectedBatch)) {
-        return false;
-      }
+      if (!matchesBatch(item.batchId, item.batchCode)) return false;
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase();
       return (
@@ -339,26 +346,26 @@ export default function ReportsPage() {
         const exam = exams.find((e) => e.id === r.exam_id);
         const batch = batchLookup.get(student?.batch_id);
         const marks = Number(r.marks_obtained) || 0;
-        const maxMarks = Number(exam?.max_marks) || 100;
-        const percentage = Math.round((marks / maxMarks) * 100);
-        let grade = 'A';
-        if (percentage < 40) grade = 'F';
-        else if (percentage < 60) grade = 'C';
-        else if (percentage < 75) grade = 'B';
+        const maxMarks = Number(exam?.total_marks ?? exam?.max_marks) || 100;
+        const passMarks = Number(exam?.passing_marks) || Math.ceil(maxMarks * 0.35);
+        const percentage = r.is_absent ? 0 : Math.round((marks / maxMarks) * 100);
+        const grade = r.is_absent ? 'AB' : computeGrade(percentage).grade;
 
         return {
           id: r.id,
           studentName: student?.full_name || 'Student',
           admissionNo: student?.admission_no || '',
           rollNo: student?.roll_no || '-',
-          batchName: batch?.name || 'Standard Batch',
-          examTitle: exam?.title || 'Mid-Term Assessment',
-          subject: exam?.subject || 'Core Subject',
+          batchId: batch?.id || student?.batch_id || '',
+          batchCode: batch?.code || '',
+          batchName: batch?.name || '—',
+          examTitle: exam?.name || exam?.title || '—',
+          subject: exam?.subject || '—',
           marks,
           maxMarks,
           percentage,
           grade,
-          status: percentage >= 40 ? 'Pass' : 'Fail',
+          status: r.is_absent ? 'Absent' : marks >= passMarks ? 'Pass' : 'Fail',
         };
       });
     }
@@ -368,6 +375,7 @@ export default function ReportsPage() {
 
   const filteredExamData = useMemo(() => {
     return examReportData.filter((item) => {
+      if (!matchesBatch(item.batchId, item.batchCode)) return false;
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase();
       return (
@@ -376,7 +384,7 @@ export default function ReportsPage() {
         item.subject.toLowerCase().includes(term)
       );
     });
-  }, [examReportData, searchTerm]);
+  }, [examReportData, searchTerm, selectedBatch]);
 
   // 4. MASTER STUDENT & GUARDIAN DIRECTORY DATA COMPILATION
   const directoryReportData = useMemo(() => {
@@ -393,12 +401,14 @@ export default function ReportsPage() {
         fullName: s.full_name || s.name || '',
         standard,
         division: section,
-        batchName: batch?.name || `${standard} - Div ${section}`,
-        gender: s.gender || 'Other',
-        studentPhone: s.phone || 'N/A',
-        guardianName: parent?.full_name || 'Registered Guardian',
-        guardianPhone: parent?.phone || s.phone || 'N/A',
-        relationship: ps?.relationship || parent?.relationship || 'Parent',
+        batchId: batch?.id || s.batch_id || '',
+        batchCode: batch?.code || s.batch_code || '',
+        batchName: batch?.name || '—',
+        gender: s.gender || '',
+        studentPhone: s.phone || '',
+        guardianName: parent?.full_name || s.guardian_name || '',
+        guardianPhone: parent?.phone || s.guardian_phone || '',
+        relationship: ps?.relationship || parent?.relationship || '',
         telegramLinked: Boolean(parent?.telegram_chat_id || parent?.is_verified),
       };
     });
@@ -406,9 +416,7 @@ export default function ReportsPage() {
 
   const filteredDirectoryData = useMemo(() => {
     return directoryReportData.filter((item) => {
-      if (selectedBatch !== 'All' && !item.batchName.includes(selectedBatch)) {
-        return false;
-      }
+      if (!matchesBatch(item.batchId, item.batchCode)) return false;
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase();
       return (
@@ -459,158 +467,58 @@ export default function ReportsPage() {
     return filteredModalRoster.slice(start, start + modalPageSize);
   }, [filteredModalRoster, modalPage, modalPageSize]);
 
-  // EXPORT ENGINE: EXCEL (.xlsx)
+  // ONE table definition per tab, used for Excel, CSV and Print so all three always match.
+  const REPORTS = {
+    attendance: {
+      title: 'Attendance Report', data: filteredAttendanceData,
+      cols: [['Batch Code', (d) => d.batchCode], ['Standard', (d) => d.standard], ['Division', (d) => d.section], ['Batch', (d) => d.batchName],
+        ['Timing', (d) => d.timing], ['Room', (d) => d.classroom], ['Students', (d) => d.totalEnrolled], ['Present', (d) => d.present],
+        ['Late', (d) => d.late], ['Absent', (d) => d.absent], ['Not Marked', (d) => d.pending], ['Attendance %', (d) => `${d.attendanceRate}%`]],
+    },
+    fees: {
+      title: 'Fee Report', data: filteredFeeData,
+      cols: [['Admission No', (d) => d.admissionNo], ['Roll No', (d) => d.rollNo], ['Student Name', (d) => d.fullName], ['Standard', (d) => d.standard],
+        ['Division', (d) => d.section], ['Total Fee (₹)', (d) => Number(d.totalFee) || 0], ['Paid (₹)', (d) => Number(d.paidFee) || 0],
+        ['Balance (₹)', (d) => Number(d.balanceDue) || 0], ['Status', (d) => d.status], ['Due Date', (d) => d.dueDate], ['Phone', (d) => d.phone]],
+    },
+    exams: {
+      title: 'Exam Results', data: filteredExamData,
+      cols: [['Admission No', (d) => d.admissionNo], ['Roll No', (d) => d.rollNo], ['Student Name', (d) => d.studentName], ['Exam', (d) => d.examTitle],
+        ['Subject', (d) => d.subject], ['Marks', (d) => d.marks], ['Max Marks', (d) => d.maxMarks], ['Percentage', (d) => `${d.percentage}%`],
+        ['Grade', (d) => d.grade], ['Result', (d) => d.status]],
+    },
+    directory: {
+      title: 'Student Directory', data: filteredDirectoryData,
+      cols: [['Admission No', (d) => d.admissionNo], ['Roll No', (d) => d.rollNo], ['Student Name', (d) => d.fullName], ['Standard', (d) => d.standard],
+        ['Division', (d) => d.division], ['Batch', (d) => d.batchName], ['Gender', (d) => d.gender], ['Student Phone', (d) => d.studentPhone],
+        ['Guardian', (d) => d.guardianName], ['Guardian Phone', (d) => d.guardianPhone], ['Relationship', (d) => d.relationship],
+        ['Telegram', (d) => (d.telegramLinked ? 'Linked' : 'Not linked')]],
+    },
+  };
+  const activeReport = REPORTS[activeTab] || REPORTS.directory;
+  const reportColumns = activeReport.cols.map(([label]) => label);
+  const reportRows = (activeReport.data || []).map((d) => activeReport.cols.map(([, get]) => get(d) ?? ''));
+  const reportMeta = `Date: ${selectedDate} • Records: ${reportRows.length}`;
+  const reportFile = `${schoolName.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${activeTab}_${selectedDate}`;
+
   const exportToExcel = async () => {
     try {
-      const XLSX = await import('xlsx');
-      let records = [];
-      let sheetName = 'Report';
-      let fileName = `sms_${activeTab}_report_${selectedDate}.xlsx`;
-
-      if (activeTab === 'attendance') {
-        sheetName = 'Attendance Summary';
-        records = filteredAttendanceData.map((d) => ({
-          'Batch Code': d.batchCode,
-          'Standard': d.standard,
-          'Division': d.section,
-          'Batch Name': d.batchName,
-          'Schedule': d.timing,
-          'Room': d.classroom,
-          'Total Students': d.totalEnrolled,
-          'Present': d.present,
-          'Late': d.late,
-          'Absent': d.absent,
-          'Pending Roll Call': d.pending,
-          'Attendance %': `${d.attendanceRate}%`,
-        }));
-      } else if (activeTab === 'fees') {
-        sheetName = 'Tuition Fee Ledger';
-        records = filteredFeeData.map((d) => ({
-          'Admission No': d.admissionNo,
-          'Roll No': d.rollNo,
-          'Student Name': d.fullName,
-          'Standard': d.standard,
-          'Division': d.section,
-          'Total Fee (INR)': d.totalFee,
-          'Paid Amount (INR)': d.paidFee,
-          'Balance Due (INR)': d.balanceDue,
-          'Payment Status': d.status,
-          'Due Date': d.dueDate,
-          'Student Phone': d.phone,
-        }));
-      } else if (activeTab === 'exams') {
-        sheetName = 'Examination Marksheet';
-        records = filteredExamData.map((d) => ({
-          'Admission No': d.admissionNo,
-          'Roll No': d.rollNo,
-          'Student Name': d.studentName,
-          'Examination': d.examTitle,
-          'Subject': d.subject,
-          'Marks Obtained': d.marks,
-          'Maximum Marks': d.maxMarks,
-          'Percentage': `${d.percentage}%`,
-          'Grade': d.grade,
-          'Result': d.status,
-        }));
-      } else {
-        sheetName = 'Student Directory';
-        records = filteredDirectoryData.map((d) => ({
-          'Admission No': d.admissionNo,
-          'Roll No': d.rollNo,
-          'Student Name': d.fullName,
-          'Standard': d.standard,
-          'Division': d.division,
-          'Batch': d.batchName,
-          'Gender': d.gender,
-          'Student Phone': d.studentPhone,
-          'Guardian Name': d.guardianName,
-          'Guardian Phone': d.guardianPhone,
-          'Relationship': d.relationship,
-          'Telegram Linked': d.telegramLinked ? 'YES' : 'NO',
-        }));
-      }
-
-      const worksheet = XLSX.utils.json_to_sheet(records);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-      XLSX.writeFile(workbook, fileName);
+      await exportTableToExcel({ schoolName, title: activeReport.title, meta: reportMeta, columns: reportColumns, rows: reportRows, filename: `${reportFile}.xlsx`, sheetName: activeReport.title });
     } catch (err) {
       console.error('Excel Export error:', err);
       alert('Could not export to Excel: ' + err.message);
     }
   };
 
-  // EXPORT ENGINE: CSV
-  const exportToCSV = () => {
-    let rows = [];
-    if (activeTab === 'attendance') {
-      rows = filteredAttendanceData.map((d) => [
-        d.batchCode,
-        d.standard,
-        d.section,
-        d.batchName,
-        d.totalEnrolled,
-        d.present,
-        d.late,
-        d.absent,
-        d.pending,
-        `${d.attendanceRate}%`,
-      ]);
-      rows.unshift(['Batch Code', 'Standard', 'Division', 'Batch Name', 'Enrolled', 'Present', 'Late', 'Absent', 'Pending', 'Attendance %']);
-    } else if (activeTab === 'fees') {
-      rows = filteredFeeData.map((d) => [
-        d.admissionNo,
-        d.rollNo,
-        d.fullName,
-        d.standard,
-        d.section,
-        d.totalFee,
-        d.paidFee,
-        d.balanceDue,
-        d.status,
-      ]);
-      rows.unshift(['Admission No', 'Roll No', 'Student Name', 'Standard', 'Division', 'Total Fee', 'Paid', 'Due', 'Status']);
-    } else if (activeTab === 'exams') {
-      rows = filteredExamData.map((d) => [
-        d.admissionNo,
-        d.rollNo,
-        d.studentName,
-        d.examTitle,
-        d.subject,
-        d.marks,
-        d.maxMarks,
-        d.grade,
-        d.status,
-      ]);
-      rows.unshift(['Admission No', 'Roll No', 'Student Name', 'Exam', 'Subject', 'Marks', 'Max Marks', 'Grade', 'Status']);
-    } else {
-      rows = filteredDirectoryData.map((d) => [
-        d.admissionNo,
-        d.rollNo,
-        d.fullName,
-        d.standard,
-        d.division,
-        d.guardianName,
-        d.guardianPhone,
-        d.telegramLinked ? 'Linked' : 'Pending',
-      ]);
-      rows.unshift(['Admission No', 'Roll No', 'Student Name', 'Standard', 'Division', 'Guardian Name', 'Guardian Phone', 'Telegram']);
+  const exportToCSV = async () => {
+    try {
+      await exportTableToCSV({ columns: reportColumns, rows: reportRows, filename: `${reportFile}.csv` });
+    } catch (err) {
+      alert('Could not export CSV: ' + err.message);
     }
-
-    const csvContent = 'data:text/csv;charset=utf-8,' + rows.map((e) => e.join(',')).join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `sms_${activeTab}_report_${selectedDate}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
-  // PRINT DOSSIER
-  const handlePrint = () => {
-    window.print();
-  };
+  const handlePrint = () => printDocument('reports-print-sheet');
 
   // Safe Currency Formatter
   const formatCurrency = (val) => (Number(val) || 0).toLocaleString('en-IN');
@@ -661,145 +569,21 @@ export default function ReportsPage() {
 
   return (
     <div style={{ paddingBottom: '60px' }}>
-      {/* =====================================================================
-          INSTITUTIONAL PRINT-ONLY DOSSIER (Rendered exclusively when printing)
-          ===================================================================== */}
-      <div className="print-only institutional-print-sheet">
-        {/* Header */}
-        <div className="institutional-print-header">
-          <div>
-            <h1 style={{ fontSize: '18pt', fontWeight: 800, margin: 0, textTransform: 'uppercase', color: '#0f172a' }}>
-              {schoolName}
-            </h1>
-            <p style={{ margin: '3px 0 0', fontSize: '9pt', color: '#475569' }}>
-              {schoolAddress} &bull; Helpline: {schoolPhone}
-            </p>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '11pt', fontWeight: 800, color: '#0f172a', textTransform: 'uppercase' }}>
-              Institutional Audit Dossier
-            </div>
-            <div style={{ fontSize: '8.5pt', color: '#475569', marginTop: '2px' }}>
-              Audit Date: <strong>{selectedDate}</strong> &bull; Generated: {new Date().toLocaleDateString('en-IN')}
-            </div>
-          </div>
-        </div>
-
-        {/* Executive Summary Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '14px' }}>
-          <div style={{ border: '1px solid #cbd5e1', padding: '8px 10px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
-            <div style={{ fontSize: '7.5pt', textTransform: 'uppercase', fontWeight: 700, color: '#64748b' }}>Total Enrolled</div>
-            <div style={{ fontSize: '14pt', fontWeight: 800, color: '#0f172a' }}>{totalStudentsCount}</div>
-            <div style={{ fontSize: '7.5pt', color: '#64748b' }}>Across {totalBatchesCount} Cohorts</div>
-          </div>
-          <div style={{ border: '1px solid #cbd5e1', padding: '8px 10px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
-            <div style={{ fontSize: '7.5pt', textTransform: 'uppercase', fontWeight: 700, color: '#166534' }}>Present Today</div>
-            <div style={{ fontSize: '14pt', fontWeight: 800, color: '#166534' }}>{totalPresentToday}</div>
-            <div style={{ fontSize: '7.5pt', color: '#166534' }}>Attendance: {overallAttendanceRate}%</div>
-          </div>
-          <div style={{ border: '1px solid #cbd5e1', padding: '8px 10px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
-            <div style={{ fontSize: '7.5pt', textTransform: 'uppercase', fontWeight: 700, color: '#b91c1c' }}>Absent / Late Today</div>
-            <div style={{ fontSize: '14pt', fontWeight: 800, color: '#b91c1c' }}>{totalAbsentToday} / {totalLateToday}</div>
-            <div style={{ fontSize: '7.5pt', color: '#b91c1c' }}>Absent / Late</div>
-          </div>
-          <div style={{ border: '1px solid #cbd5e1', padding: '8px 10px', borderRadius: '4px', backgroundColor: '#f8fafc' }}>
-            <div style={{ fontSize: '7.5pt', textTransform: 'uppercase', fontWeight: 700, color: '#0369a1' }}>Fee Collections</div>
-            <div style={{ fontSize: '13pt', fontWeight: 800, color: '#0369a1' }}>₹{formatCurrency(totalCollectedFees)}</div>
-            <div style={{ fontSize: '7.5pt', color: '#b91c1c' }}>Dues: ₹{formatCurrency(totalOutstandingFees)}</div>
-          </div>
-        </div>
-
-        {/* Section 1: Cohort Attendance Roll Call Table */}
-        <div style={{ marginBottom: '16px' }}>
-          <div style={{ fontSize: '10.5pt', fontWeight: 800, color: '#0f172a', marginBottom: '4px', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '3px' }}>
-            1. Cohort Attendance Audit Register
-          </div>
-          <table className="institutional-print-table">
-            <thead>
-              <tr>
-                <th style={{ width: '4%' }}>#</th>
-                <th style={{ width: '28%' }}>Cohort / Standard</th>
-                <th style={{ width: '14%' }}>Classroom</th>
-                <th style={{ width: '18%' }}>Timing</th>
-                <th style={{ width: '9%', textAlign: 'center' }}>Enrolled</th>
-                <th style={{ width: '9%', textAlign: 'center' }}>Present</th>
-                <th style={{ width: '9%', textAlign: 'center' }}>Late</th>
-                <th style={{ width: '9%', textAlign: 'center' }}>Absent</th>
-              </tr>
-            </thead>
-            <tbody>
-              {attendanceReportData.map((row, idx) => (
-                <tr key={row.batchId || idx}>
-                  <td>{idx + 1}</td>
-                  <td><strong>{row.batchName}</strong> ({row.batchCode})</td>
-                  <td>{row.classroom || '—'}</td>
-                  <td>{row.timing || '—'}</td>
-                  <td style={{ textAlign: 'center' }}>{row.totalEnrolled}</td>
-                  <td style={{ textAlign: 'center', color: '#166534', fontWeight: 700 }}>{row.present}</td>
-                  <td style={{ textAlign: 'center', color: '#b45309' }}>{row.late}</td>
-                  <td style={{ textAlign: 'center', color: '#b91c1c', fontWeight: 700 }}>{row.absent}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Section 2: Financial Fee Summary Table */}
-        <div style={{ marginBottom: '16px', pageBreakInside: 'avoid' }}>
-          <div style={{ fontSize: '10.5pt', fontWeight: 800, color: '#0f172a', marginBottom: '4px', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '3px' }}>
-            2. Tuition &amp; Fee Ledger Overview (Top Records)
-          </div>
-          <table className="institutional-print-table">
-            <thead>
-              <tr>
-                <th style={{ width: '4%' }}>#</th>
-                <th style={{ width: '16%' }}>Admission No</th>
-                <th style={{ width: '28%' }}>Student Name</th>
-                <th style={{ width: '20%' }}>Cohort</th>
-                <th style={{ width: '12%', textAlign: 'right' }}>Total Fee</th>
-                <th style={{ width: '10%', textAlign: 'right' }}>Paid</th>
-                <th style={{ width: '10%', textAlign: 'right' }}>Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {feeReportData.slice(0, 15).map((f, idx) => (
-                <tr key={f.id || idx}>
-                  <td>{idx + 1}</td>
-                  <td><code>{f.admissionNo}</code></td>
-                  <td><strong>{f.fullName}</strong></td>
-                  <td>{f.batchName}</td>
-                  <td style={{ textAlign: 'right' }}>₹{formatCurrency(f.totalFee || f.tuitionFee)}</td>
-                  <td style={{ textAlign: 'right', color: '#166534' }}>₹{formatCurrency(f.paidFee)}</td>
-                  <td style={{ textAlign: 'right', color: (Number(f.balanceDue) || 0) > 0 ? '#b91c1c' : '#166534', fontWeight: (Number(f.balanceDue) || 0) > 0 ? 700 : 400 }}>
-                    ₹{formatCurrency(f.balanceDue)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Official Signature Blocks */}
-        <div className="institutional-signature-row">
-          <div className="institutional-signature-box">
-            <div>Audit Invigilator</div>
-            <div style={{ fontSize: '8pt', color: '#64748b', marginTop: '2px' }}>Verified &amp; Recorded</div>
-          </div>
-          <div style={{ textAlign: 'center', width: '120px' }}>
-            <div style={{ width: '60px', height: '36px', border: '1px dashed #94a3b8', borderRadius: '4px', margin: '0 auto 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7.5pt', color: '#94a3b8' }}>
-              SEAL
-            </div>
-            <div style={{ fontSize: '8pt', fontWeight: 600 }}>School Stamp</div>
-          </div>
-          <div className="institutional-signature-box">
-            <div>Principal / Head of School</div>
-            <div style={{ fontSize: '8pt', color: '#64748b', marginTop: '2px' }}>Authorized Signatory</div>
-          </div>
-        </div>
-
-        <div style={{ textAlign: 'center', fontSize: '8pt', color: '#94a3b8', marginTop: '16px' }}>
-          Official Institutional Record &bull; Generated by SMS Enterprise System &bull; Verification Hash: SMS-VERIFY-{selectedDate}
-        </div>
+      {/* Printed report = the table for the open tab, same columns as Excel/CSV */}
+      <div id="reports-print-sheet" className="print-only">
+        <style>{'@media print { @page { size: A4 landscape; margin: 10mm; } }'}</style>
+        <DocumentHeader branding={academySettings} title={activeReport.title} meta={[['Date', selectedDate], ['Records', reportRows.length]]} />
+        <table className="doc-table">
+          <thead>
+            <tr><th>#</th>{reportColumns.map((c) => <th key={c}>{c}</th>)}</tr>
+          </thead>
+          <tbody>
+            {reportRows.map((r, i) => (
+              <tr key={i}><td>{i + 1}</td>{r.map((v, j) => <td key={j} className={typeof v === 'number' ? 'num' : undefined}>{typeof v === 'number' ? v.toLocaleString('en-IN') : v}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>
+        <DocumentFooter signatures={['Prepared by', 'Principal']} />
       </div>
 
       {/* =====================================================================

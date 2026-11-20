@@ -1,16 +1,12 @@
 import React from 'react';
+import { printDocument } from '../../lib/printDocument';
+import { DocumentHeader, DocumentFooter } from '../print/DocumentHeader';
 import {
   Printer,
   X,
-  GraduationCap,
-  CheckCircle2,
   Receipt,
-  CreditCard,
-  Calendar,
-  Building,
 } from 'lucide-react';
 import Button from '../common/Button';
-import Badge from '../common/Badge';
 import { useAcademySettings } from '../../lib/academySettings';
 
 /**
@@ -27,9 +23,7 @@ export default function FeeReceiptModal({
 
   if (!isOpen || !student) return null;
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const handlePrint = () => printDocument('printable-fee-receipt');
 
   const todayStr = new Date().toLocaleDateString('en-IN', {
     day: 'numeric',
@@ -38,10 +32,10 @@ export default function FeeReceiptModal({
   });
 
   const receiptNo = paymentRecord?.reference_no ||
-    `REC-${new Date().getFullYear()}-${(student?.admission_no || 'STU').replace(/[^A-Z0-9]/gi, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+    `REC-${String(student?.admission_no || student?.id || 'STU').replace(/[^A-Z0-9]/gi, '')}-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
 
-  const totalFee = Number(paymentRecord?.total_amount || student?.tuition_fee) || 36000;
-  const paidAmount = paymentRecord ? Number(paymentRecord.amount) : Number(student?.fee_paid) || 0;
+  const totalFee = Number(paymentRecord?.total_amount || student?.tuition_fee) || 0;
+  const paidAmount = Number(paymentRecord ? paymentRecord.amount : student?.fee_paid) || 0;
   const totalPaid = paymentRecord?.total_paid !== undefined
     ? Number(paymentRecord.total_paid)
     : (Number(student?.fee_paid) || paidAmount);
@@ -52,39 +46,6 @@ export default function FeeReceiptModal({
 
   return (
     <>
-      {/* Print Specific CSS styles injected for perfect paper output */}
-      <style>{`
-        @media print {
-          body * {
-            visibility: hidden !important;
-          }
-          #printable-fee-receipt, #printable-fee-receipt * {
-            visibility: visible !important;
-          }
-          #printable-fee-receipt {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 24px !important;
-            box-shadow: none !important;
-            border: none !important;
-            background: #ffffff !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          #printable-fee-receipt img {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            max-height: 52px !important;
-            display: inline-block !important;
-          }
-          .no-print {
-            display: none !important;
-          }
-        }
-      `}</style>
 
 
       {/* Modal Backdrop */}
@@ -168,102 +129,9 @@ export default function FeeReceiptModal({
               fontFamily: 'var(--font-sans, system-ui, sans-serif)',
             }}
           >
-            {/* 1. Official Academy Header */}
-            <div
-              style={{
-                textAlign: 'center',
-                paddingBottom: '16px',
-                borderBottom: '2px solid var(--navy-900)',
-                marginBottom: '20px',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '12px',
-                  color: 'var(--navy-900)',
-                  marginBottom: '4px',
-                }}
-              >
-                {branding.logo_url ? (
-                  <img
-                    src={branding.logo_url}
-                    alt="Logo"
-                    style={{ height: '42px', width: 'auto', objectFit: 'contain' }}
-                  />
-                ) : (
-                  <GraduationCap size={32} />
-                )}
-                <span
-                  style={{
-                    fontSize: '22px',
-                    fontWeight: 800,
-                    letterSpacing: '0.5px',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {branding.academy_name}
-                </span>
-              </div>
+            <DocumentHeader branding={branding} title="Fee Payment Receipt" meta={[['Receipt No', receiptNo], ['Date', todayStr]]} />
 
-              <div style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                {branding.branch_name} &bull; {branding.address}
-              </div>
-
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-                Phone: {branding.phone} &bull; Email: {branding.email}
-              </div>
-
-              {branding.tagline && (
-                <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic', marginTop: '2px' }}>
-                  {branding.tagline}
-                </div>
-              )}
-
-              <div
-                style={{
-                  display: 'inline-block',
-                  marginTop: '10px',
-                  padding: '3px 18px',
-                  backgroundColor: 'var(--navy-950)',
-                  color: '#ffffff',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  letterSpacing: '1px',
-                  borderRadius: '20px',
-                  textTransform: 'uppercase',
-                }}
-              >
-                Official Fee Payment Receipt
-              </div>
-            </div>
-
-            {/* 2. Receipt Meta Toolbar */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                padding: '10px 14px',
-                backgroundColor: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: '6px',
-                marginBottom: '18px',
-                fontSize: '12px',
-              }}
-            >
-              <div>
-                <span style={{ color: '#64748b' }}>Receipt Number: </span>
-                <strong style={{ color: '#0f172a' }}>{receiptNo}</strong>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ color: '#64748b' }}>Date of Issue: </span>
-                <strong style={{ color: '#0f172a' }}>{todayStr}</strong>
-              </div>
-            </div>
-
-            {/* 3. Student & Academic Details */}
+            {/* Student & Academic Details */}
             <div
               style={{
                 display: 'grid',
@@ -296,7 +164,7 @@ export default function FeeReceiptModal({
                   Course Enrolled
                 </div>
                 <div style={{ fontWeight: 600, color: '#334155' }}>
-                  {student.courses?.name || student.course_name || 'Standard Curriculum'}
+                  {student.courses?.name || student.course_name || '—'}
                 </div>
               </div>
 
@@ -305,7 +173,7 @@ export default function FeeReceiptModal({
                   Batch / Cohort
                 </div>
                 <div style={{ fontWeight: 600, color: '#334155' }}>
-                  {student.batches?.name || student.batch_name || 'Assigned Batch'}
+                  {student.batches?.name || student.batch_name || '—'}
                 </div>
               </div>
             </div>
@@ -383,41 +251,7 @@ export default function FeeReceiptModal({
               </div>
             </div>
 
-            {/* 6. Signature & Verification Footer */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1.5fr 1fr',
-                gap: '24px',
-                paddingTop: '20px',
-                borderTop: '1px dashed #cbd5e1',
-                fontSize: '11px',
-                color: '#64748b',
-                alignItems: 'flex-end',
-              }}
-            >
-              <div>
-                <p style={{ margin: '0 0 4px 0' }}>
-                  &bull; This is an authentic computer-generated tuition fee receipt from SMS — Student Management System.
-                </p>
-                <p style={{ margin: 0 }}>
-                  &bull; Retain this receipt for academic verification and semester examination clearance.
-                </p>
-              </div>
-
-              <div style={{ textAlign: 'center' }}>
-                <div
-                  style={{
-                    borderBottom: '1px solid #0f172a',
-                    width: '160px',
-                    margin: '0 auto 6px auto',
-                    height: '32px',
-                  }}
-                />
-                <strong style={{ color: '#0f172a', fontSize: '12px' }}>Authorized Signatory</strong>
-                <div style={{ fontSize: '10px' }}>SMS Accounts Department</div>
-              </div>
-            </div>
+            <DocumentFooter signatures={['Received by', 'Authorized Signatory']} note="Please keep this receipt for your records" />
           </div>
         </div>
       </div>

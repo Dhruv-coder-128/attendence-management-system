@@ -32,7 +32,7 @@ import Button from '../components/common/Button';
 import Input from '../components/common/Input';
 import UsersManagement from '../components/settings/UsersManagement';
 import MessageCenter from '../components/settings/MessageCenter';
-import { isSupabaseConfigured, checkSupabaseConnection, supabaseConfig } from '../lib/supabase';
+import { isSupabaseConfigured, checkSupabaseConnection, supabaseConfig, getActiveDatabaseConfig } from '../lib/supabase';
 import {
   getStoredLicense,
   validateLicense,
@@ -54,7 +54,6 @@ import {
   setStorageMode,
   exportDatabaseBackup,
   importDatabaseBackup,
-  restoreAuthoritativeRoster,
 } from '../lib/databaseAdapter';
 import {
   fetchAcademySettings,
@@ -428,6 +427,12 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
   };
 
   const handleToggleStorageMode = (newMode) => {
+    // Every client build shares the developer's default project, so cloud mode is only allowed
+    // once this school has connected its OWN database; otherwise schools would see each other's data.
+    if (newMode === 'cloud' && !getActiveDatabaseConfig().isCustomSchoolDb) {
+      setBackupNotice({ type: 'error', message: "Connect your school's own Supabase database first (Licence & Database setup). Until then data stays safely on this computer." });
+      return;
+    }
     setStorageMode(newMode);
     setActiveStorageMode(newMode);
     setBackupNotice({ type: 'success', message: `Switched storage engine to ${newMode === 'offline' ? 'Offline Local DB' : 'Cloud Supabase'}. Reloading...` });
@@ -1040,34 +1045,6 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
                   />
                 </label>
 
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const res = await restoreAuthoritativeRoster();
-                    if (res.success) {
-                      setBackupNotice({ type: 'success', message: 'Authentic roster aligned: 101 students across 6 batches.' });
-                    } else {
-                      setBackupNotice({ type: 'error', message: 'Alignment note: ' + (res.error || res.reason || 'Completed') });
-                    }
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '6px',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--border-subtle)',
-                    backgroundColor: '#ffffff',
-                    fontSize: '11.5px',
-                    fontWeight: 600,
-                    color: 'var(--navy-900)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <CheckCircle2 size={14} color="var(--status-present)" />
-                  <span>Verify & Align Cohorts</span>
-                </button>
               </div>
 
               {backupNotice && (

@@ -1433,3 +1433,45 @@ textarea {
     font-weight: 600;
   }
 }
+/* =====================================================================
+   SHARED DOCUMENT LAYOUT (receipt, report card, dossier, reports) — see lib/printDocument.js
+   ===================================================================== */
+#sms-print-root { display: none; }
+.doc-header { text-align: center; padding-bottom: 14px; border-bottom: 2px solid #0f172a; margin-bottom: 18px; color: #0f172a; }
+.doc-header-brand { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 4px; }
+.doc-logo { height: 44px; width: auto; max-width: 120px; object-fit: contain; }
+.doc-school { font-size: 22px; font-weight: 800; letter-spacing: 0.4px; text-transform: uppercase; }
+.doc-line1 { font-size: 13px; font-weight: 600; color: #334155; }
+.doc-line2 { font-size: 12px; color: #64748b; margin-top: 2px; }
+.doc-tagline { font-size: 11px; color: #64748b; font-style: italic; margin-top: 2px; }
+.doc-title { display: inline-block; margin-top: 10px; padding: 3px 18px; background: #0f172a; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: 1px; border-radius: 20px; text-transform: uppercase; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.doc-meta { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 22px; margin-top: 10px; font-size: 12px; color: #475569; }
+.doc-meta strong { color: #0f172a; }
+.doc-footer { margin-top: 32px; page-break-inside: avoid; break-inside: avoid; }
+.doc-signatures { display: flex; justify-content: space-between; gap: 24px; }
+.doc-signature { border-top: 1px solid #0f172a; min-width: 180px; padding-top: 6px; text-align: center; font-size: 12px; font-weight: 600; color: #0f172a; }
+.doc-signatures .doc-signature:only-child { margin-left: auto; }
+.doc-generated { margin-top: 18px; text-align: center; font-size: 10px; color: #94a3b8; }
+.doc-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 14px; }
+.doc-table th { background: #f1f5f9; color: #0f172a; font-weight: 700; text-transform: uppercase; font-size: 10.5px; padding: 7px 8px; border: 1px solid #cbd5e1; text-align: left; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.doc-table td { padding: 6px 8px; border: 1px solid #e2e8f0; color: #0f172a; }
+.doc-table tr { page-break-inside: avoid; break-inside: avoid; }
+.doc-table thead { display: table-header-group; }
+.doc-table .num { text-align: right; }
+.doc-section-title { font-size: 13px; font-weight: 800; text-transform: uppercase; color: #0f172a; margin: 16px 0 6px; padding-bottom: 3px; border-bottom: 1px solid #cbd5e1; }
+
+@media print {
+  body.sms-printing > *:not(#sms-print-root) { display: none !important; }
+  body.sms-printing #sms-print-root { display: block !important; }
+  #sms-print-root, #sms-print-root * { visibility: visible !important; }
+  #sms-print-root > * {
+    position: static !important; width: 100% !important; max-height: none !important; overflow: visible !important;
+    padding: 0 !important; margin: 0 !important; box-shadow: none !important; border: none !important; background: #fff !important;
+  }
+  #sms-print-root .no-print, #sms-print-root .dossier-no-print { display: none !important; }
+  #sms-print-root .print-only { display: block !important; }
+}
+@media print {
+  #sms-print-root .dossier-menu { display: none !important; }
+  #sms-print-root .dossier-container { min-height: 0 !important; }
+}

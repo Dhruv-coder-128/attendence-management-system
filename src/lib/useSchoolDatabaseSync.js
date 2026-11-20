@@ -229,6 +229,20 @@ export function useSchoolDatabaseSync() {
 
         if (Array.isArray(incoming) && incoming.length > 0) {
           const toUpsert = [];
+          // What this PC already has for today: a mark is only taken from the hub when it is NEWER,
+          // so a change just made on the PC is never reverted by an older copy coming back.
+          const localTs = new Map();
+          const { data: localToday } = await supabase
+            .from('attendance')
+            .select('student_id, admission_no, updated_at')
+            .eq('date', today);
+          (localToday || []).forEach((l) => {
+            const t = new Date(l.updated_at || 0).getTime();
+            [l.student_id, l.admission_no].filter(Boolean).forEach((k) => {
+              const key = String(k).trim().toUpperCase();
+              localTs.set(key, Math.max(localTs.get(key) || 0, t));
+            });
+          });
 
           for (const r of incoming) {
             const studentId = r.student_id || r.admission_no;
@@ -238,6 +252,13 @@ export function useSchoolDatabaseSync() {
             const updatedAt = r.updated_at || '';
 
             if (!studentId) continue;
+            if (!status || status === 'Pending') continue;
+            const incomingTime = new Date(updatedAt || 0).getTime();
+            const localTime = Math.max(
+              localTs.get(String(studentId).trim().toUpperCase()) || 0,
+              localTs.get(String(r.admission_no || '').trim().toUpperCase()) || 0
+            );
+            if (localTime && incomingTime <= localTime) continue;
 
             const dedupeKey = `${date}::${String(studentId).trim().toUpperCase()}`;
             const lastKnown = lastProcessedAttendanceMapRef.current.get(dedupeKey);
@@ -310,7 +331,7 @@ export function useSchoolDatabaseSync() {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = setTimeout(() => {
         pushDatabaseToHub();
-      }, 1000);
+      }, 300);
     };
 
     window.addEventListener('sms-db-mutation', handleMutation);

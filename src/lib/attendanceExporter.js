@@ -403,3 +403,27 @@ export async function exportDailyRegisterToExcel({
   const filename = `Attendance_Daily_${cleanBatch}_${date}.xlsx`;
   await saveWorkbook(workbook, filename, XLSX);
 }
+
+/**
+ * One layout for every table export: school name, report title, details line, a blank row, then the table.
+ * Used by Reports and the student list so all Excel files look the same.
+ */
+export async function exportTableToExcel({ schoolName, title, meta = '', columns, rows, filename, sheetName = 'Report' }) {
+  const XLSX = await import('xlsx');
+  const sheet = XLSX.utils.aoa_to_sheet([[String(schoolName || '').toUpperCase()], [title], [meta], [], columns, ...rows]);
+  sheet['!cols'] = columns.map((c, i) => ({
+    wch: Math.min(40, Math.max(String(c).length, ...rows.map((r) => String(r[i] ?? '').length)) + 2),
+  }));
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, sheetName.slice(0, 31));
+  return saveWorkbook(workbook, filename, XLSX);
+}
+
+/** CSV with proper quoting (names with commas) and a BOM so Excel shows Gujarati/Hindi correctly. */
+export async function exportTableToCSV({ columns, rows, filename }) {
+  const cell = (v) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return downloadCSV('\uFEFF' + [columns, ...rows].map((r) => r.map(cell).join(',')).join('\n'), filename);
+}

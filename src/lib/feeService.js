@@ -169,7 +169,8 @@ export async function getStudentFeeRecord(student, course) {
   if (!student) return null;
 
   const policy = getStandardCoursePolicy(course || student.courses);
-  const defaultTotal = policy.total;
+  // The school's own fee for this student; the policy only decides how it is split into installments.
+  const defaultTotal = Number(student.tuition_fee) || 0;
   const defaultSchedule = buildDefaultSchedule(defaultTotal, student.enrollment_date, policy);
 
   // Default Next Due Date is first installment
@@ -372,9 +373,8 @@ export async function recordFeePayment(param1, ...rest) {
     dbFeeRecord?.total_amount ??
     studentData?.tuition_fee ??
     existingFeeRecord?.total_amount ??
-    coursePolicy.total ??
-    36000
-  );
+    0
+  ) || 0;
 
   const currentPaid = Number(
     dbFeeRecord?.paid_amount ??

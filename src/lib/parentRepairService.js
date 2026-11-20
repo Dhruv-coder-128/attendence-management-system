@@ -64,14 +64,7 @@ export async function repairStudentParentLinkages(force = false) {
       junctionsByParentId.get(ps.parent_id).push(ps);
     });
 
-    // Sort students by admission_no or roll_no or id for stable fallback
-    const sortedStudents = [...students].sort((a, b) => {
-      const admA = String(a.admission_no || a.id);
-      const admB = String(b.admission_no || b.id);
-      return admA.localeCompare(admB, undefined, { numeric: true });
-    });
-
-    parents.forEach((parent, index) => {
+    parents.forEach((parent) => {
       // Step A: Determine the GENUINE matching student for this parent
       let genuineStudent = null;
 
@@ -116,10 +109,6 @@ export async function repairStudentParentLinkages(force = false) {
         }
       }
 
-      // 6. Sequential fallback only if count strictly matches 1:1 and no existing links
-      if (!genuineStudent && parents.length === students.length) {
-        genuineStudent = sortedStudents[index];
-      }
 
       if (!genuineStudent) return;
 
@@ -287,15 +276,14 @@ export async function repairStudentParentLinkages(force = false) {
 }
 
 /**
- * Runs the repair check automatically on startup (throttled unless forced)
+ * Runs the parent-link repair only when the user asks for it (force = true).
  */
 export async function runAutoRepairIfNecessary(force = false) {
   if (typeof window === 'undefined') return;
   try {
-    const lastRun = localStorage.getItem(REPAIR_TIMESTAMP_KEY);
-    const now = Date.now();
-    // Run if never run, or forced, or if 10 minutes elapsed
-    if (force || !lastRun || now - Number(lastRun) > 10 * 60 * 1000) {
+    // Only when the user presses the repair button: guessing links on its own could send a child's
+    // messages to the wrong parent.
+    if (force) {
       await repairStudentParentLinkages(force);
     }
   } catch (err) {

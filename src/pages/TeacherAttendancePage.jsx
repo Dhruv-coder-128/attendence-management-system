@@ -33,7 +33,6 @@ import {
   getStoredHubUrl,
   setStoredHubUrl,
   getStoredHubToken,
-  hubHeaders,
   setStoredHubToken,
   checkHubConnection,
   autoDiscoverSchoolPC,
@@ -45,6 +44,7 @@ import {
   flushOfflineQueue,
   DEFAULT_SCHOOL_PC_URL,
   pairDeviceWithHub,
+  hubFetch,
   checkDeviceRegistration,
   isDevicePairedLocally,
   setDevicePairedLocally,
@@ -76,18 +76,18 @@ const DAILY_METRICS_KEY_PREFIX = 'sms_daily_metrics_v3_';
 const BATCH_ATTENDANCE_STATUS_KEY_PREFIX = 'sms_batch_status_v3_';
 
 function getStoredDailyMetrics(date) {
-  if (typeof window === 'undefined') return { total: 100, present: 0, absent: 0, late: 0, pending: 100, marked: false };
+  if (typeof window === 'undefined') return { total: 0, present: 0, absent: 0, late: 0, pending: 0, marked: false };
   try {
     const raw = localStorage.getItem(DAILY_METRICS_KEY_PREFIX + (date || new Date().toISOString().split('T')[0]));
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed.pending === undefined) {
-        parsed.pending = Math.max(0, (parsed.total || 100) - ((parsed.present || 0) + (parsed.absent || 0) + (parsed.late || 0)));
+        parsed.pending = Math.max(0, (parsed.total || 0) - ((parsed.present || 0) + (parsed.absent || 0) + (parsed.late || 0)));
       }
       return parsed;
     }
   } catch {}
-  return { total: 100, present: 0, absent: 0, late: 0, pending: 100, marked: false };
+  return { total: 0, present: 0, absent: 0, late: 0, pending: 0, marked: false };
 }
 
 function setStoredDailyMetrics(date, metrics) {
@@ -342,7 +342,7 @@ export default function TeacherAttendancePage() {
     const activeUrl = targetUrl || getStoredHubUrl();
     if (!activeUrl) return;
     try {
-      const res = await fetch(`${activeUrl.replace(/\/+$/, '')}/api/local-hub?action=updates&date=${encodeURIComponent(date)}`, { headers: hubHeaders() });
+      const res = await hubFetch(`${activeUrl.replace(/\/+$/, '')}/api/local-hub?action=updates&date=${encodeURIComponent(date)}`);
       if (res.ok) {
         const data = await res.json();
         const records = data.records || data.allRecords || [];
@@ -568,6 +568,7 @@ export default function TeacherAttendancePage() {
       showToast('✓ Loaded existing roll call');
     }
 
+    dirtyIdsRef.current = new Set();
     setAttendanceMap(initialMap);
     setIsLoading(false);
   };
@@ -595,46 +596,61 @@ export default function TeacherAttendancePage() {
       });
       showToast(`Loaded records for ${newDate}`);
     }
+    dirtyIdsRef.current = new Set();
     setAttendanceMap(map);
     setIsLoading(false);
   };
 
   // Auto-sync debounced ref
   const autoSyncTimerRef = useRef(null);
+  // Students changed on this phone and not yet confirmed by the School PC. Only these are sent, and the
+  // live refresh below never overwrites them (so a fast teacher is never "undone" by an older PC copy).
+  const dirtyIdsRef = useRef(new Set());
+  const attendanceMapRef = useRef(attendanceMap);
+  useEffect(() => {
+    attendanceMapRef.current = attendanceMap;
+  }, [attendanceMap]);
 
-  const syncRollCallToHubDebounced = useCallback((updatedMap) => {
+  const syncRollCallToHubDebounced = useCallback(() => {
     const activeUrl = hubUrl || getStoredHubUrl();
     if (!activeUrl || !selectedBatchId) return;
     if (autoSyncTimerRef.current) clearTimeout(autoSyncTimerRef.current);
 
     autoSyncTimerRef.current = setTimeout(async () => {
-      try {
-        const bCode = getCanonicalBatchCode(activeBatch?.code || selectedBatchId);
-        const records = students.map((s) => ({
+      const map = attendanceMapRef.current;
+      const ids = [...dirtyIdsRef.current];
+      // Only the students this teacher actually changed, never "Pending" (that would wipe PC marks).
+      const records = students
+        .filter((s) => ids.includes(s.id) && map[s.id] && map[s.id] !== 'Pending')
+        .map((s) => ({
           student_id: s.id,
           admission_no: s.admission_no || s.id,
           roll_no: s.roll_no,
           full_name: s.full_name || s.name || '',
-          status: updatedMap[s.id] || updatedMap[s.admission_no] || 'Pending',
+          status: map[s.id],
           remarks: '',
           time_in: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
         }));
-
-        await submitAttendanceToHub(
+      if (records.length === 0) return;
+      try {
+        const res = await submitAttendanceToHub(
           activeBatch?.id || selectedBatchId,
           selectedDate,
           records,
           activeUrl,
-          {
-            batch_code: bCode,
-            batch_name: activeBatch?.name || '',
-          },
-          false // Don't spam offline queue on auto-sync keystrokes
+          { batch_code: getCanonicalBatchCode(activeBatch?.code || selectedBatchId), batch_name: activeBatch?.name || '' },
+          false // failures stay "dirty" and are retried on the next tap or by the DONE button
         );
+        if (res?.ok) {
+          // Confirmed, unless the teacher changed that student again while we were sending.
+          records.forEach((r) => {
+            if (attendanceMapRef.current[r.student_id] === r.status) dirtyIdsRef.current.delete(r.student_id);
+          });
+        }
       } catch (err) {
         console.warn('Background auto-sync deferred:', err);
       }
-    }, 600);
+    }, 300);
   }, [hubUrl, selectedBatchId, activeBatch, students, selectedDate]);
 
   // Recalculates batch and top metrics immediately from a map
@@ -697,17 +713,53 @@ export default function TeacherAttendancePage() {
     });
   }, [activeBatch, selectedBatchId, students, selectedDate]);
 
+  // Live two-way sync: while a roll call is open, pick up marks made on the School PC (or another phone).
+  useEffect(() => {
+    if (viewMode !== 'rollcall' || !selectedBatchId || !connectionStatus.ok) return undefined;
+    let busy = false;
+    const timer = setInterval(async () => {
+      if (busy || (typeof document !== 'undefined' && document.hidden)) return;
+      busy = true;
+      try {
+        const recs = await fetchExistingAttendanceFromHub(selectedBatchId, selectedDate, hubUrl);
+        if (!Array.isArray(recs) || recs.length === 0) return;
+        setAttendanceMap((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          recs.forEach((r) => {
+            if (!r.status || r.status === 'Pending') return;
+            const adm = String(r.admission_no || r.student_id || '').trim().toUpperCase();
+            const st = students.find(
+              (s) => s.id === r.student_id || (s.admission_no && String(s.admission_no).trim().toUpperCase() === adm)
+            );
+            if (!st || dirtyIdsRef.current.has(st.id) || next[st.id] === r.status) return;
+            next[st.id] = r.status;
+            changed = true;
+          });
+          if (changed) updateMetricsFromMap(next);
+          return changed ? next : prev;
+        });
+      } catch {
+        // PC momentarily unreachable: try again on the next tick
+      } finally {
+        busy = false;
+      }
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [viewMode, selectedBatchId, selectedDate, hubUrl, connectionStatus.ok, students, updateMetricsFromMap]);
+
   // Toggle single student status (Present / Late / Absent)
   const setStudentStatus = (studentId, status) => {
+    dirtyIdsRef.current.add(studentId);
     setAttendanceMap((prev) => {
       const next = {
         ...prev,
         [studentId]: status,
       };
       updateMetricsFromMap(next);
-      syncRollCallToHubDebounced(next);
       return next;
     });
+    syncRollCallToHubDebounced();
   };
 
   // Bulk actions: Mark All Present & Mark All Absent (Strictly 1 state per student)
@@ -715,10 +767,12 @@ export default function TeacherAttendancePage() {
     const next = {};
     students.forEach((s) => {
       next[s.id] = 'Present';
+      dirtyIdsRef.current.add(s.id);
     });
+    attendanceMapRef.current = next;
     setAttendanceMap(next);
     updateMetricsFromMap(next);
-    syncRollCallToHubDebounced(next);
+    syncRollCallToHubDebounced();
     showToast(`✓ All ${students.length} students marked Present`);
   };
 
@@ -726,10 +780,12 @@ export default function TeacherAttendancePage() {
     const next = {};
     students.forEach((s) => {
       next[s.id] = 'Absent';
+      dirtyIdsRef.current.add(s.id);
     });
+    attendanceMapRef.current = next;
     setAttendanceMap(next);
     updateMetricsFromMap(next);
-    syncRollCallToHubDebounced(next);
+    syncRollCallToHubDebounced();
     showToast(`✓ All ${students.length} students marked Absent`);
   };
 
@@ -775,10 +831,17 @@ export default function TeacherAttendancePage() {
       time_in: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
     }));
 
+    const marked = records.filter((r) => r.status !== 'Pending'); // unmarked students must not wipe PC marks
+    if (marked.length === 0) {
+      setIsSubmitting(false);
+      showToast('Mark at least one student first.', 'warning');
+      return;
+    }
+    if (autoSyncTimerRef.current) clearTimeout(autoSyncTimerRef.current);
     const res = await submitAttendanceToHub(
       activeBatch.id || selectedBatchId,
       selectedDate,
-      records,
+      marked,
       hubUrl,
       {
         batch_code: activeBatch.code || selectedBatchId,
@@ -842,9 +905,12 @@ export default function TeacherAttendancePage() {
       present: presentCount,
       late: lateCount,
       absent: absentCount,
+      syncedToPc: Boolean(res.ok),
+      notSyncedReason: res.ok ? '' : res.error || '',
     });
 
     if (res.ok) {
+      dirtyIdsRef.current = new Set();
       setShowSuccessModal(true);
       showToast(`✓ Saved to School PC (${presentCount} Present · ${absentCount} Absent)`);
       setOfflineQueue(getOfflineQueue());
@@ -856,7 +922,7 @@ export default function TeacherAttendancePage() {
     } else if (res.queued) {
       setShowSuccessModal(true);
       setOfflineQueue(getOfflineQueue());
-      showToast('✓ Saved to phone storage (will auto-sync when School Wi-Fi connects).', 'warning');
+      showToast(res.error || 'Saved on this phone. It will be sent to the School PC automatically.', 'warning');
     } else {
       showToast('⚠️ Could not save attendance: ' + (res.error || 'Connection failed'), 'error');
     }
@@ -970,7 +1036,7 @@ export default function TeacherAttendancePage() {
       const count = typeof b.student_count === 'number' ? b.student_count : (typeof b.enrolled === 'number' ? b.enrolled : (b.is_canonical ? 20 : 0));
       return acc + count;
     }, 0);
-    return sum || 100;
+    return sum;
   }, [uniqueBatches, connectionStatus]);
 
   return (
@@ -2846,10 +2912,12 @@ export default function TeacherAttendancePage() {
             </div>
 
             <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
-              Roll Call Recorded!
+              {savedSummary?.syncedToPc === false ? 'Saved on this phone only' : 'Roll Call Recorded!'}
             </h3>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', lineHeight: 1.4 }}>
-              Attendance data has been synchronized with the School PC in real-time.
+            <div style={{ fontSize: '12px', color: savedSummary?.syncedToPc === false ? '#b45309' : '#64748b', marginTop: '4px', lineHeight: 1.4 }}>
+              {savedSummary?.syncedToPc === false
+                ? `Not on the School PC yet. ${savedSummary.notSyncedReason || ''} It will be sent automatically once the phone reaches the PC.`
+                : 'Attendance has been saved on the School PC.'}
             </div>
 
             {/* Summary Breakdown */}

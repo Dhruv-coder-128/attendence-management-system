@@ -119,7 +119,9 @@ export async function exportStudentsToExcel(students, academyName = 'SMS — Stu
   const safeAcademy = academyName.toLowerCase().replace(/[^a-z0-9]/g, '_');
   const filename = `${safeAcademy}_students_${todayStr}.xlsx`;
 
-  XLSX.writeFile(workbook, filename);
+  // Same save dialog as every other export (XLSX.writeFile skips it and can fail silently in the EXE).
+  const data = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+  await triggerBlobDownload(new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), filename);
   return filename;
 }
 
@@ -139,6 +141,6 @@ export async function exportStudentsToCSV(students, academyName = 'SMS — Stude
   const safeAcademy = academyName.toLowerCase().replace(/[^a-z0-9]/g, '_');
   const filename = `${safeAcademy}_students_${todayStr}.csv`;
 
-  triggerBlobDownload(blob, filename);
+  await triggerBlobDownload(blob, filename);
   return filename;
 }

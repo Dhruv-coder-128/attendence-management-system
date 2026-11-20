@@ -485,7 +485,7 @@ fn handle_connection(mut stream: TcpStream, state: SharedHubState) {
     let origin_ok = origin.is_empty() || ALLOWED_ORIGINS.contains(&origin.as_str());
     let cors_headers = if origin_ok && !origin.is_empty() {
         format!(
-            "Access-Control-Allow-Origin: {}\r\nVary: Origin\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Accept, X-Hub-Token, X-Device-Id\r\nAccess-Control-Max-Age: 86400\r\n",
+            "Access-Control-Allow-Origin: {}\r\nVary: Origin\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Accept, X-Hub-Token, X-Device-Id\r\nAccess-Control-Allow-Private-Network: true\r\nAccess-Control-Allow-Local-Network: true\r\nAccess-Control-Max-Age: 86400\r\n",
             origin
         )
     } else {
@@ -496,25 +496,6 @@ fn handle_connection(mut stream: TcpStream, state: SharedHubState) {
         let response = format!("HTTP/1.1 204 No Content\r\n{}Connection: close\r\n\r\n", cors_headers);
         let _ = stream.write_all(response.as_bytes());
         return;
-    }
-
-    // The PC itself (loopback, from our own app) is trusted. LAN clients must present the paired token.
-    let trusted_local = is_loopback && origin_ok;
-    let token_ok = {
-        let presented = headers.get("x-hub-token").map(|s| s.trim()).unwrap_or("");
-        state.read().map(|g| !presented.is_empty() && presented == g.token).unwrap_or(false)
-    };
-
-    // Read body if Content-Length specified (capped at 20 MB to avoid memory exhaustion)
-    let mut body_bytes = Vec::new();
-    if let Some(len_str) = headers.get("content-length") {
-        if let Ok(content_len) = len_str.parse::<usize>() {
-            if content_len > 20 * 1024 * 1024 {
-                return;
-            }
-            body_bytes.resize(content_len, 0);
-            let _ = reader.read_exact(&mut body_bytes);
-        }
     }
 
     let (path, query_str) = match full_path.split_once('?') {
@@ -528,6 +509,31 @@ fn handle_connection(mut stream: TcpStream, state: SharedHubState) {
             let decoded_k = percent_decode(k);
             let decoded_v = percent_decode(v);
             query_params.insert(decoded_k, decoded_v);
+        }
+    }
+
+    // The PC itself (loopback, from our own app) is trusted. LAN clients must present the paired token,
+    // as the X-Hub-Token header or as ?token= (phones use ?token= so their WebView sends no CORS preflight).
+    let trusted_local = is_loopback && origin_ok;
+    let token_ok = {
+        let presented = headers
+            .get("x-hub-token")
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or_else(|| query_params.get("token").map(|s| s.trim().to_string()))
+            .unwrap_or_default();
+        state.read().map(|g| !presented.is_empty() && presented == g.token).unwrap_or(false)
+    };
+
+    // Read body if Content-Length specified (capped at 20 MB to avoid memory exhaustion)
+    let mut body_bytes = Vec::new();
+    if let Some(len_str) = headers.get("content-length") {
+        if let Ok(content_len) = len_str.parse::<usize>() {
+            if content_len > 20 * 1024 * 1024 {
+                return;
+            }
+            body_bytes.resize(content_len, 0);
+            let _ = reader.read_exact(&mut body_bytes);
         }
     }
 
@@ -949,7 +955,7 @@ fn handle_post_action(
             json!({
                 "ok": false,
                 "is_locked": true,
-                "error": "This school installation is currently locked by the administrator. Contact Dhruv Shah (+91 8866039007)."
+                "error": "The licence on the School PC has expired. Contact the developer to renew it."
             }),
         );
     }

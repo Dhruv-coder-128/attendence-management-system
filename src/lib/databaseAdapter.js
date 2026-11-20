@@ -10,128 +10,10 @@
  */
 
 import { saveFileWithPicker } from './fileSaveHelper.js';
-import {
-  CANONICAL_COURSES,
-  CANONICAL_BATCHES,
-  CANONICAL_STUDENTS,
-  CANONICAL_PARENTS,
-  CANONICAL_PARENT_STUDENTS,
-} from '../data/canonicalSchoolData.js';
 
 const DB_NAME = 'sms_offline_db';
 const DB_VERSION = 1;
 const STORAGE_MODE_KEY = 'sms_storage_mode';
-const ROSTER_MIGRATION_KEY = 'sms_roster_dataset_v7';
-
-let rosterMigrationPromise = null;
-
-/**
- * Authentically aligns canonical student cohorts (20 per batch + 1 in 11th B)
- * while strictly PRESERVING any custom school client records (Zero Hardcoding).
- */
-export async function restoreAuthoritativeRoster() {
-  if (typeof window === 'undefined' || !window.indexedDB) {
-    return { success: false, reason: 'no-indexeddb' };
-  }
-  try {
-    const db = await openOfflineDB();
-
-    const existingStudents = await new Promise((resolve) => {
-      if (!db.objectStoreNames.contains('students')) return resolve([]);
-      const tx = db.transaction('students', 'readonly');
-      const store = tx.objectStore('students');
-      const req = store.getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    });
-
-    const canonicalMap = new Map();
-    CANONICAL_STUDENTS.forEach((s) => {
-      canonicalMap.set(s.id, s);
-      if (s.admission_no) canonicalMap.set(s.admission_no, s);
-    });
-
-    // Realign canonical records to authentic cohorts while preserving custom client records
-    const updatedStudents = existingStudents.map((s) => {
-      const canon = canonicalMap.get(s.id) || (s.admission_no ? canonicalMap.get(s.admission_no) : null);
-      if (canon) {
-        return {
-          ...s,
-          batch_id: canon.batch_id,
-          batch_name: canon.batch_name,
-          batch_code: canon.batch_code,
-          roll_no: canon.roll_no,
-          course_id: canon.course_id,
-        };
-      }
-      return s; // Preserve custom client-created students as-is!
-    });
-
-    // Ensure all canonical baseline students exist if database was missing some
-    CANONICAL_STUDENTS.forEach((cs) => {
-      const found = updatedStudents.some(
-        (s) => s.id === cs.id || (s.admission_no && s.admission_no === cs.admission_no)
-      );
-      if (!found) {
-        updatedStudents.push({ ...cs });
-      }
-    });
-
-    // Write records independently using safe single-store transactions
-    await putRecordsInStore('batches', CANONICAL_BATCHES);
-    await putRecordsInStore('students', updatedStudents);
-    if (CANONICAL_COURSES && CANONICAL_COURSES.length > 0) {
-      await putRecordsInStore('courses', CANONICAL_COURSES);
-    }
-    if (CANONICAL_PARENTS && CANONICAL_PARENTS.length > 0) {
-      await putRecordsInStore('parents', CANONICAL_PARENTS);
-    }
-    if (CANONICAL_PARENT_STUDENTS && CANONICAL_PARENT_STUDENTS.length > 0) {
-      await putRecordsInStore('parent_students', CANONICAL_PARENT_STUDENTS);
-    }
-
-    localStorage.setItem(ROSTER_MIGRATION_KEY, 'true');
-    console.log('[SMS Database Engine] Authoritative roster successfully aligned: 101 students across 6 batches.');
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('sms-db-mutation', { detail: { tableName: 'students', count: updatedStudents.length } }));
-    }
-    return { success: true, count: updatedStudents.length };
-  } catch (err) {
-    console.error('[SMS Database Engine] Failed to restore authoritative roster:', err);
-    return { success: false, error: err.message };
-  }
-}
-
-async function ensureAuthoritativeRosterMigration() {
-  if (typeof window === 'undefined' || !window.indexedDB) return Promise.resolve();
-
-  if (!rosterMigrationPromise) {
-    rosterMigrationPromise = (async () => {
-      try {
-        const db = await openOfflineDB();
-        const existingStudents = await new Promise((resolve) => {
-          if (!db.objectStoreNames.contains('students')) return resolve([]);
-          const tx = db.transaction('students', 'readonly');
-          const req = tx.objectStore('students').getAll();
-          req.onsuccess = () => resolve(req.result || []);
-          req.onerror = () => resolve([]);
-        });
-
-        // Seed the demo roster only into a brand-new, empty database. Never touch a school's real data
-        // automatically; the "restore roster" buttons in Settings/Batches remain for manual use.
-        const migrationDone = localStorage.getItem(ROSTER_MIGRATION_KEY) === 'true';
-        if (!migrationDone && existingStudents.length === 0) {
-          await restoreAuthoritativeRoster();
-        } else if (!migrationDone) {
-          localStorage.setItem(ROSTER_MIGRATION_KEY, 'true');
-        }
-      } catch (err) {
-        console.warn('[SMS Database Engine] Roster auto-healing check warning:', err);
-      }
-    })();
-  }
-  return rosterMigrationPromise;
-}
 
 const ALL_TABLES = [
   'courses',
@@ -222,7 +104,6 @@ export function generateLocalId() {
  * Helper to perform read transaction
  */
 async function getAllFromStore(tableName) {
-  await ensureAuthoritativeRosterMigration();
   const db = await openOfflineDB();
   return new Promise((resolve, reject) => {
     if (!db.objectStoreNames.contains(tableName)) {
@@ -232,18 +113,7 @@ async function getAllFromStore(tableName) {
     const store = tx.objectStore(tableName);
     const req = store.getAll();
     req.onsuccess = () => {
-      const results = req.result || [];
-      if (results.length === 0) {
-        if (tableName === 'batches' && CANONICAL_BATCHES.length > 0) {
-          putRecordsInStore('batches', CANONICAL_BATCHES).catch(() => {});
-          return resolve(CANONICAL_BATCHES);
-        }
-        if (tableName === 'students' && CANONICAL_STUDENTS.length > 0) {
-          putRecordsInStore('students', CANONICAL_STUDENTS).catch(() => {});
-          return resolve(CANONICAL_STUDENTS);
-        }
-      }
-      resolve(results);
+      resolve(req.result || []);
     };
     req.onerror = () => reject(req.error);
   });

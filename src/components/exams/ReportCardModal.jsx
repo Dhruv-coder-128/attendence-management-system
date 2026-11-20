@@ -1,16 +1,12 @@
 import React from 'react';
+import { printDocument } from '../../lib/printDocument';
+import { DocumentHeader, DocumentFooter } from '../print/DocumentHeader';
 import {
   Printer,
   X,
-  GraduationCap,
-  Award,
-  CheckCircle2,
-  AlertCircle,
   FileText,
-  Calendar,
 } from 'lucide-react';
 import Button from '../common/Button';
-import Badge from '../common/Badge';
 import { useAcademySettings } from '../../lib/academySettings';
 
 /**
@@ -29,9 +25,7 @@ export default function ReportCardModal({
 
   if (!isOpen || !student) return null;
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const handlePrint = () => printDocument('printable-report-card');
 
   const todayStr = new Date().toLocaleDateString('en-IN', {
     day: 'numeric',
@@ -66,39 +60,6 @@ export default function ReportCardModal({
 
   return (
     <>
-      {/* Print Specific CSS styles injected for perfect paper output */}
-      <style>{`
-        @media print {
-          body * {
-            visibility: hidden !important;
-          }
-          #printable-report-card, #printable-report-card * {
-            visibility: visible !important;
-          }
-          #printable-report-card {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 24px !important;
-            box-shadow: none !important;
-            border: none !important;
-            background: #ffffff !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          #printable-report-card img {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            max-height: 52px !important;
-            display: inline-block !important;
-          }
-          .no-print {
-            display: none !important;
-          }
-        }
-      `}</style>
 
 
       {/* Modal Backdrop */}
@@ -181,79 +142,9 @@ export default function ReportCardModal({
               fontFamily: 'var(--font-sans, system-ui, sans-serif)',
             }}
           >
-            {/* 1. Official Academy Header */}
-            <div
-              style={{
-                textAlign: 'center',
-                paddingBottom: '16px',
-                borderBottom: '2px solid var(--navy-900)',
-                marginBottom: '20px',
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '12px',
-                  color: 'var(--navy-900)',
-                  marginBottom: '4px',
-                }}
-              >
-                {branding.logo_url ? (
-                  <img
-                    src={branding.logo_url}
-                    alt="Logo"
-                    style={{ height: '38px', width: 'auto', objectFit: 'contain' }}
-                  />
-                ) : (
-                  <GraduationCap size={28} />
-                )}
-                <span
-                  style={{
-                    fontSize: '20px',
-                    fontWeight: 800,
-                    letterSpacing: '0.5px',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {branding.academy_name}
-                </span>
-              </div>
+            <DocumentHeader branding={branding} title="Student Progress Report Card" meta={[['Academic Year', exam?.academic_year || branding.academic_year], ['Date', todayStr]]} />
 
-              <div style={{ fontSize: '12px', fontWeight: 600, color: '#334155' }}>
-                {branding.branch_name} &bull; {branding.address}
-              </div>
-
-              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                Phone: {branding.phone} &bull; Email: {branding.email}
-              </div>
-
-              {branding.tagline && (
-                <div style={{ fontSize: '11px', color: '#64748b', fontStyle: 'italic', marginTop: '2px' }}>
-                  {branding.tagline}
-                </div>
-              )}
-
-              <div
-                style={{
-                  display: 'inline-block',
-                  marginTop: '8px',
-                  padding: '3px 14px',
-                  backgroundColor: 'var(--navy-950)',
-                  color: '#ffffff',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  letterSpacing: '1px',
-                  borderRadius: '20px',
-                  textTransform: 'uppercase',
-                }}
-              >
-                Official Student Progress Report Card
-              </div>
-            </div>
-
-            {/* 2. Student & Cohort Metadata Grid */}
+            {/* Student & Cohort Metadata Grid */}
             <div
               style={{
                 display: 'grid',
@@ -297,7 +188,7 @@ export default function ReportCardModal({
                 <span style={{ color: '#64748b', display: 'block', fontSize: '10px', textTransform: 'uppercase' }}>
                   Academic Term &amp; Year
                 </span>
-                <span>{exam?.academic_year || 'AY 2026-27'} &bull; Term 1</span>
+                <span>{exam?.academic_year || branding.academic_year}{exam?.exam_type ? ` • ${exam.exam_type}` : ''}</span>
               </div>
             </div>
 
@@ -459,38 +350,7 @@ export default function ReportCardModal({
               </div>
             )}
 
-            {/* 6. Signatures & Academy Validation Stamp */}
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-end',
-                marginTop: '36px',
-                paddingTop: '24px',
-                borderTop: '1px dashed #cbd5e1',
-                fontSize: '11px',
-              }}
-            >
-              <div style={{ textAlign: 'center', minWidth: '160px' }}>
-                <div style={{ height: '36px' }}></div>
-                <div style={{ borderTop: '1px solid #0f172a', paddingTop: '4px', fontWeight: 600 }}>
-                  Subject Faculty Signature
-                </div>
-              </div>
-
-              <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: '10px' }}>
-                Generated: {todayStr}
-                <br />
-                SMS — Student Management System &bull; Verified Copy
-              </div>
-
-              <div style={{ textAlign: 'center', minWidth: '160px' }}>
-                <div style={{ height: '36px' }}></div>
-                <div style={{ borderTop: '1px solid #0f172a', paddingTop: '4px', fontWeight: 600 }}>
-                  Director / Principal Signature
-                </div>
-              </div>
-            </div>
+            <DocumentFooter signatures={['Class Teacher', 'Principal']} />
           </div>
         </div>
       </div>

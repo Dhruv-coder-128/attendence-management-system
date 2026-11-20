@@ -25,7 +25,7 @@ import DraggableTrialCapsule from './components/license/DraggableTrialCapsule';
 import TrialExpiredLockout from './components/license/TrialExpiredLockout';
 import { RefreshCw, GraduationCap } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
-import { useSchoolDatabaseSync } from './lib/useSchoolDatabaseSync';
+import { useSchoolDatabaseSync, resolveHubInfo } from './lib/useSchoolDatabaseSync';
 import { checkAndDispatchBirthdayWishes } from './lib/birthdayAutoDispatcher';
 
 
@@ -307,6 +307,19 @@ export default function App() {
     });
   };
 
+  // While the licence is missing/expired, the Wi-Fi hub also refuses roll call from teacher phones.
+  const hubLocked = licenseStatus ? isTauriDesktop() && licenseStatus.ok === false : null;
+  useEffect(() => {
+    if (hubLocked === null || !isTauriDesktop()) return;
+    resolveHubInfo(true)
+      .then((hub) => fetch(`${hub.url}/api/local-hub?action=set_lock_status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(hub.token ? { 'X-Hub-Token': hub.token } : {}) },
+        body: JSON.stringify({ is_locked: hubLocked }),
+      }))
+      .catch(() => {});
+  }, [hubLocked]);
+
   // 1. Loading Splash Screen
   if (authLoading) {
     return (
@@ -374,8 +387,9 @@ export default function App() {
   const isExpiredByDays = !isLifetime && (licenseStatus?.daysRemaining !== undefined && licenseStatus.daysRemaining <= 0);
   const isExpiredByDate = !isLifetime && Boolean(licenseStatus?.trialEndsAt && new Date(licenseStatus.trialEndsAt).getTime() <= Date.now());
 
+  // A fresh install ('unlicensed') gets the activation screen below, not the "expired" lock screen.
   const isLockedOut =
-    isDesktopExe && (
+    isDesktopExe && licenseStatus?.status !== 'unlicensed' && (
       licenseStatus?.isTrialExpired ||
       licenseStatus?.isLocked ||
       licenseStatus?.status === 'trial_expired' ||
@@ -438,19 +452,16 @@ export default function App() {
   }
 
   const storedLic = getStoredLicense();
-  const isTimerExplicitlyDisabled = licenseStatus?.isTimerVisible === false || storedLic?.isTimerVisible === false;
-  const isLicensedPaid = licenseStatus?.status === 'licensed' || storedLic?.status === 'licensed' || (licenseStatus?.daysRemaining || storedLic?.daysRemaining || 0) >= 9000;
   
   // Floating timer capsule: ONLY shown on Desktop EXE during the initial 30-day evaluation trial.
   // Once licensed/paid, or when trial ends, the floating pill completely disappears from the screen.
+  // Movable countdown: shown on the school PC for every time-limited key (10/30/180/365 days).
   const showTrialCapsule =
     isDesktopExe &&
     !isLockedOut &&
-    !isTimerExplicitlyDisabled &&
-    !isLicensedPaid &&
-    (licenseStatus?.status === 'trial_active' || storedLic?.status === 'trial_active') &&
+    Boolean(storedLic?.trialEndsAt) &&
     (licenseStatus?.daysRemaining || storedLic?.daysRemaining || 0) > 0 &&
-    (licenseStatus?.daysRemaining || storedLic?.daysRemaining || 0) <= 30;
+    (licenseStatus?.daysRemaining || storedLic?.daysRemaining || 0) < 9000;
 
   // 5. Render Protected Administrative ERP Console (For Desktop EXE or School Preview)
   return (

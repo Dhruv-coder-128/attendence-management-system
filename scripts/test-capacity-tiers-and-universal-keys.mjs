@@ -1,7 +1,5 @@
 import {
   STUDENT_CAPACITY_TIERS,
-  UNIVERSAL_TRIAL_KEY,
-  UNIVERSAL_GRACE_KEY,
   getStudentCapacityTier,
   checkStudentCapacityAllowed,
 } from '../src/lib/licenseService.js';
@@ -22,8 +20,6 @@ function assert(condition, message) {
 }
 
 // 1. Verify Universal Key Constants
-assert(UNIVERSAL_TRIAL_KEY === 'SMS-FREE-TRIAL-30D', 'Universal 30-Day Trial Key is SMS-FREE-TRIAL-30D');
-assert(UNIVERSAL_GRACE_KEY === 'SMS-GRACE-5D', 'Universal 5-Day Emergency Grace Key is SMS-GRACE-5D');
 
 // 2. Verify Student Capacity Tiers
 assert(Array.isArray(STUDENT_CAPACITY_TIERS) && STUDENT_CAPACITY_TIERS.length === 4, 'Has exactly 4 capacity tiers');

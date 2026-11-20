@@ -24,7 +24,6 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import {
   recordFeePayment,
   computeFeeStatus,
-  getStandardCoursePolicy,
 } from '../lib/feeService';
 import { sendVerifiedFeeReminder } from '../lib/telegramClient';
 
@@ -100,6 +99,7 @@ export default function FeesPage({ onRefreshCounts }) {
           fee_status,
           fee_due_date,
           enrollment_date,
+          batch_id,
           courses:course_id ( id, name, code, level ),
           batches:batch_id ( id, name, code )
         `)
@@ -126,8 +126,8 @@ export default function FeesPage({ onRefreshCounts }) {
       // 4. Merge students with fee data
       const mergedStudents = (studentsData || []).map((student) => {
         const feeRecord = feeRecordsMap[student.id];
-        const policy = getStandardCoursePolicy(student.courses);
-        const total = Number(feeRecord?.total_amount ?? student.tuition_fee ?? policy.total);
+        // No built-in default fee: a school sees only the fees it entered (0 = not set yet).
+        const total = Number(feeRecord?.total_amount ?? student.tuition_fee ?? 0) || 0;
         const paid = Number(feeRecord?.paid_amount ?? student.fee_paid ?? 0);
         const computed = computeFeeStatus(
           total,
@@ -171,7 +171,7 @@ export default function FeesPage({ onRefreshCounts }) {
     let overdueCount = 0;
 
     students.forEach((s) => {
-      const tuition = Number(s.tuition_fee ?? 36000);
+      const tuition = Number(s.tuition_fee ?? 0) || 0;
       const paid = Number(s.fee_paid || 0);
       const status = s.fee_status || 'pending';
 
@@ -201,8 +201,8 @@ export default function FeesPage({ onRefreshCounts }) {
         (s.admission_no != null && String(s.admission_no).toLowerCase().includes(search)) ||
         (s.roll_no != null && String(s.roll_no).toLowerCase().includes(search));
 
-      const batchId = s.batches?.id;
-      const matchesBatch = selectedBatch === 'ALL' || batchId === selectedBatch;
+      const matchesBatch =
+        selectedBatch === 'ALL' || [s.batches?.id, s.batch_id, s.batches?.code].includes(selectedBatch);
 
       const status = (s.fee_status || 'pending').toLowerCase();
       const matchesStatus =
@@ -240,7 +240,7 @@ export default function FeesPage({ onRefreshCounts }) {
         referenceNo: paymentData.referenceNo,
         notes: paymentData.notes,
         existingFeeRecord: feeRec || {
-          total_amount: Number(selectedStudentForPayment.tuition_fee || 36000),
+          total_amount: Number(selectedStudentForPayment.tuition_fee || 0),
           paid_amount: Number(selectedStudentForPayment.fee_paid || 0),
           academic_year: '2026-27',
         },
@@ -255,9 +255,9 @@ export default function FeesPage({ onRefreshCounts }) {
 
         const newPending = res.pending_amount !== undefined
           ? res.pending_amount
-          : Math.max(0, Number(selectedStudentForPayment.tuition_fee || 36000) - newPaid);
+          : Math.max(0, Number(selectedStudentForPayment.tuition_fee || 0) - newPaid);
 
-        const newTotal = res.total_amount || Number(selectedStudentForPayment.tuition_fee || 36000);
+        const newTotal = res.total_amount || Number(selectedStudentForPayment.tuition_fee || 0);
 
         const updatedStudent = {
           ...selectedStudentForPayment,
@@ -308,9 +308,9 @@ export default function FeesPage({ onRefreshCounts }) {
     try {
       const feeRec = student.student_fees?.[0];
       const res = await sendVerifiedFeeReminder(student.id, feeRec || {
-        total_amount: Number(student.tuition_fee || 36000),
+        total_amount: Number(student.tuition_fee || 0),
         paid_amount: Number(student.fee_paid || 0),
-        pending_amount: Number(student.tuition_fee || 36000) - Number(student.fee_paid || 0),
+        pending_amount: Number(student.tuition_fee || 0) - Number(student.fee_paid || 0),
         status: student.fee_status || 'pending',
         next_due_date: student.fee_due_date,
       });
@@ -520,7 +520,7 @@ export default function FeesPage({ onRefreshCounts }) {
                 </tr>
               ) : (
                 paginatedStudents.map((s) => {
-                  const total = Number(s.tuition_fee ?? 36000);
+                  const total = Number(s.tuition_fee ?? 0);
                   const paid = Number(s.fee_paid || 0);
                   const pending = Math.max(0, total - paid);
                   const status = (s.fee_status || 'pending').toLowerCase();
@@ -660,7 +660,7 @@ export default function FeesPage({ onRefreshCounts }) {
           const totalFee = Number(
             selectedStudentForPayment?.student_fees?.[0]?.total_amount ??
             selectedStudentForPayment?.tuition_fee ??
-            36000
+            0
           );
           const alreadyPaid = Number(
             selectedStudentForPayment?.student_fees?.[0]?.paid_amount ??

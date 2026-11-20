@@ -6,13 +6,14 @@ import { supabase, isSupabaseConfigured } from './supabase.js';
  */
 export const DEFAULT_ACADEMY_SETTINGS = {
   academy_name: 'SMS — Student Management System',
-  owner_name: 'Institution Administrator',
-  branch_name: 'Central Campus — Main Wing',
-  address: '123 Education Hub, MG Road, Mumbai, Maharashtra 400001',
-  phone: '+91 98765 43210',
-  email: 'admin@institution.edu',
+  // Blank until the school fills them in (Settings); documents leave empty fields out.
+  owner_name: '',
+  branch_name: '',
+  address: '',
+  phone: '',
+  email: '',
   logo_url: '',
-  tagline: 'Excellence in Higher Secondary & College Education • Estd. 2018',
+  tagline: '',
   academic_year: 'AY 2026-27 (Term 1)',
   min_attendance_threshold: 75,
   late_grace_minutes: 15,

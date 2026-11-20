@@ -18,15 +18,11 @@ export default function DraggableTrialCapsule({ daysRemaining, onOpenActivation 
   const schoolName = license?.schoolName || 'SMS Trial';
 
   // Compute target trial expiration time
+  // Re-read on every render so a renewal key moves the countdown straight away.
   const targetTimeRef = useRef(null);
-  if (!targetTimeRef.current) {
-    if (license?.trialEndsAt) {
-      targetTimeRef.current = new Date(license.trialEndsAt).getTime();
-    } else {
-      const days = daysRemaining !== undefined ? daysRemaining : license?.daysRemaining ?? 30;
-      targetTimeRef.current = Date.now() + days * 24 * 60 * 60 * 1000;
-    }
-  }
+  targetTimeRef.current = license?.trialEndsAt
+    ? new Date(license.trialEndsAt).getTime()
+    : Date.now() + (daysRemaining ?? license?.daysRemaining ?? 30) * 86400000;
 
   // Live countdown state
   const [timeLeft, setTimeLeft] = useState({
@@ -180,7 +176,7 @@ export default function DraggableTrialCapsule({ daysRemaining, onOpenActivation 
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        title="Draggable Trial Timer • Click to view license details or activate. Drag to move anywhere."
+        title="Licence time left • Click to see licence details or enter a new key. Drag to move anywhere."
         style={{
           position: 'fixed',
           left: `${position.x}px`,
@@ -234,7 +230,7 @@ export default function DraggableTrialCapsule({ daysRemaining, onOpenActivation 
         {/* Live Second-by-Second Countdown Display */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
           <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 500 }}>
-            Trial:
+            Licence:
           </span>
           <span
             style={{
@@ -246,7 +242,7 @@ export default function DraggableTrialCapsule({ daysRemaining, onOpenActivation 
             }}
           >
             {timeLeft.isExpired ? (
-              <span style={{ color: '#ef4444' }}>Trial Expired</span>
+              <span style={{ color: '#ef4444' }}>Expired</span>
             ) : (
               `${timeLeft.days}d ${String(timeLeft.hours).padStart(2, '0')}h ${String(timeLeft.minutes).padStart(2, '0')}m ${String(timeLeft.seconds).padStart(2, '0')}s`
             )}

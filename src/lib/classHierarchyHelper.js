@@ -8,15 +8,9 @@
  * Normalizes standard names into canonical title case format
  */
 export function normalizeStandardName(str) {
+  // Keep the school's own wording ("11th Science", "Class 8", "FY BCA"): no assumptions about streams.
   if (!str) return 'Standard Class';
-  const clean = String(str).trim();
-  const lower = clean.toLowerCase();
-  if (lower === '11-com' || lower === '11com' || lower.includes('11th')) return '11th Commerce';
-  if (lower === '12-com' || lower === '12com' || lower.includes('12th')) return '12th Commerce';
-  if (lower === 'fy' || lower === 'fy-bca' || lower === 'fybca' || lower.includes('first year')) return 'FY BCA';
-  if (lower === 'sy' || lower === 'sy-bca' || lower === 'sybca' || lower.includes('second year')) return 'SY BCA';
-  if (lower === 'ty' || lower === 'ty-bca' || lower === 'tybca' || lower.includes('third year')) return 'TY BCA';
-  return clean;
+  return String(str).trim().replace(/\s+/g, ' ');
 }
 
 /**
@@ -64,26 +58,10 @@ export function extractStandardAndSection(batch) {
     };
   }
 
-  // 4. Default standard mapping from existing canonical codes
-  const uCode = code.toUpperCase();
-  const uName = name.toUpperCase();
-
-  if (uCode.includes('11-COM') || uCode.includes('11COM') || uName.includes('11TH')) {
-    const sec = batch.section || (uCode.endsWith('-B') || uName.includes('B') ? 'B' : 'A');
-    return { standard: '11th Commerce', section: sec };
-  }
-  if (uCode.includes('12-COM') || uCode.includes('12COM') || uName.includes('12TH')) {
-    const sec = batch.section || (uCode.endsWith('-B') || uName.includes('B') ? 'B' : 'A');
-    return { standard: '12th Commerce', section: sec };
-  }
-  if (uCode.includes('FY') || uName.includes('FY')) {
-    return { standard: 'FY BCA', section: batch.section || 'A' };
-  }
-  if (uCode.includes('SY') || uName.includes('SY')) {
-    return { standard: 'SY BCA', section: batch.section || 'A' };
-  }
-  if (uCode.includes('TY') || uName.includes('TY')) {
-    return { standard: 'TY BCA', section: batch.section || 'A' };
+  // 4. Pattern: "12th Science B", "Class 8 A" (division letter at the end)
+  const tailMatch = name.match(/^(.*\S)\s+([A-Z])$/);
+  if (tailMatch) {
+    return { standard: normalizeStandardName(tailMatch[1]), section: tailMatch[2] };
   }
 
   return {

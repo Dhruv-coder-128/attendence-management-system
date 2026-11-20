@@ -234,7 +234,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                   <div style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '10px' }}>
                     <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>Remaining Time</div>
                     <div style={{ fontSize: '14px', fontWeight: 700, color: (currentLicense?.daysRemaining !== undefined && currentLicense?.daysRemaining <= 5) ? '#dc2626' : '#0f172a', marginTop: '2px' }}>
-                      {currentLicense?.status === 'licensed' || (currentLicense?.daysRemaining !== undefined && currentLicense?.daysRemaining >= 9000)
+                      {(currentLicense?.daysRemaining !== undefined && currentLicense?.daysRemaining >= 9000)
                         ? 'Lifetime / Pro'
                         : `${currentLicense?.daysRemaining ?? 30} Days Remaining`}
                     </div>
@@ -333,40 +333,40 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                 </div>
               )}
 
-              <div className="form-group" style={{ marginBottom: '16px' }}>
-                <label className="form-label" style={{ fontWeight: 600, fontSize: '13px', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>School License Key</span>
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '11.5px' }}>e.g. SMS-FREE-TRIAL-30D</span>
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type="text"
-                    value={licenseKey}
-                    onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
-                    placeholder="SMS-XXXX-XXXX"
-                    className="form-input"
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '14px',
-                      letterSpacing: '0.5px',
-                      textTransform: 'uppercase',
-                      padding: '10px 12px',
-                    }}
-                    disabled={loading}
-                    autoFocus
-                  />
+              {/* Step 1: the school sends this computer's Device ID to the developer */}
+              <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>Step 1 — Send this Device ID to get your key</div>
+                <code style={{ display: 'block', fontSize: '12px', color: '#1e3a8a', backgroundColor: '#eff6ff', padding: '8px 10px', borderRadius: '6px', fontWeight: 700, wordBreak: 'break-all', userSelect: 'all' }}>
+                  {currentHwid || 'Reading Device ID…'}
+                </code>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                  <button type="button" className="btn btn-outline" style={{ fontSize: '12px', padding: '6px 10px' }} disabled={!currentHwid}
+                    onClick={async () => { if (await copyToClipboard(currentHwid)) { setCopiedInfo('Device ID'); setTimeout(() => setCopiedInfo(''), 2000); } }}>
+                    {copiedInfo === 'Device ID' ? '✓ Copied' : 'Copy Device ID'}
+                  </button>
+                  <button type="button" className="btn btn-outline" style={{ fontSize: '12px', padding: '6px 10px' }} disabled={!currentHwid}
+                    onClick={() => openExternalLink(`${contactLinks.whatsappLink.split('?')[0]}?text=${encodeURIComponent(`Hello, I want an SMS licence key.\nSchool name: \nDevice ID: ${currentHwid}`)}`)}>
+                    Send on WhatsApp
+                  </button>
                 </div>
+              </div>
+
+              {/* Step 2: paste the key received */}
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <label className="form-label" style={{ fontWeight: 600, fontSize: '13px' }}>Step 2 — Paste the licence key you received</label>
+                <textarea
+                  value={licenseKey}
+                  onChange={(e) => setLicenseKey(e.target.value)}
+                  placeholder="SMS2-XXXXX-XXXXX-…"
+                  className="form-input"
+                  rows={4}
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: '12.5px', padding: '10px 12px', wordBreak: 'break-all', resize: 'vertical' }}
+                  disabled={loading}
+                  autoFocus
+                />
                 <p style={{ margin: '6px 0 0 0', fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                  A unique evaluation trial begins on first activation.
+                  Paste the whole key. It works only on this computer and needs no internet.
                 </p>
-                {currentHwid && (
-                  <div style={{ marginTop: '8px', padding: '6px 10px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ color: '#64748b', fontWeight: 600 }}>Workstation Hardware ID:</span>
-                    <code style={{ fontSize: '10.5px', color: '#1e3a8a', backgroundColor: '#eff6ff', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
-                      {currentHwid}
-                    </code>
-                  </div>
-                )}
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>

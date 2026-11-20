@@ -8,7 +8,7 @@
  * Env: SUPABASE_SERVICE_ROLE_KEY, TELEGRAM_BOT_TOKEN, PARENT_SESSION_SECRET (32+ chars).
  */
 import crypto from 'node:crypto';
-import { applyCors, rateLimited, clientIp, getServerDb, safeEqual } from './_lib/license.js';
+import { applyCors, rateLimited, clientIp, getServerDb, safeEqual } from './_lib/http.js';
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 5;

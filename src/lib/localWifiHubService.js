@@ -10,7 +10,6 @@
  */
 
 import { Capacitor } from '@capacitor/core';
-import { createClient } from '@supabase/supabase-js';
 
 const HUB_URL_KEY = 'sms_teacher_hub_url';
 const HUB_TOKEN_KEY = 'sms_teacher_hub_token';
@@ -21,21 +20,6 @@ const CACHED_STUDENTS_PREFIX = 'sms_cached_hub_students_';
 export const DEFAULT_SCHOOL_PC_URL = '';
 
 // Production Supabase credentials (same as desktop EXE — secondary cloud fallback)
-const SUPABASE_URL = 'https://uugvudqbwoyywzbjrfol.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_pd2n3DRFhFgn79-SW6FEPw_vqRz2Jut';
-
-let _mobileDb = null;
-function getMobileDb() {
-  if (_mobileDb) return _mobileDb;
-  try {
-    _mobileDb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    return _mobileDb;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Returns default or previously configured School PC URL
@@ -88,9 +72,23 @@ export function hubHeaders() {
   return token ? { Accept: 'application/json', 'X-Hub-Token': token } : { Accept: 'application/json' };
 }
 
-/** fetch() for hub data calls: a 401 means our token is stale, so forget it and ask the teacher to pair again. */
-async function hubFetch(url, opts) {
-  const res = await fetch(url, opts);
+/**
+ * fetch() for every School PC call from the phone.
+ * Sent as a CORS "simple request" (token in the URL, JSON as text/plain, no custom headers) so Android's
+ * WebView never sends a preflight: WebView blocks preflighted requests to 192.168.x.x addresses, which made
+ * roll call fail with "unreachable" while the status check (a plain GET) still showed "Connected".
+ * A 401 means our token is stale, so forget it and ask the teacher to pair again.
+ */
+export async function hubFetch(url, opts = {}) {
+  const token = getStoredHubToken();
+  const target = new URL(url);
+  if (token && !target.searchParams.has('token')) target.searchParams.set('token', token);
+  const res = await fetch(target.toString(), {
+    method: opts.method || 'GET',
+    body: opts.body,
+    signal: opts.signal,
+    headers: opts.body ? { 'Content-Type': 'text/plain;charset=UTF-8' } : undefined,
+  });
   if (res.status === 401) {
     setStoredHubToken('');
     if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sms-hub-unpaired'));
@@ -160,7 +158,7 @@ export async function pairDeviceWithHub(hubUrl = null, otp = '') {
   try {
     const res = await fetch(`${targetUrl}/api/local-hub?action=pair_device`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, // simple request: no preflight on Android
       body: JSON.stringify({ device_id: getOrCreateDeviceId(), otp: String(otp).trim() }),
     });
     const data = await res.json();
@@ -239,123 +237,76 @@ async function detectLocalSubnetPrefix() {
  * Guaranteed to work on local Wi-Fi and mobile hotspots without active internet.
  * Returns { ok: true, url: 'http://<ip>:<port>' } if found.
  */
+const HUB_PORTS = [5173, 5174, 5175, 8765, 8766];
+
+/** One status probe. Plain GET with no custom headers, so the browser sends no extra preflight request. */
+async function probeHub(baseUrl, timeoutMs = 1500) {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const tId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const res = await fetch(`${baseUrl}/api/local-hub?action=status`, { signal: controller ? controller.signal : undefined });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.service?.includes('SMS Local Wi-Fi Attendance Hub') ? { ok: true, url: baseUrl, data } : null;
+  } catch {
+    return null;
+  } finally {
+    if (tId) clearTimeout(tId);
+  }
+}
+
+/**
+ * Finds the School PC on the Wi-Fi. Order: the saved PC on every hub port (its port can change when the
+ * app restarts), then every address in the saved/phone subnet, then common router subnets.
+ */
 export async function autoDiscoverSchoolPC(onProgress = null) {
   if (typeof window === 'undefined') return { ok: false };
+  const found = (match) => {
+    setStoredHubUrl(match.url);
+    return match;
+  };
 
-  const candidateIps = new Set();
-
-  // 1. Detect phone's own subnet prefix dynamically via WebRTC
+  const subnets = [];
+  let savedHost = '';
   try {
-    const localPrefix = await detectLocalSubnetPrefix();
-    if (localPrefix) {
-      // Prioritize scanning the phone's actual Wi-Fi subnet
-      for (let i = 100; i <= 120; i++) candidateIps.add(`${localPrefix}.${i}`);
-      for (let i = 2; i <= 25; i++) candidateIps.add(`${localPrefix}.${i}`);
-      candidateIps.add(`${localPrefix}.1`);
-      candidateIps.add(`${localPrefix}.160`);
-      candidateIps.add(`${localPrefix}.254`);
+    const saved = getStoredHubUrl();
+    if (saved) {
+      savedHost = new URL(saved).hostname;
+      if (savedHost && savedHost !== 'localhost' && savedHost !== '127.0.0.1') {
+        // 1. Same PC, any port (fast path: the usual "it worked yesterday" case).
+        const quick = (await Promise.all(HUB_PORTS.map((p) => probeHub(`http://${savedHost}:${p}`)))).find(Boolean);
+        if (quick) return found(quick);
+        const parts = savedHost.split('.');
+        if (parts.length === 4) subnets.push(parts.slice(0, 3).join('.'));
+      }
     }
   } catch {}
+  try {
+    const localPrefix = await detectLocalSubnetPrefix();
+    if (localPrefix && !subnets.includes(localPrefix)) subnets.unshift(localPrefix);
+  } catch {}
 
-  // 2. Check previously configured host
-  const saved = getStoredHubUrl();
-  if (saved) {
-    try {
-      const parsed = new URL(saved);
-      if (parsed.hostname && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
-        candidateIps.add(parsed.hostname);
-        const parts = parsed.hostname.split('.');
-        if (parts.length === 4) {
-          const prefix = `${parts[0]}.${parts[1]}.${parts[2]}`;
-          for (let i = 100; i <= 120; i++) candidateIps.add(`${prefix}.${i}`);
-          for (let i = 2; i <= 20; i++) candidateIps.add(`${prefix}.${i}`);
-        }
-      }
-    } catch {}
+  const candidateIps = [];
+  const add = (ip) => { if (ip !== savedHost && !candidateIps.includes(ip)) candidateIps.push(ip); };
+  // 2. Every address of the known subnet(s): the PC can have any number the router hands out.
+  for (const prefix of subnets) for (let i = 1; i <= 254; i++) add(`${prefix}.${i}`);
+  // 3. Typical router ranges when nothing is known yet.
+  for (const s of ['192.168.1', '192.168.0', '192.168.29', '192.168.31', '192.168.43', '192.168.137', '10.0.0']) {
+    if (subnets.includes(s)) continue;
+    for (let i = 2; i <= 30; i++) add(`${s}.${i}`);
+    for (let i = 100; i <= 120; i++) add(`${s}.${i}`);
   }
 
-  // 3. High-frequency subnet assignments on Indian school/home Wi-Fi routers & mobile hotspots
-  const commonSubnets = [
-    '192.168.0',
-    '192.168.1',
-    '192.168.43',  // Android Mobile Hotspot (phone as router or client)
-    '192.168.137', // Windows Mobile Hotspot
-    '192.168.29',  // JioFiber
-    '192.168.31',  // Mi / Xiaomi Router
-    '10.0.0',      // Commercial router
-  ];
-  for (const s of commonSubnets) {
-    candidateIps.add(`${s}.103`);
-    candidateIps.add(`${s}.104`);
-    candidateIps.add(`${s}.100`);
-    candidateIps.add(`${s}.101`);
-    candidateIps.add(`${s}.102`);
-    candidateIps.add(`${s}.105`);
-    candidateIps.add(`${s}.106`);
-    candidateIps.add(`${s}.107`);
-    candidateIps.add(`${s}.108`);
-    candidateIps.add(`${s}.109`);
-    candidateIps.add(`${s}.110`);
-    candidateIps.add(`${s}.1`);
-    candidateIps.add(`${s}.2`);
-    candidateIps.add(`${s}.3`);
-    candidateIps.add(`${s}.4`);
-    candidateIps.add(`${s}.5`);
+  const CHUNK_SIZE = 32; // 32 addresses x 5 ports per round
+  for (let i = 0; i < candidateIps.length; i += CHUNK_SIZE) {
+    if (typeof onProgress === 'function') onProgress({ checked: i, total: candidateIps.length });
+    const chunk = candidateIps.slice(i, i + CHUNK_SIZE);
+    const results = await Promise.all(chunk.flatMap((ip) => HUB_PORTS.map((p) => probeHub(`http://${ip}:${p}`, 1200))));
+    const match = results.find(Boolean);
+    if (match) return found(match);
   }
 
-  const ports = [5173, 5174, 5175, 8765];
-  const ipList = Array.from(candidateIps);
-
-  // Probe in fast parallel chunks of 25 with 550ms timeout
-  const CHUNK_SIZE = 25;
-  for (let i = 0; i < ipList.length; i += CHUNK_SIZE) {
-    const chunk = ipList.slice(i, i + CHUNK_SIZE);
-    if (typeof onProgress === 'function') {
-      onProgress({ checked: i, total: ipList.length });
-    }
-
-    const promises = [];
-    for (const ip of chunk) {
-      for (const port of ports) {
-        const testUrl = `http://${ip}:${port}`;
-        promises.push(
-          (async () => {
-            const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-            const tId = controller ? setTimeout(() => controller.abort(), 550) : null;
-            try {
-              const res = await fetch(`${testUrl}/api/local-hub?action=status`, {
-                method: 'GET',
-                headers: hubHeaders(),
-                signal: controller ? controller.signal : undefined,
-              });
-              if (tId) clearTimeout(tId);
-              if (res.ok) {
-                const data = await res.json();
-                if (data && data.service && data.service.includes('SMS Local Wi-Fi Attendance Hub')) {
-                  return { ok: true, url: testUrl, data };
-                }
-              }
-            } catch {
-              if (tId) clearTimeout(tId);
-            }
-            return null;
-          })()
-        );
-      }
-    }
-
-    const results = await Promise.all(promises);
-    const match = results.find((r) => r && r.ok);
-    if (match) {
-      setStoredHubUrl(match.url);
-      if (match.data?.token) {
-        setStoredHubToken(match.data.token);
-      }
-      return match;
-    }
-  }
-
-  return { ok: false, error: 'School PC not auto-detected. Please scan the QR code on the PC screen or enter IP manually.' };
+  return { ok: false, error: 'School PC not found on this Wi-Fi. Scan the QR code on the PC (Connect Teacher App) or type its address.' };
 }
 
 /**
@@ -388,9 +339,8 @@ export async function checkHubConnection(hubUrl = null, tryAutoDiscover = false)
   const timeoutId = controller ? setTimeout(() => controller.abort(), 2500) : null;
 
   try {
+    // Plain GET: status is public, and custom headers would add a CORS preflight round-trip.
     const res = await fetch(`${targetUrl}/api/local-hub?action=status`, {
-      method: 'GET',
-      headers: hubHeaders(),
       signal: controller ? controller.signal : undefined,
     });
     if (timeoutId) clearTimeout(timeoutId);
@@ -466,24 +416,6 @@ export async function fetchBatchesFromHub(hubUrl = null) {
     }
   } catch {}
 
-  // 2. SECONDARY: Cloud Supabase (if configured)
-  try {
-    const db = getMobileDb();
-    if (db) {
-      const { data, error } = await db
-        .from('batches')
-        .select('id, name, code, timing, classroom, is_active')
-        .order('name');
-
-      if (!error && Array.isArray(data) && data.length > 0) {
-        try {
-          localStorage.setItem(CACHED_BATCHES_KEY, JSON.stringify(data));
-        } catch {}
-        return data;
-      }
-    }
-  } catch {}
-
   // 3. OFFLINE CACHE: Return previously synchronized batches from this school
   try {
     const cached = localStorage.getItem(CACHED_BATCHES_KEY);
@@ -529,25 +461,6 @@ export async function fetchStudentsFromHub(batchId, hubUrl = null) {
           localStorage.setItem(`${CACHED_STUDENTS_PREFIX}${batchId}`, JSON.stringify(data.students));
         } catch {}
         return data.students;
-      }
-    }
-  } catch {}
-
-  // 2. SECONDARY: Cloud Supabase (if configured)
-  try {
-    const db = getMobileDb();
-    if (db) {
-      const { data, error } = await db
-        .from('students')
-        .select('id, full_name, roll_no, admission_no, gender, status, batch_id')
-        .eq('batch_id', batchId)
-        .order('roll_no');
-
-      if (!error && Array.isArray(data) && data.length > 0) {
-        try {
-          localStorage.setItem(`${CACHED_STUDENTS_PREFIX}${batchId}`, JSON.stringify(data));
-        } catch {}
-        return data;
       }
     }
   } catch {}
@@ -599,22 +512,6 @@ export async function fetchExistingAttendanceFromHub(batchId, date, hubUrl = nul
     }
   } catch {}
 
-  // 2. SECONDARY: Cloud Supabase (if configured)
-  try {
-    const db = getMobileDb();
-    if (db) {
-      const { data, error } = await db
-        .from('attendance')
-        .select('student_id, status, time_in, remarks, date')
-        .eq('batch_id', batchId)
-        .eq('date', targetDate);
-
-      if (!error && Array.isArray(data) && data.length > 0) {
-        return data;
-      }
-    }
-  } catch {}
-
   return [];
 }
 
@@ -640,9 +537,15 @@ export async function submitAttendanceToHub(batchId, date, records, hubUrl = nul
 
   let wifiSyncOk = false;
   let serverMessage = '';
+  let refusedMessage = '';
 
-  // 1. Try Local Wi-Fi Hub with pairing token
-  if (targetUrl) {
+  // 1. Try Local Wi-Fi Hub with pairing token (a second attempt after re-finding the PC if it moved)
+  for (let attempt = 0; attempt < 2 && targetUrl && !wifiSyncOk && !refusedMessage; attempt++) {
+    if (attempt === 1) {
+      const disc = await autoDiscoverSchoolPC();
+      if (!disc.ok || disc.url === targetUrl) break;
+      targetUrl = disc.url;
+    }
     try {
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
       const timeout = controller ? setTimeout(() => controller.abort(), 6000) : null;
@@ -673,6 +576,12 @@ export async function submitAttendanceToHub(batchId, date, records, hubUrl = nul
     });
     if (timeout) clearTimeout(timeout);
 
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      refusedMessage = res.status === 401
+        ? 'This phone is not paired with the School PC. Enter the 6-digit code shown on the PC (Connect Teacher App).'
+        : errJson?.error || `School PC refused the roll call (HTTP ${res.status}).`;
+    }
     if (res.ok) {
       const resJson = await res.json();
       wifiSyncOk = true;
@@ -691,29 +600,6 @@ export async function submitAttendanceToHub(batchId, date, records, hubUrl = nul
   }
 }
 
-  // 2. Also try persisting directly to Supabase cloud in background
-  try {
-    const db = getMobileDb();
-    if (db) {
-      const payloads = records.map((r) => ({
-        student_id: r.student_id,
-        batch_id: batchId,
-        date: targetDate,
-        session_name: 'Regular',
-        status: r.status || 'Present',
-        time_in: r.time_in || '09:00',
-        remarks: r.remarks || 'Mobile roll call',
-      }));
-
-      db.from('attendance')
-        .upsert(payloads, { onConflict: 'student_id,batch_id,date,session_name' })
-        .then(() => {})
-        .catch(() => {});
-    }
-  } catch (err) {
-    console.warn('Supabase direct save notice:', err.message);
-  }
-
   if (wifiSyncOk) {
     return { ok: true, source: 'wifi', message: serverMessage };
   }
@@ -728,7 +614,13 @@ export async function submitAttendanceToHub(batchId, date, records, hubUrl = nul
       records,
     });
   }
-  return { ok: false, queued: true, error: 'School PC unreachable. Stored in phone queue.' };
+  return {
+    ok: false,
+    queued: allowOfflineQueue,
+    error: refusedMessage
+      ? `${refusedMessage}${allowOfflineQueue ? ' Saved on this phone; it will be sent automatically later.' : ''}`
+      : `School PC unreachable.${allowOfflineQueue ? ' Saved on this phone; it will be sent automatically later.' : ''}`,
+  };
 }
 
 /**

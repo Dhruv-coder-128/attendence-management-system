@@ -186,6 +186,7 @@ export default async function handler(req, res) {
 
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, X-Hub-Token, X-Device-Id');
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
   if (req.method === 'OPTIONS') {
     return res.status(204).end();
   }
@@ -193,7 +194,8 @@ export default async function handler(req, res) {
   const query = req.query || {};
   const action = (query.action || req.body?.action || 'status').toLowerCase();
   const trustedLocal = isLoopback(req);
-  const tokenOk = req.headers['x-hub-token'] === hubSessionToken;
+  // Same as the Rust hub: token as header, or ?token= (phones send preflight-free requests).
+  const tokenOk = (req.headers['x-hub-token'] || (req.query || {}).token) === hubSessionToken;
   if (!['status', 'check_device', 'pair_device'].includes(action) && !trustedLocal && !tokenOk) {
     return res.status(401).json({ ok: false, error: 'This phone is not paired. Enter the 6-digit code shown on the School PC.' });
   }

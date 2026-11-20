@@ -50,55 +50,6 @@ test('local passwords: correct password verifies, wrong one does not, hashes are
   assert.equal(await verifyPassword('anything', undefined), false, 'account without a hash must never verify');
 });
 
-// ---------- license view rules ----------
-test('license: expiry, lock and per-device grants are computed on the server', async () => {
-  const { licenseView } = await import('../api/_lib/license.js');
-  const now = Date.parse('2026-11-16T00:00:00Z');
-  const base = { id: 'L', license_key: 'K', kind: 'school', status: 'trial_active', is_locked: false, max_students: 200 };
-  assert.equal(licenseView({ ...base, trial_ends_at: '2026-11-20T00:00:00Z' }, 'D', now).status, 'trial_active');
-  assert.equal(licenseView({ ...base, trial_ends_at: '2026-11-10T00:00:00Z' }, 'D', now).status, 'trial_expired');
-  assert.equal(licenseView({ ...base, status: 'licensed', trial_ends_at: null }, 'D', now).daysRemaining, 9999);
-  assert.equal(licenseView({ ...base, is_locked: true, status: 'licensed' }, 'D', now).ok, false);
-  const grace = { ...base, kind: 'grace', device_grants: { D1: { granted_at: '2026-11-01', trial_ends_at: '2026-11-06T00:00:00Z' } } };
-  assert.equal(licenseView(grace, 'D1', now).status, 'trial_expired', 'grace key must not renew itself');
-});
-
-test('license-activate: rejects missing deviceId (binding bypass) and a second device', async () => {
-  globalThis.__smsTestDb = fakeDb([{ id: 'L1', license_key: 'SMS-ABC', kind: 'school', status: 'trial_active', is_locked: false, bound_device_id: 'PC-1', trial_ends_at: '2099-01-01T00:00:00Z' }]);
-  const { default: activate } = await import('../api/license-activate.js');
-
-  let res = fakeRes();
-  await activate(req({ body: { licenseKey: 'SMS-ABC' }, socket: { remoteAddress: '1.1.1.1' } }), res);
-  assert.equal(res.statusCode, 400, 'empty deviceId must be refused');
-
-  res = fakeRes();
-  await activate(req({ body: { licenseKey: 'SMS-ABC', deviceId: 'PC-2' }, socket: { remoteAddress: '1.1.1.2' } }), res);
-  assert.equal(res.statusCode, 403);
-  assert.equal(res.body.status, 'device_mismatch');
-
-  res = fakeRes();
-  await activate(req({ body: { licenseKey: 'SMS-ABC', deviceId: 'PC-1' }, socket: { remoteAddress: '1.1.1.3' } }), res);
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body.ok, true);
-  delete globalThis.__smsTestDb;
-});
-
-// ---------- developer-only endpoint ----------
-test('license-manage: old PIN and public email are not accepted; secret is required', async () => {
-  const { default: manage } = await import('../api/license-manage.js');
-  delete process.env.DEVELOPER_SECRET;
-  let res = fakeRes();
-  await manage(req({ method: 'GET', headers: { 'x-developer-secret': 'anything' } }), res);
-  assert.equal(res.statusCode, 500, 'must refuse to run without a configured secret');
-
-  process.env.DEVELOPER_SECRET = 'a-long-random-developer-secret';
-  for (const guess of ['8866', 'dushah2007@gmail.com', '']) {
-    res = fakeRes();
-    await manage(req({ method: 'GET', headers: { 'x-developer-pin': '8866', 'x-developer-secret': guess }, socket: { remoteAddress: '2.2.2.' + guess.length } }), res);
-    assert.equal(res.statusCode, 401, `guess "${guess}" must be rejected`);
-  }
-});
-
 // ---------- parent portal ----------
 test('parent portal: forged session token cannot read a child\'s data', async () => {
   globalThis.__smsTestDb = fakeDb([]);

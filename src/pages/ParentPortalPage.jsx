@@ -1123,12 +1123,7 @@ export default function ParentPortalPage({
           onClose={() => setIsReceiptModalOpen(false)}
           student={selectedStudent}
           course={selectedStudent.courses}
-          paymentRecord={feesData?.receipts?.[0] || {
-            amount: 20000,
-            paymentMethod: 'UPI / Online Banking',
-            referenceNo: 'REC-PORTAL-2026',
-            created_at: new Date().toISOString(),
-          }}
+          paymentRecord={feesData?.receipts?.[0] || null}
         />
       )}
 

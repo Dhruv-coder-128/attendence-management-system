@@ -1,6 +1,6 @@
 import fs from 'fs';
 import { createClient } from '@supabase/supabase-js';
-import { applyCors } from './_lib/license.js';
+import { applyCors } from './_lib/http.js';
 
 /**
  * Vercel Serverless Function — Secure Role-Based Access & Staff Management

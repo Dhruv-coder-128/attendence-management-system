@@ -85,7 +85,7 @@ export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
           >
             {isClonedOrMismatch
               ? 'Unauthorized Workstation Copy Detected'
-              : (isSuspendedOrRevoked ? 'Access Suspended by Developer' : 'Evaluation Trial Concluded')}
+              : (isSuspendedOrRevoked ? 'Access Suspended by Developer' : 'Licence Expired — Contact Developer')}
           </h2>
           <span style={{ fontSize: '13px', color: '#fecaca', letterSpacing: '0.3px' }}>
             {license?.schoolName ? `${license.schoolName} — ` : ''}SMS Student Management System
@@ -116,7 +116,7 @@ export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
                 ? 'SECURITY LOCKOUT: This software installation was cloned or copied from another computer. The license is strictly bound to the original authorized workstation. Contact Dhruv Shah (+91 8866039007) for license transfer.'
                 : (isSuspendedOrRevoked
                   ? 'This school installation has been locked by the developer. Contact developer to resolve.'
-                  : 'Your trial period has ended. Contact the developer to activate SMS.')}
+                  : (licenseStatus?.error || 'Your licence period has ended. Contact the developer for a new key to continue using SMS.'))}
             </p>
           </div>
 
@@ -129,7 +129,7 @@ export default function TrialExpiredLockout({ onReactivated, licenseStatus }) {
               textAlign: 'left',
             }}
           >
-            <strong>Data Preservation Guarantee:</strong> All your school records, students, fee records, attendance registers, and exam marks remain securely preserved in your dedicated Supabase database. Entering an active license key will instantly unlock the system.
+            <strong>Data Preservation Guarantee:</strong> All your school records, students, fee records, attendance registers, and exam marks are kept safe. Entering a new licence key from the developer unlocks the system instantly.
           </p>
 
           {/* Configurable Contact Developer Actions */}

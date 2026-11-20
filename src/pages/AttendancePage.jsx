@@ -44,7 +44,6 @@ import {
   TELEGRAM_BOT_USERNAME,
   getWhatsAppShareUrl,
 } from '../lib/telegramClient';
-import { getBatchStudents } from '../data/canonicalSchoolData';
 
 /**
  * Daily Attendance Register — Real Supabase Database Connection
@@ -57,6 +56,7 @@ export default function AttendancePage({ onRefreshCounts }) {
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 20;
+  const [studentSearch, setStudentSearch] = useState('');
 
   // Students in selected batch & Attendance records
   const [students, setStudents] = useState([]);
@@ -199,14 +199,6 @@ export default function AttendancePage({ onRefreshCounts }) {
         .order('roll_no', { ascending: true });
 
       let resolvedStudents = (studentsData && studentsData.length > 0) ? studentsData : [];
-      if (resolvedStudents.length === 0) {
-        // Fall back to canonical students so Mobile and Desktop rosters match 100%
-        const canonical = getBatchStudents(selectedBatchId);
-        if (canonical && canonical.length > 0) {
-          resolvedStudents = canonical;
-        }
-      }
-
       // Ensure sequential numerical ordering by roll_no (1 to 20)
       resolvedStudents.sort((a, b) => Number(a.roll_no || 0) - Number(b.roll_no || 0));
 
@@ -256,15 +248,7 @@ export default function AttendancePage({ onRefreshCounts }) {
               });
 
               if (matchedStudent) {
-                // 1. User Action Shield: If user marked this student within the last 30s, DO NOT OVERWRITE!
-                const lastUserAction = Math.max(
-                  lastUserActionTimestampRef.current.get(matchedStudent.id) || 0,
-                  lastUserActionTimestampRef.current.get(matchedStudent.admission_no) || 0
-                );
-                if (Date.now() - lastUserAction < 30000) {
-                  return;
-                }
-
+                // Newest mark wins (the hub stamps every mark with this PC's clock), from PC or phone alike.
                 const existingLocal = map[matchedStudent.id];
                 if (existingLocal) {
                   const existingLocalTime = new Date(existingLocal.updated_at || 0).getTime();
@@ -295,9 +279,8 @@ export default function AttendancePage({ onRefreshCounts }) {
       setAttendanceMap(map);
       if (onRefreshCounts) onRefreshCounts();
     } catch (err) {
-      console.error('Error fetching attendance, using canonical roster:', err);
-      const canonical = getBatchStudents(selectedBatchId);
-      setStudents(canonical && canonical.length > 0 ? canonical : []);
+      console.error('Error fetching attendance:', err);
+      setStudents([]);
     } finally {
       if (!isSilent) {
         setLoading(false);
@@ -352,8 +335,9 @@ export default function AttendancePage({ onRefreshCounts }) {
     // Periodically poll local hub updates every 1 second for instant PC screen update
     const interval = setInterval(async () => {
       try {
+        // Just this batch's marks (action=attendance), not the whole day: small and fast every second.
         const queryParams = new URLSearchParams({
-          action: 'updates',
+          action: 'attendance',
           date: selectedDate,
           batch_id: selectedBatchId,
           batch_code: batchCode,
@@ -366,7 +350,7 @@ export default function AttendancePage({ onRefreshCounts }) {
           const data = await res.json();
           const incomingRecords = data?.records || data?.allRecords || [];
 
-          if (data && data.hasData && Array.isArray(incomingRecords) && incomingRecords.length > 0) {
+          if (Array.isArray(incomingRecords) && incomingRecords.length > 0) {
             if (!isMounted) return;
 
             setAttendanceMap((prev) => {
@@ -390,15 +374,6 @@ export default function AttendancePage({ onRefreshCounts }) {
                 if (matchedStudent) {
                   const targetKey = matchedStudent.id;
                   const currentRec = next[targetKey] || (matchedStudent.admission_no ? next[matchedStudent.admission_no] : null);
-
-                  // 1. User Action Shield: If user marked this student within the last 30s, DO NOT OVERWRITE!
-                  const lastUserAction = Math.max(
-                    lastUserActionTimestampRef.current.get(matchedStudent.id) || 0,
-                    lastUserActionTimestampRef.current.get(matchedStudent.admission_no) || 0
-                  );
-                  if (Date.now() - lastUserAction < 30000) {
-                    return;
-                  }
 
                   // 2. Unbiased Timestamp Authority: strictly newer record wins regardless of status (Absent, Late, Present)
                   if (currentRec) {
@@ -455,7 +430,7 @@ export default function AttendancePage({ onRefreshCounts }) {
           }
         }
       } catch {}
-    }, 2000);
+    }, 1000);
 
     return () => {
       isMounted = false;
@@ -834,11 +809,18 @@ export default function AttendancePage({ onRefreshCounts }) {
   const attendanceRate = totalCount > 0 ? Math.round(((presentCount + lateCount) / totalCount) * 100) : 0;
 
   // 20-Row Pagination Calculation
-  const totalPages = Math.ceil(students.length / pageSize) || 1;
+  // Search by name, roll no or admission no (applied before paging).
+  const filteredStudents = useMemo(() => {
+    const q = studentSearch.trim().toLowerCase();
+    if (!q) return students;
+    return students.filter((s) =>
+      [s.full_name, s.roll_no, s.admission_no].some((v) => String(v ?? '').toLowerCase().includes(q)));
+  }, [students, studentSearch]);
+  const totalPages = Math.ceil(filteredStudents.length / pageSize) || 1;
   const paginatedStudents = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
-    return students.slice(start, start + pageSize);
-  }, [students, currentPage, pageSize]);
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, currentPage, pageSize]);
 
   return (
     <div>
@@ -1230,6 +1212,19 @@ export default function AttendancePage({ onRefreshCounts }) {
         </div>
       </div>
 
+      {/* Student search */}
+      <div style={{ position: 'relative', maxWidth: '360px', marginBottom: '12px' }}>
+        <Search size={15} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+        <input
+          type="search"
+          className="form-input"
+          placeholder="Search student by name, roll no or admission no"
+          value={studentSearch}
+          onChange={(e) => { setStudentSearch(e.target.value); setCurrentPage(1); }}
+          style={{ paddingLeft: '32px', width: '100%' }}
+        />
+      </div>
+
       {/* Attendance Register Table */}
       <div className="table-container">
         <div className="erp-table-scroll">
@@ -1241,7 +1236,7 @@ export default function AttendancePage({ onRefreshCounts }) {
                 <th>Student Name</th>
                 <th>Roll No</th>
                 <th>Current Status</th>
-                <th style={{ textAlign: 'center' }}>Mark Status (Direct to Supabase)</th>
+                <th style={{ textAlign: 'center' }}>Mark Status</th>
                 <th>Time In</th>
                 <th>Remarks</th>
               </tr>
@@ -1266,6 +1261,12 @@ export default function AttendancePage({ onRefreshCounts }) {
                         ? 'Create batches and enroll students to start tracking attendance.'
                         : 'Go to Students Directory to assign students to this batch, or select a different batch above.'}
                     </div>
+                  </td>
+                </tr>
+              ) : filteredStudents.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                    No student matches “{studentSearch}”.
                   </td>
                 </tr>
               ) : (

@@ -1,7 +1,7 @@
 {
   "name": "attendence-management-system",
   "private": true,
-  "version": "1.0.13",
+  "version": "1.0.15",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "test": "node --test \"tests/*.test.mjs\"",
     "preview": "vite preview",
+    "key": "node scripts/make-key.mjs",
     "tunnel": "npx untun tunnel --port 5173",
     "test:local": "node scripts/test-local-workflow.mjs",
     "test:telegram": "node scripts/test-telegram-endpoints.mjs",
