@@ -7,8 +7,8 @@ android {
         applicationId "com.sms.teacherattendance"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 15
-        versionName "1.0.15"
+        versionCode 16
+        versionName "1.0.16"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +16,24 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Release signing: the key lives OUTSIDE the project (never committed). Without that file, release builds
+    // are simply unsigned and the debug build still works.
+    def signingProps = new Properties()
+    def signingFile = new File(System.getenv('SMS_ANDROID_SIGNING') ?: "${System.getProperty('user.home')}/.sms-admin/android-signing.properties")
+    if (signingFile.exists()) { signingFile.withInputStream { signingProps.load(it) } }
+    signingConfigs {
+        release {
+            if (signingProps['storeFile']) {
+                storeFile file(signingProps['storeFile'])
+                storePassword signingProps['storePassword']
+                keyAlias signingProps['keyAlias']
+                keyPassword signingProps['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            if (signingProps['storeFile']) { signingConfig signingConfigs.release }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

@@ -40,6 +40,10 @@
       "icons/icon.ico"
     ],
     "windows": {
+      "signCommand": {
+        "cmd": "powershell",
+        "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "windows/sign-file.ps1", "%1"]
+      },
       "nsis": {
         "installMode": "perMachine",
         "installerHooks": "./windows/hooks.nsh"
