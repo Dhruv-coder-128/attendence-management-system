@@ -26,6 +26,7 @@ import TrialExpiredLockout from './components/license/TrialExpiredLockout';
 import { RefreshCw, GraduationCap } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { useSchoolDatabaseSync, resolveHubInfo } from './lib/useSchoolDatabaseSync';
+import { startAutoBackup } from './lib/autoBackup';
 import { checkAndDispatchBirthdayWishes } from './lib/birthdayAutoDispatcher';
 
 
@@ -39,6 +40,7 @@ export default function App() {
   // Continuous Two-Way Wi-Fi Database Synchronization for Desktop PC
   // (On mobile Capacitor, the hook safely bypasses desktop background polling)
   useSchoolDatabaseSync();
+  useEffect(() => startAutoBackup(), []); // daily copies of the school's data (desktop only)
 
   // Supabase Auth Session State
   const [session, setSession] = useState(null);

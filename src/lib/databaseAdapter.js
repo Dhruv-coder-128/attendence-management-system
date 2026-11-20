@@ -874,7 +874,8 @@ async function resolveRelations(tableName, records, selectString) {
  * Captures 100% of all data: IndexedDB tables, broadcast history with attachments, telegram bot config,
  * custom message templates, school licenses, and academy branding.
  */
-export async function exportDatabaseBackup() {
+/** Builds the full backup (all tables + app settings) as an object. Used by manual and automatic backups. */
+export async function createBackupObject() {
   // 1. Gather all localStorage settings (Telegram bot config, broadcast logs, license, branding, templates)
   const appSettings = {};
   if (typeof window !== 'undefined' && window.localStorage) {
@@ -910,6 +911,11 @@ export async function exportDatabaseBackup() {
     }
   }
 
+  return backup;
+}
+
+export async function exportDatabaseBackup() {
+  const backup = await createBackupObject();
   const jsonStr = JSON.stringify(backup, null, 2);
   const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
   const filename = `sms_universal_database_backup_${new Date().toISOString().split('T')[0]}.smsdb`;
@@ -921,7 +927,7 @@ export async function exportDatabaseBackup() {
     filename,
     backupSummary: {
       tables: Object.fromEntries(Object.entries(backup.tables).map(([k, v]) => [k, v.length])),
-      settingsCount: Object.keys(appSettings).length,
+      settingsCount: Object.keys(backup.appSettings).length,
     },
   };
 }

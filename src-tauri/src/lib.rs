@@ -81,6 +81,88 @@ fn get_hub_attendance(
     }))
 }
 
+// ---------- Automatic backups ----------
+// The web layer builds the backup text; these commands only write/list/read files in folders the school chose.
+const BACKUP_PREFIX: &str = "SMS-backup-";
+const BACKUP_EXT: &str = ".smsdb";
+
+fn valid_backup_name(name: &str) -> bool {
+    name.starts_with(BACKUP_PREFIX)
+        && name.ends_with(BACKUP_EXT)
+        && !name.contains(['/', '\\', ':'])
+        && !name.contains("..")
+}
+
+fn backup_names(dir: &std::path::Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok())
+                .filter_map(|e| e.file_name().into_string().ok())
+                .filter(|n| valid_backup_name(n))
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort_by(|a, b| b.cmp(a)); // names carry the date, so this is newest first
+    names
+}
+
+#[tauri::command]
+fn backup_default_dir() -> String {
+    let base = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir());
+    base.join("Documents").join("SMS Backups").to_string_lossy().to_string()
+}
+
+#[tauri::command]
+fn write_backup(dirs: Vec<String>, filename: String, content: String, keep: usize) -> Result<Value, String> {
+    if !valid_backup_name(&filename) {
+        return Err("Invalid backup file name".to_string());
+    }
+    let keep = keep.clamp(3, 365);
+    let mut results = Vec::new();
+    for d in dirs.iter().map(|d| d.trim()).filter(|d| !d.is_empty()) {
+        let dir = std::path::PathBuf::from(d);
+        let tmp = dir.join(format!("{}.tmp", filename));
+        let outcome = (|| -> Result<(), String> {
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            std::fs::write(&tmp, content.as_bytes()).map_err(|e| e.to_string())?;
+            std::fs::rename(&tmp, dir.join(&filename)).map_err(|e| e.to_string())?;
+            for old in backup_names(&dir).into_iter().skip(keep) {
+                let _ = std::fs::remove_file(dir.join(old));
+            }
+            Ok(())
+        })();
+        if outcome.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        let ok = outcome.is_ok();
+        results.push(json!({ "dir": d, "ok": ok, "error": outcome.err() }));
+    }
+    Ok(json!({ "results": results }))
+}
+
+#[tauri::command]
+fn list_backups(dir: String) -> Vec<Value> {
+    let dir = std::path::PathBuf::from(dir.trim());
+    backup_names(&dir)
+        .into_iter()
+        .map(|n| {
+            let size = std::fs::metadata(dir.join(&n)).map(|m| m.len()).unwrap_or(0);
+            json!({ "name": n, "size": size })
+        })
+        .collect()
+}
+
+#[tauri::command]
+fn read_backup(dir: String, name: String) -> Result<String, String> {
+    if !valid_backup_name(&name) {
+        return Err("Invalid backup file name".to_string());
+    }
+    std::fs::read_to_string(std::path::PathBuf::from(dir.trim()).join(name)).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn get_hardware_device_id() -> Result<String, String> {
     #[cfg(target_os = "windows")]
@@ -173,7 +255,11 @@ pub fn run() {
             get_hub_server_info,
             sync_school_data_to_hub,
             get_hub_attendance,
-            get_hardware_device_id
+            get_hardware_device_id,
+            backup_default_dir,
+            write_backup,
+            list_backups,
+            read_backup
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
