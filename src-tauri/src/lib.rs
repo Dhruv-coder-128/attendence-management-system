@@ -226,6 +226,7 @@ pub fn run() {
         //     }
         // }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // Determine app data directory for persistent school data
             let app_data_dir = std::env::var("APPDATA")

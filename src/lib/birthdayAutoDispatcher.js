@@ -16,6 +16,7 @@ import {
 } from './telegramClient.js';
 import { getStoredAcademySettings } from './academySettings.js';
 
+import { todayLocal } from './dateUtils';
 export async function checkAndDispatchBirthdayWishes({ force = false } = {}) {
   const settings = getStoredAcademySettings();
   const isEnabled = settings.auto_birthday_wish_enabled;
@@ -29,7 +30,7 @@ export async function checkAndDispatchBirthdayWishes({ force = false } = {}) {
     };
   }
 
-  const todayIso = new Date().toISOString().split('T')[0];
+  const todayIso = todayLocal();
   const dispatchKey = `sms_birthday_autodispatched_${todayIso}`;
 
   if (!force && typeof window !== 'undefined' && localStorage.getItem(dispatchKey)) {

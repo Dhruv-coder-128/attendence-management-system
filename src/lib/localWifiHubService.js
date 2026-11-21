@@ -11,6 +11,7 @@
 
 import { Capacitor } from '@capacitor/core';
 
+import { todayLocal } from './dateUtils';
 const HUB_URL_KEY = 'sms_teacher_hub_url';
 const HUB_TOKEN_KEY = 'sms_teacher_hub_token';
 const OFFLINE_QUEUE_KEY = 'sms_teacher_offline_queue';
@@ -485,7 +486,7 @@ export async function fetchStudentsFromHub(batchId, hubUrl = null) {
  */
 export async function fetchExistingAttendanceFromHub(batchId, date, hubUrl = null) {
   if (!batchId) return [];
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || todayLocal();
   const targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
 
   // 1. PRIMARY: Hub API (local attendance saved on PC)
@@ -523,7 +524,7 @@ export async function fetchExistingAttendanceFromHub(batchId, date, hubUrl = nul
  */
 export async function submitAttendanceToHub(batchId, date, records, hubUrl = null, extraMeta = {}, allowOfflineQueue = true) {
   let targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
-  const targetDate = date || new Date().toISOString().split('T')[0];
+  const targetDate = date || todayLocal();
 
   // If URL not configured, try auto-discovering School PC on local Wi-Fi first
   if (!targetUrl) {

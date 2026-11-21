@@ -27,6 +27,7 @@ import { RefreshCw, GraduationCap } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { useSchoolDatabaseSync, resolveHubInfo } from './lib/useSchoolDatabaseSync';
 import { startAutoBackup } from './lib/autoBackup';
+import SetupWizard from './components/setup/SetupWizard';
 import { checkAndDispatchBirthdayWishes } from './lib/birthdayAutoDispatcher';
 
 
@@ -474,6 +475,8 @@ export default function App() {
           onOpenActivation={() => setIsActivationModalOpen(true)}
         />
       )}
+
+      {isDesktopExe && <SetupWizard onNavigate={handleNavigate} />}
 
       <AppLayout
         activePage={activePage}

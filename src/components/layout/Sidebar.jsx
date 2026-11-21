@@ -10,7 +10,6 @@ import {
   Bell,
   Settings,
   LogOut,
-  GraduationCap,
   ShieldCheck,
   Shield,
   ShieldAlert,
@@ -162,7 +161,7 @@ export default function Sidebar({
                   style={{ width: '26px', height: '26px', objectFit: 'contain' }}
                 />
               ) : (
-                <GraduationCap size={22} />
+                <img src="/logo.svg" alt="SMS" style={{ width: '30px', height: '30px', borderRadius: '8px' }} />
               )}
             </div>
             <div>

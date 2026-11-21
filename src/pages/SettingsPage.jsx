@@ -33,6 +33,7 @@ import Input from '../components/common/Input';
 import UsersManagement from '../components/settings/UsersManagement';
 import MessageCenter from '../components/settings/MessageCenter';
 import AutoBackupPanel from '../components/settings/AutoBackupPanel';
+import { UpdatePanel } from '../components/update/UpdateUI';
 import { isSupabaseConfigured, checkSupabaseConnection, supabaseConfig, getActiveDatabaseConfig } from '../lib/supabase';
 import {
   getStoredLicense,
@@ -1065,6 +1066,7 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
               )}
 
               {isTauriDesktop() && <AutoBackupPanel />}
+              {isTauriDesktop() && <UpdatePanel />}
             </div>
 
             {/* Live Connection Status Banner — Only shown in web cloud mode */}

@@ -33,6 +33,7 @@ import BirthdayWishModal from '../components/students/BirthdayWishModal';
 import { isStudentBirthdayToday } from '../lib/telegramClient.js';
 import { downloadAllInOneTemplate } from '../lib/importer/templateGenerator';
 
+import { todayLocal } from '../lib/dateUtils';
 /**
  * Simplified Executive Dashboard
  * Metrics: Students, Present Today, Absent Today, Active Batches
@@ -63,7 +64,7 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
   const [activeBirthdayStudent, setActiveBirthdayStudent] = useState(null);
   const [isBirthdayModalOpen, setIsBirthdayModalOpen] = useState(false);
 
-  const todayIso = new Date().toISOString().split('T')[0];
+  const todayIso = todayLocal();
   const todayFormatted = new Date().toLocaleDateString('en-IN', {
     weekday: 'short',
     day: 'numeric',

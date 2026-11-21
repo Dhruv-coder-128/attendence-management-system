@@ -38,3 +38,6 @@ src/data/attendance_sync.json
 .env
 .env.*
 !.env.example
+
+# Files prepared for a GitHub release (npm run release)
+release-upload

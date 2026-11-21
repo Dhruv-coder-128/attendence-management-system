@@ -35,6 +35,7 @@ import { getAcademySettings } from '../lib/academySettings';
 import { saveDataUrlWithPicker } from '../lib/fileSaveHelper';
 import BirthdayWishModal from '../components/students/BirthdayWishModal';
 
+import { todayLocal } from '../lib/dateUtils';
 /**
  * Notifications and Telegram Alert Broadcast Manager
  * Features real database-backed Telegram dispatch audit logs + outbox announcements
@@ -2586,7 +2587,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
             const rollNo = item.students?.roll_no != null ? item.students.roll_no : 'N/A';
             const admissionNo = item.students?.admission_no || 'N/A';
             const batchName = item.batches?.name || item.batches?.code || 'Cohort';
-            const date = item.date || new Date().toISOString().split('T')[0];
+            const date = item.date || todayLocal();
             const academyName = academySettings.academy_name || 'SMS Academy';
             const parent = item.linked_guardian || item.students?.parent_students?.[0]?.parents;
             const guardianName = parent?.full_name || item.students?.guardian_name || 'Guardian';

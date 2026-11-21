@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SMS Student Management System">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#27508a"/>
+      <stop offset="1" stop-color="#0a1424"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f3e0b9"/>
+      <stop offset="0.55" stop-color="#c5a880"/>
+      <stop offset="1" stop-color="#9e7d47"/>
+    </linearGradient>
+    <linearGradient id="goldDeep" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b08d55"/>
+      <stop offset="1" stop-color="#7d6034"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g transform="translate(0 -26)">
+    <path d="M136 226v64c0 28 54 60 120 60s120-32 120-60v-64l-120 54z" fill="url(#goldDeep)"/>
+    <path d="M256 104 448 190 256 276 64 190z" fill="url(#gold)"/>
+    <path d="M256 104 448 190 256 276z" fill="#fff" opacity="0.14"/>
+    <path d="M432 198v92" stroke="#e7cf9f" stroke-width="10" stroke-linecap="round" fill="none"/>
+    <circle cx="432" cy="302" r="15" fill="#e7cf9f"/>
+  </g>
+  <path d="M170 398l58 54 120-112" fill="none" stroke="#fff" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

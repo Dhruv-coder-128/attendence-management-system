@@ -63,32 +63,7 @@ export function computeExamResult(marksObtained, passingMarks, totalMarks, isAbs
 /**
  * In-memory fallback exams storage for resilience if Supabase table is not yet created
  */
-let memoryExams = [
-  {
-    id: 'demo-exam-1',
-    name: 'Term 1 Unit Test — Mathematics',
-    exam_type: 'Unit Test',
-    subject: 'Mathematics',
-    exam_date: '2026-10-05',
-    total_marks: 50,
-    passing_marks: 18,
-    academic_year: '2026-27',
-    description: 'Calculus, Relations & Functions, Coordinate Geometry',
-    is_published: true,
-  },
-  {
-    id: 'demo-exam-2',
-    name: 'Mid-Term Prelim — Physics & IT',
-    exam_type: 'Mid-Term',
-    subject: 'Physics & Applied Computing',
-    exam_date: '2026-10-12',
-    total_marks: 100,
-    passing_marks: 35,
-    academic_year: '2026-27',
-    description: 'Electrodynamics, Waves, DBMS & Web Programming Practical',
-    is_published: true,
-  },
-];
+let memoryExams = []; // starts empty: a school only ever sees its own exams
 
 let memoryMarks = {};
 
@@ -344,37 +319,7 @@ export async function saveExamMarks(examId, marksRows) {
  */
 export async function fetchStudentExamResults(studentId) {
   if (!isSupabaseConfigured || !supabase) {
-    // Return sample exam results for demo student
-    return [
-      {
-        id: 'mark-demo-1',
-        exam_id: 'demo-exam-1',
-        exam_name: 'Term 1 Unit Test — Mathematics',
-        exam_type: 'Unit Test',
-        subject: 'Mathematics',
-        exam_date: '2026-10-05',
-        total_marks: 50,
-        passing_marks: 18,
-        marks_obtained: 44,
-        is_absent: false,
-        remarks: 'Excellent command in calculus formulas',
-        ...computeExamResult(44, 18, 50, false),
-      },
-      {
-        id: 'mark-demo-2',
-        exam_id: 'demo-exam-2',
-        exam_name: 'Mid-Term Prelim — Physics & IT',
-        exam_type: 'Mid-Term',
-        subject: 'Physics & Applied Computing',
-        exam_date: '2026-10-12',
-        total_marks: 100,
-        passing_marks: 35,
-        marks_obtained: 88,
-        is_absent: false,
-        remarks: 'Consistent problem solving performance',
-        ...computeExamResult(88, 35, 100, false),
-      },
-    ];
+    return []; // never invent marks for a student
   }
 
   try {

@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { supabase } from './supabase.js';
 import { isTauriDesktop } from './licenseService.js';
 
+import { todayLocal } from './dateUtils';
 let cachedHubUrl = 'http://127.0.0.1:5173';
 let cachedHubToken = '';
 let cachedResolvedHub = null;
@@ -130,7 +131,7 @@ export function useSchoolDatabaseSync() {
         });
 
         // Fetch today's attendance records from IndexedDB to keep Mobile and Desktop 100% in sync
-        const todayIso = new Date().toISOString().split('T')[0];
+        const todayIso = todayLocal();
         const { data: todayAttendance } = await supabase
           .from('attendance')
           .select('id, student_id, batch_id, date, status, time_in, remarks, updated_at')
@@ -220,7 +221,7 @@ export function useSchoolDatabaseSync() {
 
     try {
       const hub = await resolveHubInfo();
-      const today = new Date().toISOString().split('T')[0];
+      const today = todayLocal();
 
       const res = await fetch(`${hub.url}/api/local-hub?action=updates&date=${encodeURIComponent(today)}`, { headers: hub.token ? { 'X-Hub-Token': hub.token } : {} });
       if (res.ok) {

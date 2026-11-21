@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js';
 
+import { todayLocal } from './dateUtils';
 /**
  * Client-Side Telegram & Parent Communications Service
  * SMS — Student Management System
@@ -593,7 +594,7 @@ export async function sendBatchBroadcastNotification({
     // Filter by audience scope if specific
     if (audience.includes('Absentee')) {
       // Find today's absentee students
-      const today = new Date().toISOString().split('T')[0];
+      const today = todayLocal();
       const { data: absAtt } = await supabase
         .from('attendance')
         .select('student_id')

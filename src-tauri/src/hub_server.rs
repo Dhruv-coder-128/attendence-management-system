@@ -1085,7 +1085,9 @@ fn handle_post_action(
                         late += 1;
                         "Late"
                     }
-                    "Pending" => "Pending",
+                    // "Pending" means "not marked yet". It must never overwrite a real mark made on the PC or another phone
+                    // (old queued roll calls and old phone apps still send it).
+                    "Pending" => continue,
                     _ => {
                         absent += 1;
                         "Absent"

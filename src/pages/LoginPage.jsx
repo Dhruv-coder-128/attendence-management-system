@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { GraduationCap, ArrowRight, CheckCircle2, AlertCircle, UserPlus, LogIn, MessageCircle, KeyRound, X } from 'lucide-react';
+import { ArrowRight, CheckCircle2, AlertCircle, UserPlus, LogIn, MessageCircle, KeyRound, X } from 'lucide-react';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
 import { supabase, resetLocalPassword, needsLocalOwnerSetup } from '../lib/supabase';
@@ -190,7 +190,7 @@ export default function LoginPage({ onLoginSuccess }) {
               marginBottom: '12px',
             }}
           >
-            <GraduationCap size={28} />
+            <img src="/logo.svg" alt="SMS" style={{ width: '48px', height: '48px', borderRadius: '10px' }} />
           </div>
           <h1
             style={{

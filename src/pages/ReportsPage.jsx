@@ -26,6 +26,7 @@ import { DocumentHeader, DocumentFooter } from '../components/print/DocumentHead
 import { extractStandardAndSection } from '../lib/classHierarchyHelper';
 import { computeGrade } from '../lib/examService';
 
+import { todayLocal } from '../lib/dateUtils';
 /**
  * Enterprise Reports & Analytics Hub (v3.0)
  * Sellable, Personalized ERP Reporting Suite:
@@ -35,7 +36,7 @@ import { computeGrade } from '../lib/examService';
  * - Fee Ledger with Direct WhatsApp Payment Reminders
  * - Board/Government Ready Official Print Dossier with School Letterhead
  */
-const TODAY_ISO = new Date().toISOString().split('T')[0];
+const TODAY_ISO = todayLocal();
 
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState('attendance'); // 'attendance' | 'fees' | 'exams' | 'directory'
@@ -155,7 +156,7 @@ export default function ReportsPage() {
 
   // Quick Date Helpers
   const setTodayDate = () => {
-    setSelectedDate(new Date().toISOString().split('T')[0]);
+    setSelectedDate(todayLocal());
   };
 
   const setYesterdayDate = () => {

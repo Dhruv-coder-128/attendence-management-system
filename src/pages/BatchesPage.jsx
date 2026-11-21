@@ -191,18 +191,30 @@ export default function BatchesPage({ onRefreshCounts }) {
       setModalError('Batch code is required.');
       return;
     }
-    if (!formData.course_id) {
-      setModalError('Please select a course.');
-      return;
-    }
-
     setIsSubmitting(true);
 
     try {
+      // No course chosen (a new school has none yet): use the one matching this class, or create it from the batch name.
+      let courseId = formData.course_id;
+      if (!courseId) {
+        const { standard } = extractStandardAndSection({ name: formData.name, code: formData.code });
+        const existing = courses.find((c) => String(c.name || '').trim().toLowerCase() === standard.trim().toLowerCase());
+        if (existing) {
+          courseId = existing.id;
+        } else {
+          const { data: created, error: courseErr } = await supabase
+            .from('courses')
+            .insert([{ name: standard, code: formData.code.trim().toUpperCase(), level: standard, is_active: true }])
+            .select()
+            .single();
+          if (courseErr) throw courseErr;
+          courseId = created?.id;
+        }
+      }
       const payload = {
         name: formData.name.trim(),
         code: formData.code.trim().toUpperCase(),
-        course_id: formData.course_id,
+        course_id: courseId,
         academic_year: formData.academic_year.trim() || '2026-27',
         shift: formData.shift,
         timing: formData.timing.trim() || null,
@@ -675,11 +687,10 @@ export default function BatchesPage({ onRefreshCounts }) {
             label="Belongs to Course"
             value={formData.course_id}
             onChange={(e) => setFormData({ ...formData, course_id: e.target.value })}
-            options={courses.map((c) => ({
-              value: c.id,
-              label: `${c.code} — ${c.name} (${c.level})`,
-            }))}
-            required
+            options={[
+              { value: '', label: courses.length ? '— Create automatically from the batch name —' : '— Will be created automatically from the batch name —' },
+              ...courses.map((c) => ({ value: c.id, label: `${c.code} — ${c.name} (${c.level})` })),
+            ]}
           />
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>

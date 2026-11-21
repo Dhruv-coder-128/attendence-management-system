@@ -55,6 +55,7 @@ import BirthdayWishModal from '../components/students/BirthdayWishModal';
 import { isStudentBirthdayToday } from '../lib/telegramClient';
 
 
+import { todayLocal } from '../lib/dateUtils';
 export const CANONICAL_BATCH_CODES = [];
 
 export function getCanonicalBatchCode(raw) {
@@ -72,46 +73,299 @@ export function getCanonicalBatchCode(raw) {
   return s;
 }
 
-const DAILY_METRICS_KEY_PREFIX = 'sms_daily_metrics_v3_';
-const BATCH_ATTENDANCE_STATUS_KEY_PREFIX = 'sms_batch_status_v3_';
+// The day's attendance records as last seen from the School PC (kept on the phone so counts show offline too).
+// All counts on the class screens are worked out from these records, so they can never disagree with the PC.
+const DAY_RECORDS_KEY_PREFIX = 'sms_day_records_v4_';
 
-function getStoredDailyMetrics(date) {
-  if (typeof window === 'undefined') return { total: 0, present: 0, absent: 0, late: 0, pending: 0, marked: false };
+function getStoredDayRecords(date) {
   try {
-    const raw = localStorage.getItem(DAILY_METRICS_KEY_PREFIX + (date || new Date().toISOString().split('T')[0]));
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed.pending === undefined) {
-        parsed.pending = Math.max(0, (parsed.total || 0) - ((parsed.present || 0) + (parsed.absent || 0) + (parsed.late || 0)));
-      }
-      return parsed;
+    const parsed = JSON.parse(localStorage.getItem(DAY_RECORDS_KEY_PREFIX + date) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function setStoredDayRecords(date, records) {
+  try {
+    localStorage.setItem(DAY_RECORDS_KEY_PREFIX + date, JSON.stringify(records));
+  } catch {}
+}
+
+/** Key used for one class on the class screens. */
+export const batchKey = (b) => String(b?.id || b?.code || b?.name || '').toUpperCase();
+
+/**
+ * Per-class counts for one day. A record belongs to a class when its batch_id / batch_code is that class's id or code.
+ * One mark per student (the newest wins); "Pending" is not a mark. The class whose roll call is open uses the live
+ * marks on screen instead of the saved ones.
+ */
+export function computeBatchStatuses(batches, records, live = null) {
+  const latest = new Map();
+  (records || []).forEach((r) => {
+    if (!r || !r.status || r.status === 'Pending') return;
+    const k = String(r.student_id || r.admission_no || '').toUpperCase();
+    if (!k) return;
+    const prev = latest.get(k);
+    if (!prev || String(r.updated_at || '') >= String(prev.updated_at || '')) latest.set(k, r);
+  });
+  const out = {};
+  (batches || []).forEach((b) => {
+    const ids = [b.id, b.code].filter(Boolean).map((x) => String(x).toUpperCase());
+    let present = 0;
+    let absent = 0;
+    let late = 0;
+    const add = (st) => {
+      if (st === 'Present') present++;
+      else if (st === 'Absent') absent++;
+      else if (st === 'Late') late++;
+    };
+    let total = typeof b.student_count === 'number' ? b.student_count : 0;
+    if (live && live.key === batchKey(b)) {
+      live.students.forEach((s) => add(live.map[s.id] || live.map[s.admission_no]));
+      total = live.students.length || total;
+    } else {
+      latest.forEach((r) => {
+        if (ids.includes(String(r.batch_id || '').toUpperCase()) || ids.includes(String(r.batch_code || '').toUpperCase())) add(r.status);
+      });
     }
-  } catch {}
-  return { total: 0, present: 0, absent: 0, late: 0, pending: 0, marked: false };
+    const marked = present + absent + late;
+    out[batchKey(b)] = { present, absent, late, total, pending: Math.max(0, total - marked), taken: marked > 0 };
+  });
+  return out;
 }
 
-function setStoredDailyMetrics(date, metrics) {
-  if (typeof window === 'undefined' || !metrics) return;
-  try {
-    localStorage.setItem(DAILY_METRICS_KEY_PREFIX + (date || new Date().toISOString().split('T')[0]), JSON.stringify(metrics));
-  } catch {}
-}
+/**
+ * One student card. Memoised: a tap re-renders only the card whose status changed, not the whole class
+ * (this is what makes a 100-student roll call stay smooth on a cheap phone).
+ */
+const StudentRow = React.memo(function StudentRow({ student, status, onSetStatus, onWish }) {
+  const isPresent = status === 'Present';
+  const isLate = status === 'Late';
+  const isAbsent = status === 'Absent';
 
-function getStoredBatchStatuses(date) {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(BATCH_ATTENDANCE_STATUS_KEY_PREFIX + (date || new Date().toISOString().split('T')[0]));
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return {};
-}
+  return (
+    <div
+        className="liquid-card student-row"
+        style={{
+          backgroundColor: '#ffffff',
+          border: '1px solid #e2e8f0',
+          borderRadius: '16px',
+          padding: '14px',
+                              display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+        }}
+      >
+        {/* TIER 1: Student Details with FULL NAME VISIBILITY (NO TRUNCATION) */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '10px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+            {/* Roll Number Badge */}
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '10px',
+                backgroundColor: '#f1f5f9',
+                border: '1px solid #cbd5e1',
+                color: '#0f172a',
+                fontSize: '14px',
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                boxShadow: '0 2px 6px rgba(15, 23, 42, 0.05)',
+              }}
+            >
+              {student.roll_no}
+            </div>
 
-function setStoredBatchStatuses(date, statuses) {
-  if (typeof window === 'undefined' || !statuses) return;
-  try {
-    localStorage.setItem(BATCH_ATTENDANCE_STATUS_KEY_PREFIX + (date || new Date().toISOString().split('T')[0]), JSON.stringify(statuses));
-  } catch {}
-}
+            {/* Full Name & Admission No */}
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div
+                style={{
+                  fontSize: '15px',
+                  fontWeight: 800,
+                  color: '#0f172a',
+                  lineHeight: 1.3,
+                  wordBreak: 'break-word',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span>{student.full_name || student.name || student['Student Name'] || `Student ${student.roll_no || student.admission_no}`}</span>
+                {isStudentBirthdayToday(student.dob) && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      padding: '1px 6px',
+                      borderRadius: '10px',
+                      backgroundColor: '#fce7f3',
+                      color: '#be185d',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                    }}
+                  >
+                    🎂 Birthday!
+                  </span>
+                )}
+              </div>
+              <div
+                style={{
+                  fontSize: '11px',
+                  color: '#64748b',
+                  marginTop: '2px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <span>ID: <span style={{ color: '#334155', fontFamily: 'monospace', fontWeight: 700 }}>{student.admission_no}</span></span>
+                {isStudentBirthdayToday(student.dob) && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onWish(student);
+                    }}
+                    style={{
+                      border: 'none',
+                      background: '#ec4899',
+                      color: '#ffffff',
+                      borderRadius: '4px',
+                      padding: '2px 8px',
+                      fontSize: '10.5px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🎉 Wish
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Status Pill Badge */}
+          <span
+            style={{
+              padding: '4px 10px',
+              borderRadius: '20px',
+              fontSize: '11px',
+              fontWeight: 800,
+              backgroundColor: isPresent ? '#ecfdf5' : isLate ? '#fffbeb' : isAbsent ? '#fff1f2' : '#fef3c7',
+              color: isPresent ? '#059669' : isLate ? '#b45309' : isAbsent ? '#e11d48' : '#d97706',
+              border: `1px solid ${isPresent ? '#a7f3d0' : isLate ? '#fde68a' : isAbsent ? '#fecdd3' : '#fcd34d'}`,
+              flexShrink: 0,
+            }}
+          >
+            {status}
+          </span>
+        </div>
+
+        {/* TIER 2: Full-Width 3-Button Segmented Selector for Thumb Comfort */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: '6px',
+            backgroundColor: '#f1f5f9',
+            border: '1px solid #e2e8f0',
+            padding: '4px',
+            borderRadius: '12px',
+          }}
+        >
+          {/* Present Button */}
+          <button
+            type="button"
+            onClick={() => onSetStatus(student.id, 'Present')}
+            className="touch-action-btn"
+            style={{
+              backgroundColor: isPresent ? '#10b981' : 'transparent',
+              color: isPresent ? '#ffffff' : '#64748b',
+              border: 'none',
+              borderRadius: '9px',
+              padding: '10px 4px',
+              fontSize: '13px',
+              fontWeight: isPresent ? 800 : 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              boxShadow: isPresent ? '0 2px 8px rgba(16, 185, 129, 0.35)' : 'none',
+            }}
+          >
+            <Check size={15} strokeWidth={isPresent ? 3 : 2} color={isPresent ? '#ffffff' : '#64748b'} />
+            <span>Present</span>
+          </button>
+
+          {/* Late Button */}
+          <button
+            type="button"
+            onClick={() => onSetStatus(student.id, 'Late')}
+            className="touch-action-btn"
+            style={{
+              backgroundColor: isLate ? '#f59e0b' : 'transparent',
+              color: isLate ? '#ffffff' : '#64748b',
+              border: 'none',
+              borderRadius: '9px',
+              padding: '10px 4px',
+              fontSize: '13px',
+              fontWeight: isLate ? 800 : 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              boxShadow: isLate ? '0 2px 8px rgba(245, 158, 11, 0.35)' : 'none',
+            }}
+          >
+            <Clock size={15} strokeWidth={isLate ? 3 : 2} color={isLate ? '#ffffff' : '#64748b'} />
+            <span>Late</span>
+          </button>
+
+          {/* Absent Button */}
+          <button
+            type="button"
+            onClick={() => onSetStatus(student.id, 'Absent')}
+            className="touch-action-btn"
+            style={{
+              backgroundColor: isAbsent ? '#ef4444' : 'transparent',
+              color: isAbsent ? '#ffffff' : '#64748b',
+              border: 'none',
+              borderRadius: '9px',
+              padding: '10px 4px',
+              fontSize: '13px',
+              fontWeight: isAbsent ? 800 : 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              boxShadow: isAbsent ? '0 2px 8px rgba(239, 68, 68, 0.35)' : 'none',
+            }}
+          >
+            <X size={15} strokeWidth={isAbsent ? 3 : 2} color={isAbsent ? '#ffffff' : '#64748b'} />
+            <span>Absent</span>
+          </button>
+        </div>
+      </div>
+  );
+});
 
 export default function TeacherAttendancePage() {
   const academySettings = useAcademySettings();
@@ -148,7 +402,7 @@ export default function TeacherAttendancePage() {
   // Data
   const [batches, setBatches] = useState([]);
   const [selectedBatchId, setSelectedBatchId] = useState('');
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(() => todayLocal());
   const [students, setStudents] = useState([]);
   const [attendanceMap, setAttendanceMap] = useState({}); // { student_id: 'Present' | 'Late' | 'Absent' }
 
@@ -197,9 +451,14 @@ export default function TeacherAttendancePage() {
     );
   }, [uniqueBatches, selectedBatchId]);
 
-  // Persistent Daily Metrics across RAM Kills
-  const [dailyMetrics, setDailyMetrics] = useState(() => getStoredDailyMetrics(new Date().toISOString().split('T')[0]));
-  const [batchStatuses, setBatchStatuses] = useState(() => getStoredBatchStatuses(new Date().toISOString().split('T')[0]));
+  // The day's records from the School PC (also kept on the phone for offline use)
+  const [dayRecords, setDayRecords] = useState(() => getStoredDayRecords(todayLocal()));
+  const dayRecordsRef = useRef(dayRecords);
+  const saveDayRecords = useCallback((date, records) => {
+    dayRecordsRef.current = records;
+    setDayRecords(records);
+    setStoredDayRecords(date, records);
+  }, []);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -211,7 +470,7 @@ export default function TeacherAttendancePage() {
 
   const showToast = useCallback((msg, type = 'success') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast({ id: Date.now(), message: msg, type });
+    setToast({ id: Date.now(), message: String(msg).replace(/^[✓⚠️\s]+/u, ''), type }); // the toast already shows an icon
     toastTimerRef.current = setTimeout(() => setToast(null), 4000);
   }, []);
 
@@ -345,115 +604,11 @@ export default function TeacherAttendancePage() {
       const res = await hubFetch(`${activeUrl.replace(/\/+$/, '')}/api/local-hub?action=updates&date=${encodeURIComponent(date)}`);
       if (res.ok) {
         const data = await res.json();
-        const records = data.records || data.allRecords || [];
-        if (Array.isArray(records) && records.length > 0) {
-          // Student lookup map
-          const studentLookup = new Map();
-          (batches || []).forEach((b) => {
-            (b.students || []).forEach((s) => {
-              if (s.admission_no) studentLookup.set(s.admission_no.trim().toUpperCase(), s);
-              if (s.id) studentLookup.set(s.id.trim(), s);
-              if (s.full_name) studentLookup.set(s.full_name.trim().toLowerCase(), s);
-            });
-          });
-
-          // Strict student-level deduplication: exactly 1 state per student
-          const studentAttendanceMap = new Map();
-          records.forEach((r) => {
-            const rawAdm = (r.admission_no || '').trim().toUpperCase();
-            const rawId = (r.student_id || '').trim();
-            const rawName = (r.full_name || '').trim().toLowerCase();
-            const matched = studentLookup.get(rawAdm) || studentLookup.get(rawId) || studentLookup.get(rawName);
-
-            // Discard test mock records
-            if (rawAdm.startsWith('SMS-2026-') || (rawId && rawId.startsWith('SMS-2026-'))) return;
-
-            const studentKey = matched ? matched.admission_no : (rawAdm || rawId || null);
-            if (!studentKey) return;
-
-            const existingEntry = studentAttendanceMap.get(studentKey);
-            if (!existingEntry) {
-              studentAttendanceMap.set(studentKey, {
-                ...r,
-                admission_no: matched ? matched.admission_no : studentKey,
-                batch_code: getCanonicalBatchCode(matched ? matched.batch_code : (r.batch_code || r.batch_id)),
-                status: r.status || 'Pending',
-              });
-            } else {
-              const existingTime = new Date(existingEntry.updated_at || 0).getTime();
-              const incomingTime = new Date(r.updated_at || 0).getTime();
-              if (incomingTime > existingTime) {
-                studentAttendanceMap.set(studentKey, {
-                  ...r,
-                  admission_no: matched ? matched.admission_no : studentKey,
-                  batch_code: getCanonicalBatchCode(matched ? matched.batch_code : (r.batch_code || r.batch_id)),
-                  status: r.status || 'Pending',
-                });
-              }
-            }
-          });
-
-          // Compute exact per-batch counts and daily totals
-          const batchMap = {};
-          let totalPresent = 0;
-          let totalAbsent = 0;
-          let totalLate = 0;
-
-          // Initialize batchMap dynamically for all actual batches
-          uniqueBatches.forEach((b) => {
-            const bKey = (b.code || b.id || '').toUpperCase();
-            const count = typeof b.student_count === 'number' ? b.student_count : (typeof b.enrolled === 'number' ? b.enrolled : 0);
-            if (bKey) {
-              batchMap[bKey] = { present: 0, absent: 0, late: 0, total: count, pending: count, taken: false };
-            }
-          });
-
-
-          studentAttendanceMap.forEach((entry) => {
-            const bCode = (entry.batch_code || '').toUpperCase();
-            if (bCode && batchMap[bCode]) {
-              batchMap[bCode].taken = true;
-              if (entry.status === 'Present') {
-                batchMap[bCode].present += 1;
-                totalPresent += 1;
-              } else if (entry.status === 'Late') {
-                batchMap[bCode].late += 1;
-                totalLate += 1;
-              } else if (entry.status === 'Absent') {
-                batchMap[bCode].absent += 1;
-                totalAbsent += 1;
-              }
-            }
-          });
-
-          // Calculate exact pending for each cohort
-          Object.keys(batchMap).forEach((code) => {
-            const b = batchMap[code];
-            b.pending = Math.max(0, b.total - (b.present + b.absent + b.late));
-          });
-
-          const totalCapacity = typeof data.studentsCount === 'number'
-            ? data.studentsCount
-            : (typeof data.studentCount === 'number' ? data.studentCount : schoolTotalStudents);
-          const totalPending = Math.max(0, totalCapacity - (totalPresent + totalAbsent + totalLate));
-
-          const newMetrics = {
-            total: totalCapacity,
-            present: totalPresent,
-            absent: totalAbsent,
-            late: totalLate,
-            pending: totalPending,
-            marked: true,
-          };
-
-          setDailyMetrics(newMetrics);
-          setStoredDailyMetrics(date, newMetrics);
-          setBatchStatuses(batchMap);
-          setStoredBatchStatuses(date, batchMap);
-        }
+        const records = data.allRecords || data.records || [];
+        if (Array.isArray(records)) saveDayRecords(date, records);
       }
     } catch {}
-  }, [hubUrl, selectedDate]);
+  }, [hubUrl, selectedDate, saveDayRecords]);
 
   // 2. Verify Connection with Smart Auto-Discovery
   const verifyConnection = useCallback(async (targetUrl = hubUrl, tryAutoScan = true) => {
@@ -653,66 +808,6 @@ export default function TeacherAttendancePage() {
     }, 300);
   }, [hubUrl, selectedBatchId, activeBatch, students, selectedDate]);
 
-  // Recalculates batch and top metrics immediately from a map
-  const updateMetricsFromMap = useCallback((newMap) => {
-    const bCode = getCanonicalBatchCode(activeBatch?.code || selectedBatchId);
-    let pCount = 0;
-    let aCount = 0;
-    let lCount = 0;
-
-    students.forEach((s) => {
-      const st = newMap[s.id] || newMap[s.admission_no];
-      if (st === 'Present') pCount++;
-      else if (st === 'Late') lCount++;
-      else if (st === 'Absent') aCount++;
-    });
-
-    const batchTotal = students.length;
-
-    const newBatchInfo = {
-      present: pCount,
-      absent: aCount,
-      late: lCount,
-      total: batchTotal,
-      pending: Math.max(0, batchTotal - (pCount + aCount + lCount)),
-      taken: (pCount + aCount + lCount) > 0,
-    };
-
-    setBatchStatuses((prev) => {
-      const next = { ...prev, [bCode]: newBatchInfo };
-      setStoredBatchStatuses(selectedDate, next);
-
-      let sumPresent = 0;
-      let sumAbsent = 0;
-      let sumLate = 0;
-      let sumTotal = 0;
-      Object.keys(next).forEach((c) => {
-        const b = next[c];
-        if (b) {
-          sumPresent += b.present || 0;
-          sumAbsent += b.absent || 0;
-          sumLate += b.late || 0;
-          sumTotal += b.total || 0;
-        }
-      });
-
-      const effectiveTotal = Math.max(schoolTotalStudents, sumTotal);
-      const totalPending = Math.max(0, effectiveTotal - (sumPresent + sumAbsent + sumLate));
-      const metrics = {
-        total: effectiveTotal,
-        present: sumPresent,
-        absent: sumAbsent,
-        late: sumLate,
-        pending: totalPending,
-        marked: true,
-      };
-      setDailyMetrics(metrics);
-      setStoredDailyMetrics(selectedDate, metrics);
-
-      return next;
-    });
-  }, [activeBatch, selectedBatchId, students, selectedDate]);
-
   // Live two-way sync: while a roll call is open, pick up marks made on the School PC (or another phone).
   useEffect(() => {
     if (viewMode !== 'rollcall' || !selectedBatchId || !connectionStatus.ok) return undefined;
@@ -736,7 +831,6 @@ export default function TeacherAttendancePage() {
             next[st.id] = r.status;
             changed = true;
           });
-          if (changed) updateMetricsFromMap(next);
           return changed ? next : prev;
         });
       } catch {
@@ -746,21 +840,25 @@ export default function TeacherAttendancePage() {
       }
     }, 1500);
     return () => clearInterval(timer);
-  }, [viewMode, selectedBatchId, selectedDate, hubUrl, connectionStatus.ok, students, updateMetricsFromMap]);
+  }, [viewMode, selectedBatchId, selectedDate, hubUrl, connectionStatus.ok, students]);
 
   // Toggle single student status (Present / Late / Absent)
   const setStudentStatus = (studentId, status) => {
     dirtyIdsRef.current.add(studentId);
-    setAttendanceMap((prev) => {
-      const next = {
-        ...prev,
-        [studentId]: status,
-      };
-      updateMetricsFromMap(next);
-      return next;
-    });
+    const next = { ...attendanceMapRef.current, [studentId]: status };
+    attendanceMapRef.current = next;
+    setAttendanceMap(next);
     syncRollCallToHubDebounced();
   };
+
+  // Stable references for the memoised student cards (they always call the latest handlers).
+  const latestHandlers = useRef({});
+  latestHandlers.current = { setStudentStatus, setActiveBirthdayStudent, setIsBirthdayModalOpen };
+  const onSetStatus = useCallback((id, st) => latestHandlers.current.setStudentStatus(id, st), []);
+  const onWish = useCallback((student) => {
+    latestHandlers.current.setActiveBirthdayStudent(student);
+    latestHandlers.current.setIsBirthdayModalOpen(true);
+  }, []);
 
   // Bulk actions: Mark All Present & Mark All Absent (Strictly 1 state per student)
   const markAllPresent = () => {
@@ -771,7 +869,6 @@ export default function TeacherAttendancePage() {
     });
     attendanceMapRef.current = next;
     setAttendanceMap(next);
-    updateMetricsFromMap(next);
     syncRollCallToHubDebounced();
     showToast(`✓ All ${students.length} students marked Present`);
   };
@@ -784,7 +881,6 @@ export default function TeacherAttendancePage() {
     });
     attendanceMapRef.current = next;
     setAttendanceMap(next);
-    updateMetricsFromMap(next);
     syncRollCallToHubDebounced();
     showToast(`✓ All ${students.length} students marked Absent`);
   };
@@ -804,6 +900,10 @@ export default function TeacherAttendancePage() {
     return students.filter((s) => getStudentStatus(s) === 'Absent').length;
   }, [students, attendanceMap]);
 
+  // Long classes appear instantly: draw the first 30 cards, then the rest a moment later.
+  const [renderCount, setRenderCount] = useState(30);
+  useEffect(() => { setRenderCount(30); }, [selectedBatchId, searchTerm]);
+
   // Filter students
   const filteredStudents = useMemo(() => {
     if (!searchTerm.trim()) return students;
@@ -815,6 +915,11 @@ export default function TeacherAttendancePage() {
         String(s.admission_no || '').toLowerCase().includes(term)
     );
   }, [students, searchTerm]);
+  useEffect(() => {
+    if (renderCount >= filteredStudents.length) return undefined;
+    const t = setTimeout(() => setRenderCount((c) => c + 30), 60);
+    return () => clearTimeout(t);
+  }, [renderCount, filteredStudents.length]);
 
   // Submit attendance ("DONE" Action)
   const handleSubmit = async () => {
@@ -850,53 +955,15 @@ export default function TeacherAttendancePage() {
     );
     setIsSubmitting(false);
 
-    // Authoritatively update batch status and daily metrics immediately
-    const bKey = getCanonicalBatchCode(activeBatch.code || selectedBatchId);
-    const batchTotal = totalCount;
-
-    const newBatchInfo = {
-      present: presentCount,
-      late: lateCount,
-      absent: absentCount,
-      total: batchTotal,
-      pending: Math.max(0, batchTotal - (presentCount + absentCount + lateCount)),
-      taken: true,
-    };
-
-    setBatchStatuses((prev) => {
-      const next = { ...prev, [bKey]: newBatchInfo };
-      setStoredBatchStatuses(selectedDate, next);
-      return next;
-    });
-
-    setDailyMetrics((prev) => {
-      const currentMap = { ...batchStatuses, [bKey]: newBatchInfo };
-      let sumTotal = 0;
-      let sumPresent = 0;
-      let sumAbsent = 0;
-      let sumLate = 0;
-      Object.keys(currentMap).forEach((c) => {
-        const st = currentMap[c];
-        if (st) {
-          sumTotal += st.total || 0;
-          sumPresent += st.present || 0;
-          sumAbsent += st.absent || 0;
-          sumLate += st.late || 0;
-        }
-      });
-      const effectiveTotal = Math.max(schoolTotalStudents, sumTotal);
-      const totalPending = Math.max(0, effectiveTotal - (sumPresent + sumAbsent + sumLate));
-      const next = {
-        total: effectiveTotal,
-        present: sumPresent,
-        absent: sumAbsent,
-        late: sumLate,
-        pending: totalPending,
-        marked: true,
-      };
-      setStoredDailyMetrics(selectedDate, next);
-      return next;
-    });
+    // Show the saved marks on the class screens straight away (the PC's copy replaces this on the next refresh)
+    if (res.ok || res.queued) {
+      const now = new Date().toISOString();
+      const ids = new Set(marked.map((r) => r.student_id));
+      saveDayRecords(selectedDate, [
+        ...dayRecordsRef.current.filter((r) => !ids.has(r.student_id)),
+        ...marked.map((r) => ({ ...r, batch_id: activeBatch.id || selectedBatchId, batch_code: activeBatch.code || '', date: selectedDate, updated_at: now })),
+      ]);
+    }
 
     setSavedSummary({
       batchName: activeBatch.name || 'Current Class',
@@ -1039,6 +1106,54 @@ export default function TeacherAttendancePage() {
     return sum;
   }, [uniqueBatches, connectionStatus]);
 
+  // Class cards and the top counters, worked out from the day's records (+ the live marks of the open roll call)
+  const batchStatuses = useMemo(
+    () =>
+      computeBatchStatuses(
+        uniqueBatches,
+        dayRecords,
+        viewMode === 'rollcall' && activeBatch ? { key: batchKey(activeBatch), students, map: attendanceMap } : null
+      ),
+    [uniqueBatches, dayRecords, viewMode, activeBatch, students, attendanceMap]
+  );
+  const dailyMetrics = useMemo(() => {
+    let present = 0;
+    let absent = 0;
+    let late = 0;
+    let sumTotal = 0;
+    Object.values(batchStatuses).forEach((b) => {
+      present += b.present;
+      absent += b.absent;
+      late += b.late;
+      sumTotal += b.total;
+    });
+    const total = Math.max(schoolTotalStudents, sumTotal);
+    return { total, present, absent, late, pending: Math.max(0, total - present - absent - late) };
+  }, [batchStatuses, schoolTotalStudents]);
+
+  // Another date picked: show what the phone knows for it at once, then ask the PC
+  const firstDateRef = useRef(true);
+  useEffect(() => {
+    if (firstDateRef.current) {
+      firstDateRef.current = false;
+      return;
+    }
+    dayRecordsRef.current = getStoredDayRecords(selectedDate);
+    setDayRecords(dayRecordsRef.current);
+    if (connectionStatus.ok) refreshHubMetrics(hubUrl, selectedDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
+
+  // On the class screens keep the counts live (roll calls taken on the PC or other phones show up within seconds)
+  useEffect(() => {
+    if (viewMode === 'rollcall' || !connectionStatus.ok) return undefined;
+    refreshHubMetrics(hubUrl, selectedDate);
+    const t = setInterval(() => {
+      if (!document.hidden) refreshHubMetrics(hubUrl, selectedDate);
+    }, 5000);
+    return () => clearInterval(t);
+  }, [viewMode, connectionStatus.ok, hubUrl, selectedDate, refreshHubMetrics]);
+
   return (
     <div
       style={{
@@ -1070,6 +1185,13 @@ export default function TeacherAttendancePage() {
         .liquid-card:active {
           transform: scale(0.985);
         }
+        /* Long class lists: cards outside the screen are not laid out or painted until scrolled near. */
+        .student-row {
+          transition: none;
+        }
+        /* Phone WebView: no 300 ms tap delay, no grey tap flash, no rubber-band over-scroll on the page. */
+        html, body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+        button { -webkit-tap-highlight-color: transparent; }
         .touch-action-btn {
           transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), filter 0.15s ease;
         }
@@ -1170,117 +1292,66 @@ export default function TeacherAttendancePage() {
         </div>
       )}
 
-      {/* Artisanal Frosted Glass Header */}
+      {/* Header: logo + school name, and one tappable line that shows the School PC connection */}
       <header
         style={{
           position: 'sticky',
           top: 0,
           zIndex: 50,
-          backgroundColor: 'rgba(255, 255, 255, 0.92)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderBottom: '1px solid rgba(226, 232, 240, 0.85)',
-          padding: '12px 16px',
-          boxShadow: '0 4px 20px rgba(15, 23, 42, 0.04)',
+          backgroundColor: '#ffffff',
+          borderBottom: '1px solid #e2e8f0',
+          padding: 'calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          {/* Brand Logo & Name */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
-              style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '12px',
-                backgroundColor: '#f1f5f9',
-                border: '1px solid #cbd5e1',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.05)',
-              }}
-            >
-              <School size={20} color="#0284c7" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '640px', margin: '0 auto' }}>
+          <img
+            src={academySettings.logo_url || '/logo.svg'}
+            alt=""
+            style={{ width: '38px', height: '38px', borderRadius: '10px', objectFit: 'contain', flexShrink: 0 }}
+          />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {academySettings.academy_name || 'Student Management System'}
             </div>
-            <div>
-              <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
-                {academySettings.academy_name || 'SMS Student System'}
-              </div>
-              <div style={{ fontSize: '11px', color: '#0284c7', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Sparkles size={11} color="#0284c7" />
-                <span>Teacher Roll Call Hub</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Status / Wi-Fi Indicator Pill */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button
+              type="button"
               onClick={() => setShowSettingsModal(true)}
               style={{
-                backgroundColor: connectionStatus.ok ? '#ecfdf5' : '#fffbeb',
-                border: `1px solid ${connectionStatus.ok ? '#a7f3d0' : '#fde68a'}`,
-                color: connectionStatus.ok ? '#059669' : '#b45309',
-                padding: '6px 10px',
-                borderRadius: '10px',
-                fontSize: '11px',
-                fontWeight: 700,
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                marginTop: '2px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px',
+                gap: '6px',
+                maxWidth: '100%',
                 cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: connectionStatus.ok ? '#047857' : connectionStatus.state === 'checking' ? '#64748b' : '#b91c1c',
               }}
-              title={connectionStatus.ok ? 'Connected to School PC' : 'Tap to configure School PC connection'}
             >
-              <ShieldCheck size={14} color={connectionStatus.ok ? '#059669' : '#b45309'} />
-              <span>{connectionStatus.ok ? 'PC Hub Synced' : 'Connect PC'}</span>
+              <span
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  backgroundColor: connectionStatus.ok ? '#10b981' : connectionStatus.state === 'checking' ? '#94a3b8' : '#ef4444',
+                }}
+              />
+              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {connectionStatus.ok
+                  ? 'Connected to School PC'
+                  : connectionStatus.state === 'checking'
+                  ? 'Looking for School PC…'
+                  : connectionStatus.state === 'wifi_disconnected'
+                  ? 'Wi-Fi is off'
+                  : 'School PC not found - tap to connect'}
+              </span>
             </button>
           </div>
-        </div>
-
-        {/* Live Subnet & Hub Status Pill */}
-        <div
-          onClick={() => setShowSettingsModal(true)}
-          style={{
-            marginTop: '10px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '6px 12px',
-            borderRadius: '10px',
-            backgroundColor: connectionStatus.ok ? '#f0fdf4' : '#fef2f2',
-            border: `1px solid ${connectionStatus.ok ? '#bbf7d0' : '#fecaca'}`,
-            cursor: 'pointer',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span
-              style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                backgroundColor: connectionStatus.ok ? '#10b981' : '#ef4444',
-                boxShadow: connectionStatus.ok ? '0 0 8px #10b981' : '0 0 8px #ef4444',
-                animation: 'pulseGlow 2s infinite ease-in-out',
-              }}
-            />
-            <span
-              style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                color: connectionStatus.ok ? '#166534' : '#991b1b',
-              }}
-            >
-              {connectionStatus.ok
-                ? 'School PC Connected & Active'
-                : connectionStatus.state === 'wifi_disconnected'
-                ? 'Phone Wi-Fi Disconnected'
-                : 'School PC Not Found / Tap to Scan'}
-            </span>
-          </div>
-          <span style={{ fontSize: '10px', color: '#64748b', fontFamily: 'monospace', fontWeight: 600 }}>
-            {hubUrl.replace(/^https?:\/\//, '')}
-          </span>
+          {isLoading && <RefreshCw size={16} color="#94a3b8" className="animate-spin" style={{ flexShrink: 0 }} />}
         </div>
       </header>
 
@@ -1288,7 +1359,7 @@ export default function TeacherAttendancePage() {
       {/* SCREEN 1: ALL BATCHES SELECTION SCREEN                                  */}
       {/* ========================================================================= */}
       {viewMode === 'batches' && (
-        <main style={{ padding: '16px', maxWidth: '640px', margin: '0 auto' }}>
+        <main style={{ padding: '16px 16px 96px', maxWidth: '640px', margin: '0 auto' }}>
           {/* OFFLINE PENDING QUEUE BANNER */}
           {offlineQueue && offlineQueue.length > 0 && (
             <div
@@ -1627,7 +1698,7 @@ export default function TeacherAttendancePage() {
                 Present
               </div>
               <div style={{ fontSize: '18px', fontWeight: 800, color: '#059669', marginTop: '2px' }}>
-                {dailyMetrics?.marked ? dailyMetrics.present : (savedSummary?.present ?? 0)}
+                {dailyMetrics.present + dailyMetrics.late}
               </div>
             </div>
 
@@ -1648,7 +1719,7 @@ export default function TeacherAttendancePage() {
                 Absent
               </div>
               <div style={{ fontSize: '18px', fontWeight: 800, color: '#dc2626', marginTop: '2px' }}>
-                {dailyMetrics?.marked ? dailyMetrics.absent : (savedSummary?.absent ?? 0)}
+                {dailyMetrics.absent}
               </div>
             </div>
 
@@ -1669,11 +1740,7 @@ export default function TeacherAttendancePage() {
                 Pending
               </div>
               <div style={{ fontSize: '18px', fontWeight: 800, color: '#d97706', marginTop: '2px' }}>
-                {dailyMetrics?.marked
-                  ? (dailyMetrics.pending !== undefined
-                      ? dailyMetrics.pending
-                      : Math.max(0, 100 - ((dailyMetrics.present || 0) + (dailyMetrics.absent || 0) + (dailyMetrics.late || 0))))
-                  : 100}
+                {dailyMetrics.pending}
               </div>
             </div>
 
@@ -1691,7 +1758,7 @@ export default function TeacherAttendancePage() {
               }}
             >
               <div style={{ fontSize: '9px', color: '#7c3aed', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.2px' }}>
-                Batches
+                Classes
               </div>
               <div style={{ fontSize: '18px', fontWeight: 800, color: '#7c3aed', marginTop: '2px' }}>
                 {uniqueBatches.length}
@@ -1710,10 +1777,10 @@ export default function TeacherAttendancePage() {
           >
             <div>
               <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
-                Academic Batches
+                Classes
               </h1>
               <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-                Select a class cohort to record student attendance
+                Tap a class to take roll call
               </div>
             </div>
             <span
@@ -1725,9 +1792,11 @@ export default function TeacherAttendancePage() {
                 fontSize: '11px',
                 fontWeight: 700,
                 color: '#1d4ed8',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
-              {uniqueBatches.length} Classes
+              {uniqueBatches.length} {uniqueBatches.length === 1 ? 'class' : 'classes'}
             </span>
           </div>
 
@@ -1745,7 +1814,7 @@ export default function TeacherAttendancePage() {
             />
             <input
               type="text"
-              placeholder="Search batches by name or code..."
+              placeholder="Search classes"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{
@@ -1783,8 +1852,7 @@ export default function TeacherAttendancePage() {
                 let markedDivisionsCount = 0;
                 let totalStudentsInStandard = 0;
                 group.sections.forEach((b) => {
-                  const bKey = getCanonicalBatchCode(b.code || b.id);
-                  if (batchStatuses[bKey]?.taken) markedDivisionsCount++;
+                  if (batchStatuses[batchKey(b)]?.taken) markedDivisionsCount++;
                   totalStudentsInStandard += typeof b.student_count === 'number' ? b.student_count : (typeof b.enrolled === 'number' ? b.enrolled : 0);
                 });
 
@@ -1835,21 +1903,7 @@ export default function TeacherAttendancePage() {
                           }}
                         >
                           <Layers size={12} />
-                          <span>{group.hasMultipleSections ? 'Standard Group' : 'Class'}</span>
-                        </span>
-
-                        <span
-                          style={{
-                            backgroundColor: '#f1f5f9',
-                            border: '1px solid #e2e8f0',
-                            color: '#475569',
-                            padding: '2px 8px',
-                            borderRadius: '20px',
-                            fontSize: '11px',
-                            fontWeight: 700,
-                          }}
-                        >
-                          {totalDivisions} {totalDivisions === 1 ? 'Division' : 'Divisions'} ({group.sections.map((s) => s.section).join(', ')})
+                          <span>{group.hasMultipleSections ? `Divisions ${group.sections.map((x) => x.section).join(', ')}` : 'Class'}</span>
                         </span>
 
                         {markedDivisionsCount === totalDivisions && totalDivisions > 0 ? (
@@ -1868,7 +1922,7 @@ export default function TeacherAttendancePage() {
                             }}
                           >
                             <Check size={11} strokeWidth={3} />
-                            <span>All Marked Today</span>
+                            <span>Done today</span>
                           </span>
                         ) : markedDivisionsCount > 0 ? (
                           <span
@@ -1900,7 +1954,7 @@ export default function TeacherAttendancePage() {
                             }}
                           >
                             <Clock size={11} />
-                            <span>Roll Call Pending</span>
+                            <span>Not taken yet</span>
                           </span>
                         )}
                       </div>
@@ -1924,32 +1978,31 @@ export default function TeacherAttendancePage() {
                           display: 'flex',
                           alignItems: 'center',
                           gap: '6px',
+                          flexWrap: 'wrap',
                         }}
                       >
                         <Users size={12} color="#64748b" />
-                        <span>{totalStudentsInStandard} Total Enrolled</span>
-                        <span style={{ color: '#cbd5e1' }}>•</span>
-                        <span style={{ color: '#4f46e5', fontWeight: 600 }}>
-                          {group.hasMultipleSections ? 'Tap to view divisions' : 'Tap to take roll call'}
-                        </span>
+                        <span style={{ whiteSpace: 'nowrap' }}>{totalStudentsInStandard} students</span>
+                        {(() => {
+                          let p = 0;
+                          let a = 0;
+                          group.sections.forEach((b) => {
+                            const st = batchStatuses[batchKey(b)];
+                            if (st) {
+                              p += st.present + st.late;
+                              a += st.absent;
+                            }
+                          });
+                          return p + a > 0 ? (
+                            <span style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
+                              · <span style={{ color: '#059669' }}>{p} present</span> · <span style={{ color: '#dc2626' }}>{a} absent</span>
+                            </span>
+                          ) : null;
+                        })()}
                       </div>
                     </div>
 
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        color: '#4f46e5',
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        paddingLeft: '12px',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <span>{group.hasMultipleSections ? 'View Divisions' : 'Roll Call'}</span>
-                      <ChevronRight size={18} />
-                    </div>
+                    <ChevronRight size={20} color="#4f46e5" style={{ flexShrink: 0, marginLeft: '8px' }} />
                   </div>
                 );
               })}
@@ -1984,7 +2037,7 @@ export default function TeacherAttendancePage() {
               }}
             >
               <ArrowLeft size={16} color="#0284c7" />
-              <span>← All Classes</span>
+              <span>All Classes</span>
             </button>
 
             <span
@@ -2031,8 +2084,7 @@ export default function TeacherAttendancePage() {
           {/* Division Cards List (Image 2) */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {activeStandardGroup.sections.map((batch) => {
-              const bKey = getCanonicalBatchCode(batch.code || batch.id);
-              const bStatus = batchStatuses[bKey];
+              const bStatus = batchStatuses[batchKey(batch)];
               const isMarked = bStatus && bStatus.taken;
 
               return (
@@ -2101,7 +2153,7 @@ export default function TeacherAttendancePage() {
                           }}
                         >
                           <Check size={11} strokeWidth={3} />
-                          <span>{bStatus.present}P · {bStatus.absent}A · {bStatus.pending} Pending</span>
+                          <span>{bStatus.present + bStatus.late} present · {bStatus.absent} absent{bStatus.pending ? ` · ${bStatus.pending} left` : ''}</span>
                         </span>
                       ) : (
                         <span
@@ -2119,7 +2171,7 @@ export default function TeacherAttendancePage() {
                           }}
                         >
                           <Clock size={11} />
-                          <span>Roll Call Pending</span>
+                          <span>Not taken yet</span>
                         </span>
                       )}
                     </div>
@@ -2129,15 +2181,9 @@ export default function TeacherAttendancePage() {
                     </div>
 
                     <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Clock size={12} color="#64748b" />
-                      <span>{batch.timing || '08:00 AM – 10:30 AM'}</span>
-                      <span style={{ color: '#cbd5e1' }}>•</span>
-                      <MapPin size={12} color="#64748b" />
-                      <span>{batch.classroom || 'Room 101'}</span>
-                      <span style={{ color: '#cbd5e1' }}>•</span>
-                      <span style={{ color: '#2563eb', fontWeight: 700 }}>
-                        {typeof batch.student_count === 'number' ? `${batch.student_count} Students` : '0 Students'}
-                      </span>
+                      <Users size={12} color="#64748b" />
+                      <span style={{ color: '#2563eb', fontWeight: 700 }}>{batch.student_count || 0} students</span>
+                      {batch.timing && <span style={{ whiteSpace: 'nowrap' }}>· {batch.timing}</span>}
                     </div>
                   </div>
 
@@ -2153,8 +2199,7 @@ export default function TeacherAttendancePage() {
                       flexShrink: 0,
                     }}
                   >
-                    <span>{isMarked ? 'Edit' : 'Take Roll Call'}</span>
-                    <ChevronRight size={16} />
+                    <ChevronRight size={20} />
                   </div>
                 </div>
               );
@@ -2203,7 +2248,7 @@ export default function TeacherAttendancePage() {
               }}
             >
               <ArrowLeft size={16} color="#0284c7" />
-              <span>{activeStandardGroup?.hasMultipleSections ? `← ${activeStandardGroup.standardName}` : '← All Classes'}</span>
+              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>{activeStandardGroup?.hasMultipleSections ? activeStandardGroup.standardName : 'All Classes'}</span>
             </button>
 
             <div
@@ -2262,15 +2307,15 @@ export default function TeacherAttendancePage() {
                   gap: '4px',
                 }}
               >
-                <MapPin size={11} color="#64748b" />
-                {activeBatch.classroom || 'Room 101'}
+                {activeBatch.classroom && <MapPin size={11} color="#64748b" />}
+                {activeBatch.classroom || ''}
               </span>
             </div>
             <h2 style={{ margin: 0, fontSize: '19px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
               {activeBatch.name}
             </h2>
             <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-              {activeBatch.timing || 'Daily Roll Call Session'}
+              {activeBatch.timing || ''}
             </div>
           </div>
 
@@ -2483,239 +2528,16 @@ export default function TeacherAttendancePage() {
                 </div>
               </div>
             ) : (
-              filteredStudents.map((student) => {
-              const status = attendanceMap[student.id] || attendanceMap[student.admission_no] || 'Pending';
-              const isPresent = status === 'Present';
-              const isLate = status === 'Late';
-              const isAbsent = status === 'Absent';
-              const isPending = status === 'Pending';
-
-              return (
-                <div
+              filteredStudents.slice(0, renderCount).map((student) => (
+                <StudentRow
                   key={student.id}
-                  className="liquid-card"
-                  style={{
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '16px',
-                    padding: '14px',
-                    boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '12px',
-                  }}
-                >
-                  {/* TIER 1: Student Details with FULL NAME VISIBILITY (NO TRUNCATION) */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '10px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
-                      {/* Roll Number Badge */}
-                      <div
-                        style={{
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '10px',
-                          backgroundColor: '#f1f5f9',
-                          border: '1px solid #cbd5e1',
-                          color: '#0f172a',
-                          fontSize: '14px',
-                          fontWeight: 800,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                          boxShadow: '0 2px 6px rgba(15, 23, 42, 0.05)',
-                        }}
-                      >
-                        {student.roll_no}
-                      </div>
-
-                      {/* Full Name & Admission No */}
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div
-                          style={{
-                            fontSize: '15px',
-                            fontWeight: 800,
-                            color: '#0f172a',
-                            lineHeight: 1.3,
-                            wordBreak: 'break-word',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <span>{student.full_name || student.name || student['Student Name'] || `Student ${student.roll_no || student.admission_no}`}</span>
-                          {isStudentBirthdayToday(student.dob) && (
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                padding: '1px 6px',
-                                borderRadius: '10px',
-                                backgroundColor: '#fce7f3',
-                                color: '#be185d',
-                                fontSize: '10px',
-                                fontWeight: 800,
-                              }}
-                            >
-                              🎂 Birthday!
-                            </span>
-                          )}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: '11px',
-                            color: '#64748b',
-                            marginTop: '2px',
-                            fontWeight: 600,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                          }}
-                        >
-                          <span>ID: <span style={{ color: '#334155', fontFamily: 'monospace', fontWeight: 700 }}>{student.admission_no}</span></span>
-                          {isStudentBirthdayToday(student.dob) && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveBirthdayStudent(student);
-                                setIsBirthdayModalOpen(true);
-                              }}
-                              style={{
-                                border: 'none',
-                                background: '#ec4899',
-                                color: '#ffffff',
-                                borderRadius: '4px',
-                                padding: '2px 8px',
-                                fontSize: '10.5px',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                              }}
-                            >
-                              🎉 Wish
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Status Pill Badge */}
-                    <span
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: '20px',
-                        fontSize: '11px',
-                        fontWeight: 800,
-                        backgroundColor: isPresent ? '#ecfdf5' : isLate ? '#fffbeb' : isAbsent ? '#fff1f2' : '#fef3c7',
-                        color: isPresent ? '#059669' : isLate ? '#b45309' : isAbsent ? '#e11d48' : '#d97706',
-                        border: `1px solid ${isPresent ? '#a7f3d0' : isLate ? '#fde68a' : isAbsent ? '#fecdd3' : '#fcd34d'}`,
-                        flexShrink: 0,
-                      }}
-                    >
-                      {status}
-                    </span>
-                  </div>
-
-                  {/* TIER 2: Full-Width 3-Button Segmented Selector for Thumb Comfort */}
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(3, 1fr)',
-                      gap: '6px',
-                      backgroundColor: '#f1f5f9',
-                      border: '1px solid #e2e8f0',
-                      padding: '4px',
-                      borderRadius: '12px',
-                    }}
-                  >
-                    {/* Present Button */}
-                    <button
-                      type="button"
-                      onClick={() => setStudentStatus(student.id, 'Present')}
-                      className="touch-action-btn"
-                      style={{
-                        backgroundColor: isPresent ? '#10b981' : 'transparent',
-                        color: isPresent ? '#ffffff' : '#64748b',
-                        border: 'none',
-                        borderRadius: '9px',
-                        padding: '10px 4px',
-                        fontSize: '13px',
-                        fontWeight: isPresent ? 800 : 600,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: isPresent ? '0 2px 8px rgba(16, 185, 129, 0.35)' : 'none',
-                      }}
-                    >
-                      <Check size={15} strokeWidth={isPresent ? 3 : 2} color={isPresent ? '#ffffff' : '#64748b'} />
-                      <span>Present</span>
-                    </button>
-
-                    {/* Late Button */}
-                    <button
-                      type="button"
-                      onClick={() => setStudentStatus(student.id, 'Late')}
-                      className="touch-action-btn"
-                      style={{
-                        backgroundColor: isLate ? '#f59e0b' : 'transparent',
-                        color: isLate ? '#ffffff' : '#64748b',
-                        border: 'none',
-                        borderRadius: '9px',
-                        padding: '10px 4px',
-                        fontSize: '13px',
-                        fontWeight: isLate ? 800 : 600,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: isLate ? '0 2px 8px rgba(245, 158, 11, 0.35)' : 'none',
-                      }}
-                    >
-                      <Clock size={15} strokeWidth={isLate ? 3 : 2} color={isLate ? '#ffffff' : '#64748b'} />
-                      <span>Late</span>
-                    </button>
-
-                    {/* Absent Button */}
-                    <button
-                      type="button"
-                      onClick={() => setStudentStatus(student.id, 'Absent')}
-                      className="touch-action-btn"
-                      style={{
-                        backgroundColor: isAbsent ? '#ef4444' : 'transparent',
-                        color: isAbsent ? '#ffffff' : '#64748b',
-                        border: 'none',
-                        borderRadius: '9px',
-                        padding: '10px 4px',
-                        fontSize: '13px',
-                        fontWeight: isAbsent ? 800 : 600,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        boxShadow: isAbsent ? '0 2px 8px rgba(239, 68, 68, 0.35)' : 'none',
-                      }}
-                    >
-                      <X size={15} strokeWidth={isAbsent ? 3 : 2} color={isAbsent ? '#ffffff' : '#64748b'} />
-                      <span>Absent</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })
-          )}
+                  student={student}
+                  status={attendanceMap[student.id] || attendanceMap[student.admission_no] || 'Pending'}
+                  onSetStatus={onSetStatus}
+                  onWish={onWish}
+                />
+              ))
+            )}
         </div>
 
           {/* Sticky Bottom "DONE — Save to School PC" Action Bar (Floating White Glass Dock) */}
@@ -2725,9 +2547,7 @@ export default function TeacherAttendancePage() {
               bottom: '64px',
               left: 0,
               right: 0,
-              backgroundColor: 'rgba(255, 255, 255, 0.94)',
-              backdropFilter: 'blur(24px)',
-              WebkitBackdropFilter: 'blur(24px)',
+              backgroundColor: '#ffffff',
               borderTop: '1px solid #e2e8f0',
               padding: '10px 16px',
               zIndex: 40,
@@ -2760,13 +2580,13 @@ export default function TeacherAttendancePage() {
                 {isSubmitting ? (
                   <>
                     <RefreshCw size={17} className="animate-spin" />
-                    <span>Synchronizing to School PC...</span>
+                    <span>Saving…</span>
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 size={18} color="#ffffff" />
-                    <span>
-                      ✓ Save to School PC ({presentCount} Present · {absentCount} Absent)
+                    <CheckCircle2 size={18} color="#ffffff" style={{ flexShrink: 0 }} />
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      Save · {presentCount + lateCount} present · {absentCount} absent
                     </span>
                   </>
                 )}
@@ -2982,7 +2802,7 @@ export default function TeacherAttendancePage() {
                 boxShadow: '0 4px 16px rgba(16, 185, 129, 0.3)',
               }}
             >
-              Back to Batches
+              Back to Classes
             </button>
           </div>
         </div>
@@ -3160,9 +2980,7 @@ export default function TeacherAttendancePage() {
           left: 0,
           right: 0,
           height: '64px',
-          backgroundColor: 'rgba(255, 255, 255, 0.94)',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
+          backgroundColor: '#ffffff',
           borderTop: '1px solid #e2e8f0',
           display: 'flex',
           alignItems: 'center',
@@ -3200,7 +3018,7 @@ export default function TeacherAttendancePage() {
           >
             <School size={20} color={viewMode === 'batches' ? '#2563eb' : '#64748b'} />
           </div>
-          <span style={{ fontSize: '10px', fontWeight: viewMode === 'batches' ? 800 : 500 }}>Batches</span>
+          <span style={{ fontSize: '10px', fontWeight: viewMode === 'batches' ? 800 : 500 }}>Classes</span>
         </button>
 
         {/* 2. Camera QR Scanner */}
@@ -3243,33 +3061,7 @@ export default function TeacherAttendancePage() {
           }}
         >
           <RefreshCw size={20} color="#64748b" className={isLoading || isFlushingQueue ? 'animate-spin' : ''} />
-          <span style={{ fontSize: '10px', fontWeight: 500 }}>Sync PC</span>
-        </button>
-
-        {/* 4. Auto-Scan Wi-Fi */}
-        <button
-          onClick={handleTriggerAutoDiscovery}
-          className="touch-action-btn"
-          style={{
-            background: 'none',
-            border: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '3px',
-            color: connectionStatus.ok ? '#059669' : '#b45309',
-            cursor: 'pointer',
-            padding: '6px 12px',
-          }}
-        >
-          {isAutoDiscovering ? (
-            <RefreshCw size={20} color="#059669" className="animate-spin" />
-          ) : (
-            <Search size={20} color={connectionStatus.ok ? '#059669' : '#b45309'} />
-          )}
-          <span style={{ fontSize: '10px', fontWeight: 700 }}>
-            {connectionStatus.ok ? 'Wi-Fi PC' : 'Find PC'}
-          </span>
+          <span style={{ fontSize: '10px', fontWeight: 500 }}>Refresh</span>
         </button>
 
         {/* 5. Settings */}

@@ -45,13 +45,14 @@ import {
   getWhatsAppShareUrl,
 } from '../lib/telegramClient';
 
+import { todayLocal } from '../lib/dateUtils';
 /**
  * Daily Attendance Register — Real Supabase Database Connection
  */
 export default function AttendancePage({ onRefreshCounts }) {
   const [batches, setBatches] = useState([]);
   const [selectedBatchId, setSelectedBatchId] = useState('');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(todayLocal());
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);

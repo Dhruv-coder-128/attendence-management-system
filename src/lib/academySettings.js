@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from './supabase.js';
+import { currentAcademicYear } from './dateUtils.js';
 
 /**
  * Default Academy Branding & Configuration
@@ -14,7 +15,7 @@ export const DEFAULT_ACADEMY_SETTINGS = {
   email: '',
   logo_url: '',
   tagline: '',
-  academic_year: 'AY 2026-27 (Term 1)',
+  academic_year: currentAcademicYear(),
   min_attendance_threshold: 75,
   late_grace_minutes: 15,
   auto_birthday_wish_enabled: false,
