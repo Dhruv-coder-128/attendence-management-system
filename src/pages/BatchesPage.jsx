@@ -413,20 +413,18 @@ export default function BatchesPage({ onRefreshCounts }) {
           backgroundColor: '#ffffff',
         }}
       >
-        <div style={{ flex: 1, minWidth: '240px', position: 'relative' }}>
-          <Search size={15} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-light)' }} />
+        <label className="search-field wide">
+          <Search size={16} />
           <input
-            type="text"
+            type="search"
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
               setCurrentPage(1);
             }}
-            placeholder="Search batches by code, name, classroom, or course..."
-            className="form-input"
-            style={{ paddingLeft: '32px' }}
+            placeholder="Search by code, name, classroom or course"
           />
-        </div>
+        </label>
 
         <div style={{ width: '220px' }}>
           <select

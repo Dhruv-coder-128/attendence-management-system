@@ -1214,16 +1214,16 @@ export default function AttendancePage({ onRefreshCounts }) {
       </div>
 
       {/* Student search */}
-      <div style={{ position: 'relative', maxWidth: '360px', marginBottom: '12px' }}>
-        <Search size={15} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
-        <input
-          type="search"
-          className="form-input"
-          placeholder="Search student by name, roll no or admission no"
-          value={studentSearch}
-          onChange={(e) => { setStudentSearch(e.target.value); setCurrentPage(1); }}
-          style={{ paddingLeft: '32px', width: '100%' }}
-        />
+      <div className="toolbar-row">
+        <label className="search-field">
+          <Search size={16} />
+          <input
+            type="search"
+            placeholder="Search by name, roll no or admission no"
+            value={studentSearch}
+            onChange={(e) => { setStudentSearch(e.target.value); setCurrentPage(1); }}
+          />
+        </label>
       </div>
 
       {/* Attendance Register Table */}

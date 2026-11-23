@@ -38,7 +38,7 @@ export default function ParentPortalPreviewModal({
         border: '1px solid #1f3250',
         display: 'flex',
         flexDirection: 'column',
-        maxHeight: '94vh',
+        maxHeight: 'calc(94vh / var(--ui-zoom, 1))',
       }}>
         {/* Top Control Bar for Admin */}
         <div style={{

@@ -119,7 +119,7 @@ export default function SetupWizard({ onNavigate }) {
     setStep((s) => s + 1);
   };
 
-  const card = { width: 'min(560px, 94vw)', maxHeight: '92vh', overflowY: 'auto', background: '#fff', borderRadius: '14px', boxShadow: '0 25px 60px rgba(0,0,0,0.45)' };
+  const card = { width: 'min(560px, 94vw)', maxHeight: 'calc(92vh / var(--ui-zoom, 1))', overflowY: 'auto', background: '#fff', borderRadius: '14px', boxShadow: '0 25px 60px rgba(0,0,0,0.45)' };
   const label = { display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' };
   const field = { width: '100%', padding: '9px 11px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box' };
 

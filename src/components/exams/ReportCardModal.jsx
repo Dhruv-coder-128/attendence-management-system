@@ -88,7 +88,7 @@ export default function ReportCardModal({
             borderRadius: '8px',
             width: '100%',
             maxWidth: '680px',
-            maxHeight: '92vh',
+            maxHeight: 'calc(92vh / var(--ui-zoom, 1))',
             display: 'flex',
             flexDirection: 'column',
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)',

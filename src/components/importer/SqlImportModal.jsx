@@ -95,7 +95,7 @@ VALUES ('Rahul Sharma', 'ADM-2026-001', '01', 'rahul@example.com', '9876543210',
         </div>
 
         {/* Body */}
-        <div className="modal-body" style={{ padding: '24px', backgroundColor: '#ffffff', maxHeight: '75vh', overflowY: 'auto' }}>
+        <div className="modal-body" style={{ padding: '24px', backgroundColor: '#ffffff', maxHeight: 'calc(75vh / var(--ui-zoom, 1))', overflowY: 'auto' }}>
           {error && (
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', backgroundColor: 'var(--status-absent-bg)', border: '1px solid var(--status-absent-border)', borderRadius: '6px', padding: '12px', marginBottom: '16px', color: 'var(--status-absent)', fontSize: '12.5px' }}>
               <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />

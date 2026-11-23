@@ -1020,20 +1020,18 @@ export default function ParentsPage({ onRefreshCounts }) {
           backgroundColor: '#ffffff',
         }}
       >
-        <div style={{ flex: 1, minWidth: '240px', position: 'relative' }}>
-          <Search size={15} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-light)' }} />
+        <label className="search-field wide">
+          <Search size={16} />
           <input
-            type="text"
+            type="search"
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
               setCurrentPage(1);
             }}
-            placeholder="Search guardians by name, phone, email, or student ward..."
-            className="form-input"
-            style={{ paddingLeft: '32px' }}
+            placeholder="Search by name, phone, email or student"
           />
-        </div>
+        </label>
 
         <div style={{ width: '200px' }}>
           <select

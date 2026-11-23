@@ -908,17 +908,15 @@ export default function ReportsPage() {
           flexWrap: 'wrap',
         }}
       >
-        <div style={{ flex: 1, minWidth: '220px', position: 'relative' }}>
-          <Search size={15} style={{ position: 'absolute', left: '10px', top: '10px', color: '#94a3b8' }} />
+        <label className="search-field wide">
+          <Search size={16} />
           <input
-            type="text"
-            placeholder="Search report by name, admission no, or standard..."
+            type="search"
+            placeholder="Search by name, admission no or standard"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="form-input"
-            style={{ paddingLeft: '32px' }}
           />
-        </div>
+        </label>
 
         {activeTab === 'attendance' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1551,7 +1549,7 @@ export default function ReportsPage() {
               borderRadius: '20px',
               width: '100%',
               maxWidth: '720px',
-              maxHeight: '90vh',
+              maxHeight: 'calc(90vh / var(--ui-zoom, 1))',
               display: 'flex',
               flexDirection: 'column',
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',

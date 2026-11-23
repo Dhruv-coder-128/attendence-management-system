@@ -493,15 +493,9 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
         </div>
       )}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))',
-          gap: '24px',
-        }}
-      >
+      <div>
         {/* Full-Width Institutional License & Validity Card */}
-        <div className="erp-card" style={{ gridColumn: '1 / -1', padding: '24px', border: '1px solid var(--border-subtle)', borderLeft: '4px solid var(--gold-primary)' }}>
+        <div className="erp-card" style={{ padding: '24px', marginBottom: '24px', border: '1px solid var(--border-subtle)', borderLeft: '4px solid var(--gold-primary)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div
@@ -714,8 +708,9 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
           </div>
         </div>
 
-        {/* Left Column: Institute Profile & Attendance Policy */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div className="settings-flow">
+        {/* Institute Profile & Attendance Policy */}
+        <div className="settings-group">
           <div className="erp-card" style={{ padding: '20px' }}>
             <h2
               style={{
@@ -893,8 +888,8 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
           </div>
         </div>
 
-        {/* Right Column: Database Storage Engine & Diagnostics */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {/* Database Storage Engine, Diagnostics, Gateway & Birthday Wishes */}
+        <div className="settings-group">
           <div className="erp-card" style={{ padding: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1703,6 +1698,7 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
               </Button>
             </div>
           </div>
+        </div>
         </div>
       </div>
 

@@ -70,7 +70,38 @@
   /* Layout dimensions */
   --sidebar-width: 260px;
   --topbar-height: 64px;
+
+  /* Screen scale: 1 on laptops, larger on big monitors / TVs (see the media queries below) */
+  --ui-zoom: 1;
+
+  /* Shared shape */
+  --radius-control: 8px;
+  --radius-card: 14px;
+  --control-height: 38px;
+  --focus-ring: 0 0 0 3px rgba(42, 70, 116, 0.14);
 }
+
+/* Big monitors and TVs: scale the whole app shell so text and controls stay readable from a distance */
+@media (min-width: 1920px) { :root { --ui-zoom: 1.15; } }
+@media (min-width: 2400px) { :root { --ui-zoom: 1.35; } }
+@media (min-width: 3000px) { :root { --ui-zoom: 1.7; } }
+@media (min-width: 3800px) { :root { --ui-zoom: 2.1; } }
+
+/* Small laptops: give the content more room */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  :root { --sidebar-width: 228px; }
+  .erp-content { padding: 18px !important; }
+}
+
+:focus-visible {
+  outline: 2px solid var(--navy-500);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: content-box; border: 2px solid transparent; }
+::-webkit-scrollbar-track { background: transparent; }
 
 /* Base Reset */
 *,
@@ -111,8 +142,9 @@ textarea {
    ===================================================================== */
 .erp-container {
   display: flex;
-  min-height: 100vh;
+  min-height: calc(100vh / var(--ui-zoom));
   width: 100%;
+  zoom: var(--ui-zoom);
 }
 
 .erp-sidebar {
@@ -136,7 +168,7 @@ textarea {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: calc(100vh / var(--ui-zoom));
   background-color: var(--bg-app);
 }
 
@@ -401,7 +433,7 @@ textarea {
   justify-content: center;
   gap: 8px;
   font-weight: 500;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
@@ -704,10 +736,10 @@ textarea {
 
 .toolbar-search input {
   width: 100%;
-  height: 36px;
+  height: var(--control-height);
   padding: 0 12px 0 34px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
   font-size: 13px;
   background-color: var(--bg-subtle);
 }
@@ -731,6 +763,70 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* One search field used everywhere: icon inside, same height as buttons, never overflows */
+.search-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: 420px;
+}
+
+.search-field.wide {
+  max-width: none;
+  flex: 1 1 260px;
+}
+
+.search-field > svg {
+  position: absolute;
+  left: 12px;
+  color: var(--text-light);
+  pointer-events: none;
+}
+
+.search-field > input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px 0 36px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background-color: var(--bg-surface);
+  font-size: 13px;
+  color: var(--text-main);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.search-field > input:focus {
+  outline: none;
+  border-color: var(--navy-600);
+  box-shadow: 0 0 0 3px rgba(42, 70, 116, 0.12);
+}
+
+/* A row that holds a search field and its filters/actions */
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  margin-bottom: 14px;
+}
+
+/* Settings: cards flow into as many columns as fit, so no column is left half-empty */
+.settings-flow {
+  columns: 440px;
+  column-gap: 24px;
+}
+
+.settings-flow > .settings-group {
+  display: contents;
+}
+
+.settings-flow > .settings-group > .erp-card {
+  break-inside: avoid;
+  margin-bottom: 24px;
 }
 
 .erp-table-scroll {
@@ -804,12 +900,17 @@ textarea {
 .form-textarea {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
   font-size: 13px;
   background-color: #ffffff;
   color: var(--text-main);
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-input,
+.form-select {
+  min-height: var(--control-height);
 }
 
 .form-input:focus,
@@ -817,7 +918,7 @@ textarea {
 .form-textarea:focus {
   outline: none;
   border-color: var(--navy-600);
-  box-shadow: 0 0 0 1px var(--navy-600);
+  box-shadow: var(--focus-ring);
 }
 
 /* =====================================================================
@@ -842,7 +943,7 @@ textarea {
   background-color: #ffffff;
   border-radius: 18px;
   width: 100%;
-  max-height: 92vh;
+  max-height: calc(92vh / var(--ui-zoom));
   display: flex;
   flex-direction: column;
   box-shadow: 0 25px 60px -12px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(15, 23, 42, 0.06);
@@ -946,7 +1047,8 @@ textarea {
 
 .page-title {
   font-family: var(--font-heading);
-  font-size: 20px;
+  font-size: clamp(18px, 1.4vw + 10px, 24px);
+  letter-spacing: -0.01em;
   font-weight: 700;
   color: var(--navy-950);
   margin-bottom: 4px;
@@ -1177,7 +1279,7 @@ textarea {
   .modal-dialog {
     max-width: 100% !important;
     width: 100% !important;
-    max-height: 94vh !important;
+    max-height: calc(94vh / var(--ui-zoom)) !important;
     border-radius: 12px 12px 0 0 !important;
     margin: 0 !important;
   }

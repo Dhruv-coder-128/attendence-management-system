@@ -124,7 +124,7 @@ export default function MasterImportModal({ isOpen, onClose, onSuccess }) {
           overflow: 'hidden',
           boxShadow: '0 24px 48px rgba(0,0,0,0.4)',
           backgroundColor: '#ffffff',
-          maxHeight: '90vh',
+          maxHeight: 'calc(90vh / var(--ui-zoom, 1))',
           display: 'flex',
           flexDirection: 'column',
         }}

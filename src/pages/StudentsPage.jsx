@@ -982,20 +982,18 @@ export default function StudentsPage({ onRefreshCounts }) {
         }}
       >
         {/* Search */}
-        <div style={{ flex: 1, minWidth: '240px', position: 'relative' }}>
-          <Search size={15} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-light)' }} />
+        <label className="search-field wide">
+          <Search size={16} />
           <input
-            type="text"
+            type="search"
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
               setCurrentPage(1);
             }}
-            placeholder="Search by student name, admission no, roll no, or phone..."
-            className="form-input"
-            style={{ paddingLeft: '32px' }}
+            placeholder="Search by name, admission no, roll no or phone"
           />
-        </div>
+        </label>
 
         {/* Course Filter */}
         <div style={{ width: '180px' }}>

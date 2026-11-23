@@ -443,20 +443,18 @@ export default function ExamsPage() {
           backgroundColor: '#ffffff',
         }}
       >
-        <div style={{ flex: 1, minWidth: '220px', position: 'relative' }}>
-          <Search size={15} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-light)' }} />
+        <label className="search-field wide">
+          <Search size={16} />
           <input
-            type="text"
+            type="search"
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
               setCurrentPage(1);
             }}
-            placeholder="Search exam by title, subject, or syllabus..."
-            className="form-input"
-            style={{ paddingLeft: '32px' }}
+            placeholder="Search by title, subject or syllabus"
           />
-        </div>
+        </label>
 
         <div style={{ width: '180px' }}>
           <select
@@ -946,7 +944,7 @@ export default function ExamsPage() {
                 <div>No active students assigned to this course or batch.</div>
               </div>
             ) : (
-              <div style={{ maxHeight: '55vh', overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}>
+              <div style={{ maxHeight: 'calc(55vh / var(--ui-zoom, 1))', overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}>
                 <table className="erp-table" style={{ margin: 0 }}>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 1, backgroundColor: '#f8fafc' }}>
                     <tr>

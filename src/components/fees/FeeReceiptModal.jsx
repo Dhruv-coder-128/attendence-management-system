@@ -76,7 +76,7 @@ export default function FeeReceiptModal({
             borderRadius: '10px',
             maxWidth: '750px',
             width: '100%',
-            maxHeight: '92vh',
+            maxHeight: 'calc(92vh / var(--ui-zoom, 1))',
             display: 'flex',
             flexDirection: 'column',
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
