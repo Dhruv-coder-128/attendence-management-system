@@ -10,6 +10,7 @@
     "test": "node --test \"tests/*.test.mjs\"",
     "preview": "vite preview",
     "key": "node scripts/make-key.mjs",
+    "console": "node scripts/admin-console.mjs",
     "release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1",
     "tunnel": "npx untun tunnel --port 5173",
     "test:local": "node scripts/test-local-workflow.mjs",

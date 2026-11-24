@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SMS Admin Console</title>
+<style>
+:root{--navy-950:#070e19;--navy-900:#0a1424;--navy-800:#14243e;--navy-600:#2a4674;--gold:#c5a880;--gold-dark:#9e7d47;--bg:#f4f6f9;--surface:#fff;--subtle:#f8fafc;--text:#0f172a;--muted:#64748b;--border:#e2e8f0;--border-strong:#cbd5e1;--ok:#047857;--ok-bg:#ecfdf5;--ok-b:#a7f3d0;--bad:#b91c1c;--bad-bg:#fef2f2;--bad-b:#fecaca;--warn:#b45309;--warn-bg:#fffbeb;--warn-b:#fde68a;--r:8px;--h:38px;--ring:0 0 0 3px rgba(42,70,116,.14)}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px}
+body{font-family:Inter,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;-webkit-font-smoothing:antialiased}
+@media(min-width:1920px){html{font-size:16px}}
+@media(min-width:2800px){html{font-size:21px}}
+header{background:var(--navy-900);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+header h1{font-size:1.15rem;letter-spacing:.02em}
+header .sub{color:var(--gold);font-size:.8rem}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;font-size:.78rem;font-weight:600;border:1px solid}
+.chip.ver{background:var(--navy-800);color:var(--gold);border-color:rgba(197,168,128,.35)}
+.spacer{flex:1}
+nav{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;display:flex;gap:4px;overflow-x:auto}
+nav button{background:none;border:none;padding:13px 16px;font:inherit;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
+nav button.on{color:var(--navy-900);border-bottom-color:var(--gold)}
+main{max-width:1280px;margin:0 auto;padding:24px}
+section{display:none}section.on{display:block}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 2px 10px rgba(15,23,42,.04);padding:20px;margin-bottom:20px}
+h2{font-size:1.1rem;margin-bottom:4px}
+.hint{color:var(--muted);font-size:.86rem}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+.stat b{display:block;font-size:1.6rem;line-height:1.1}
+.stat span{color:var(--muted);font-size:.76rem;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:var(--h);padding:0 16px;border-radius:var(--r);border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font:inherit;font-weight:600;cursor:pointer;white-space:nowrap;transition:.15s}
+.btn:hover{background:var(--subtle);border-color:var(--navy-600)}
+.btn.primary{background:var(--navy-900);color:#fff;border-color:var(--navy-950)}
+.btn.primary:hover{background:var(--navy-800)}
+.btn.sm{height:32px;padding:0 12px;font-size:.84rem}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+input,select,textarea{font:inherit;color:var(--text);width:100%;min-height:var(--h);padding:0 12px;border:1px solid var(--border-strong);border-radius:var(--r);background:#fff;transition:.15s}
+textarea{padding:10px 12px;min-height:90px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--navy-600);box-shadow:var(--ring)}
+label.f{display:block;margin-bottom:14px;font-weight:600;font-size:.86rem;color:#334155}
+label.f input,label.f select{margin-top:6px;font-weight:400}
+label.chk{display:flex;gap:10px;align-items:flex-start;font-size:.9rem;margin-bottom:14px}
+label.chk input{width:auto;min-height:0;margin-top:3px}
+.search{position:relative;flex:1 1 260px;max-width:420px}
+.search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#94a3b8}
+.search input{padding-left:36px}
+.tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th{background:var(--subtle);text-align:left;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#334155;padding:10px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:middle;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f9fafb}
+td.act{white-space:nowrap;text-align:right}
+td.act .btn{margin-left:6px}
+.mono{font-family:"JetBrains Mono",Consolas,monospace;font-size:.8rem;color:#475569}
+.badge{display:inline-block;padding:2px 9px;border-radius:6px;font-size:.78rem;font-weight:700;border:1px solid}
+.b-ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok-b)}
+.b-warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-b)}
+.b-bad{background:var(--bad-bg);color:var(--bad);border-color:var(--bad-b)}
+.empty{padding:34px;text-align:center;color:var(--muted)}
+dialog{border:none;border-radius:16px;padding:0;width:min(94vw,520px);box-shadow:0 25px 60px rgba(15,23,42,.35);margin:auto}
+dialog::backdrop{background:rgba(10,20,36,.65);backdrop-filter:blur(4px)}
+.dh{padding:18px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.dh h3{font-size:1.05rem}
+.db{padding:20px 24px;max-height:70vh;overflow-y:auto}
+.df{padding:14px 24px;border-top:1px solid var(--border);background:var(--subtle);display:flex;justify-content:flex-end;gap:10px}
+.x{background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--muted)}
+.keybox{background:var(--subtle);border:1px dashed var(--border-strong);border-radius:10px;padding:12px;word-break:break-all;font-family:"JetBrains Mono",Consolas,monospace;font-size:.78rem;margin:10px 0}
+pre.log{background:var(--navy-950);color:#cbd5e1;border-radius:12px;padding:16px;height:420px;overflow:auto;font:12.5px/1.5 "JetBrains Mono",Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+.files{display:grid;gap:8px;margin-top:12px}
+.file{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--subtle);flex-wrap:wrap}
+.note{padding:10px 14px;border-radius:10px;font-size:.88rem;margin-top:12px;border:1px solid}
+.note.warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-b)}
+.note.ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok-b)}
+.note.bad{background:var(--bad-bg);color:var(--bad);border-color:var(--bad-b)}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--navy-900);color:#fff;padding:11px 20px;border-radius:10px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.3);display:none;z-index:50;max-width:90vw}
+#toast.bad{background:var(--bad)}
+@media(max-width:640px){main{padding:14px}header,nav{padding-left:14px;padding-right:14px}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>SMS Admin Console</h1><div class="sub">Runs only on this PC. Nothing is uploaded.</div></div>
+  <div class="spacer"></div>
+  <span class="chip ver" id="verChip">version</span>
+</header>
+<nav>
+  <button class="on" data-tab="schools">Schools &amp; Keys</button>
+  <button data-tab="release">Build &amp; Release</button>
+  <button data-tab="safety">Key Safety</button>
+</nav>
+<main>
+
+<section id="schools" class="on">
+  <div class="stats">
+    <div class="stat"><span>Schools</span><b id="stTotal">0</b></div>
+    <div class="stat"><span>Ending within 7 days</span><b id="stSoon" style="color:var(--warn)">0</b></div>
+    <div class="stat"><span>Expired</span><b id="stExp" style="color:var(--bad)">0</b></div>
+  </div>
+  <div class="row" style="margin-bottom:14px">
+    <label class="search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><input id="q" type="search" placeholder="Search school or Device ID"></label>
+    <div class="spacer"></div>
+    <button class="btn primary" id="newBtn">+ New school key</button>
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>School</th><th>Key length</th><th>Students</th><th>Ends</th><th>Status</th><th>Device</th><th></th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table></div>
+</section>
+
+<section id="release">
+  <div class="card">
+    <div class="row">
+      <div><h2>Build the EXE and APK</h2><div class="hint">Runs the tests, builds the signed PC installer and the signed phone app, and prepares the update files.</div></div>
+      <div class="spacer"></div>
+      <span class="chip ver" id="verChip2"></span>
+    </div>
+    <div id="builtNote"></div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn" id="bumpBtn">Raise version +1</button>
+      <span class="hint">Do this before building new changes, so installed apps see a newer version.</span>
+    </div>
+    <label class="f" style="margin-top:16px">What changed (shown in the update bar)
+      <input id="notes" maxlength="300" placeholder="e.g. Cleaner search boxes and a balanced Settings page">
+    </label>
+    <div class="row">
+      <button class="btn primary" id="buildBtn">Build EXE + APK</button>
+      <button class="btn" id="testBtn">Run tests only</button>
+      <span id="jobState"></span>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Progress</h2>
+    <div class="hint" style="margin-bottom:10px">A full build takes about 3 to 6 minutes. You can leave this page open.</div>
+    <pre class="log" id="log">Nothing running.</pre>
+    <div id="outFiles"></div>
+  </div>
+</section>
+
+<section id="safety">
+  <div class="card">
+    <h2>Your private key files</h2>
+    <div class="hint">These sign your licence keys and your updates. If one is lost, existing installs cannot accept new keys or updates. Keep a copy on a USB drive or in Google Drive. Never put them on GitHub.</div>
+    <div id="keyFiles" class="files"></div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn" data-open="keys">Open the key folder</button>
+      <span class="hint" id="dataDir"></span>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<dialog id="newDlg"><form method="dialog" id="newForm">
+  <div class="dh"><h3>New school key</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="db">
+    <label class="f">School name<input name="school" required maxlength="60" placeholder="e.g. Noble School"></label>
+    <label class="f">Device ID (from the school's activation screen)<input name="deviceId" required placeholder="HW-WIN-XXXXXXXX-..."></label>
+    <label class="f">Key length<select name="days"></select></label>
+    <label class="f">Student plan<select name="students"></select></label>
+    <div class="hint">The default plan is the smallest, so a forgotten choice never gives away more than 200 students.</div>
+  </div>
+  <div class="df"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" id="newGo">Make key</button></div>
+</form></dialog>
+
+<dialog id="renewDlg"><form method="dialog" id="renewForm">
+  <div class="dh"><h3>Renew or upgrade</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="db">
+    <label class="f">School<input name="school" readonly></label>
+    <label class="f">New key length<select name="days"></select></label>
+    <label class="f">Student plan<select name="students"></select></label>
+    <label class="chk"><input type="checkbox" name="carry" checked><span>Add the unused days of the current paid key (a 10-day trial never carries over)</span></label>
+    <label class="f">New Device ID (only if the school changed computer)<input name="device" placeholder="Leave empty to keep the same computer"></label>
+    <div class="hint">The school's data is never touched. They paste the new key on the lock screen or in Settings.</div>
+  </div>
+  <div class="df"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary" id="renewGo">Make renewal key</button></div>
+</form></dialog>
+
+<dialog id="resDlg">
+  <div class="dh"><h3 id="resTitle">Key ready</h3><button type="button" class="x" data-close>&times;</button></div>
+  <div class="db">
+    <div id="resInfo" class="hint"></div>
+    <div class="keybox" id="resKey"></div>
+    <div class="row"><button class="btn primary" id="copyKey">Copy key</button><button class="btn" id="copyMsg">Copy WhatsApp message</button></div>
+    <div class="hint" style="margin-top:12px">Saved in your keys-issued.csv record.</div>
+  </div>
+  <div class="df"><button type="button" class="btn" data-close>Done</button></div>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+const TOKEN = new URLSearchParams(location.search).get('t') || sessionStorage.getItem('tok') || '';
+try { sessionStorage.setItem('tok', TOKEN); history.replaceState(null, '', location.pathname); } catch {}
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let S = null, logPos = 0, wasRunning = false, lastKey = null;
+
+async function api(path, body) {
+  const r = await fetch(path, { method: body ? 'POST' : 'GET', headers: { 'X-Console-Token': TOKEN, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'Something went wrong.');
+  return j;
+}
+let tt;
+function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.className = bad ? 'bad' : ''; t.style.display = 'block'; clearTimeout(tt); tt = setTimeout(() => (t.style.display = 'none'), 3500); }
+const fmtDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+const fmtSize = (n) => (n / 1048576).toFixed(1) + ' MB';
+const studentsLabel = (n) => (Number(n) === 5000 ? 'Unlimited' : n);
+
+// ---- tabs
+document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('on', x === b));
+  document.querySelectorAll('section').forEach((s) => s.classList.toggle('on', s.id === b.dataset.tab));
+}));
+document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
+document.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => openFolder(b.dataset.open)));
+async function openFolder(what) { try { await api('/api/open', { what }); } catch (e) { toast(e.message, true); } }
+
+// ---- schools
+function statusOf(r) {
+  if (r.daysLeft <= 0) return ['EXPIRED', 'b-bad'];
+  if (r.daysLeft <= 7) return [`Ends in ${r.daysLeft}d, renew soon`, 'b-warn'];
+  return [`${r.daysLeft} days left`, 'b-ok'];
+}
+function renderSchools() {
+  const q = $('#q').value.trim().toLowerCase();
+  const all = S.schools;
+  $('#stTotal').textContent = all.length;
+  $('#stSoon').textContent = all.filter((r) => r.daysLeft > 0 && r.daysLeft <= 7).length;
+  $('#stExp').textContent = all.filter((r) => r.daysLeft <= 0).length;
+  const list = all.filter((r) => !q || r.school.toLowerCase().includes(q) || r.device.toLowerCase().includes(q));
+  const tb = $('#rows');
+  if (!list.length) { tb.innerHTML = `<tr><td colspan="7" class="empty">${all.length ? 'No school matches your search.' : 'No keys made yet. Click "New school key" to make the first one.'}</td></tr>`; return; }
+  tb.innerHTML = list.map((r, i) => {
+    const [txt, cls] = statusOf(r);
+    return `<tr><td><b>${esc(r.school || '(no name)')}</b></td><td>${r.days <= 10 ? 'Trial' : esc(r.days) + '-day'}</td><td>${esc(studentsLabel(r.students))}</td><td>${esc(fmtDate(r.expires))}</td><td><span class="badge ${cls}">${esc(txt)}</span></td><td class="mono">${esc(r.device)}</td><td class="act"><button class="btn sm" data-copy="${i}">Copy key</button><button class="btn sm primary" data-renew="${i}">Renew</button></td></tr>`;
+  }).join('');
+  tb.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', () => { const r = list[b.dataset.copy]; copy(r.key, 'Key copied'); }));
+  tb.querySelectorAll('[data-renew]').forEach((b) => b.addEventListener('click', () => openRenew(list[b.dataset.renew])));
+}
+$('#q').addEventListener('input', () => S && renderSchools());
+
+function fillSelects(form, prevStudents, prevDays) {
+  const days = form.elements.days, st = form.elements.students;
+  days.innerHTML = S.plans.map((d) => `<option value="${d}"${d === (prevDays || 365) ? ' selected' : ''}>${d === 10 ? '10 days (trial)' : d + ' days'}</option>`).join('');
+  st.innerHTML = Object.entries(S.tiers).map(([n, t]) => `<option value="${n}"${Number(n) === Number(prevStudents || 200) ? ' selected' : ''}>${n === '5000' ? 'Unlimited' : n} students, ${t}</option>`).join('');
+}
+$('#newBtn').addEventListener('click', () => { const f = $('#newForm'); f.reset(); fillSelects(f, 200, 30); $('#newDlg').showModal(); });
+function openRenew(r) { const f = $('#renewForm'); f.reset(); f.elements.school.value = r.school; f.dataset.device = r.device; fillSelects(f, r.students, 365); f.elements.carry.checked = true; $('#renewDlg').showModal(); }
+
+async function busy(btn, fn) { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); } finally { btn.disabled = Boolean(S && S.job.running && btn.closest('#release')); } }
+
+$('#newForm').addEventListener('submit', (e) => { e.preventDefault(); const f = e.target; busy($('#newGo'), async () => {
+  const r = await api('/api/key/new', { school: f.elements.school.value, deviceId: f.elements.deviceId.value, days: Number(f.elements.days.value), students: Number(f.elements.students.value) });
+  $('#newDlg').close(); showResult('New key ready', r, `${f.elements.days.value}-day key`); await refresh();
+}); });
+$('#renewForm').addEventListener('submit', (e) => { e.preventDefault(); const f = e.target; busy($('#renewGo'), async () => {
+  const r = await api('/api/key/renew', { school: f.elements.school.value, device: f.elements.device.value.trim() || f.dataset.device, days: Number(f.elements.days.value), students: Number(f.elements.students.value), carry: f.elements.carry.checked });
+  $('#renewDlg').close(); showResult('Renewal key ready', r, r.carried ? `${r.planDays} days + ${r.carried} unused days` : `${r.planDays} days`); await refresh();
+}); });
+
+function showResult(title, r, plan) {
+  lastKey = r;
+  $('#resTitle').textContent = title;
+  $('#resInfo').innerHTML = `<b>${esc(r.school)}</b> &middot; ${esc(plan)} &middot; ${esc(studentsLabel(r.students))} students<br>Valid until <b>${esc(fmtDate(r.expiresAt))}</b>`;
+  $('#resKey').textContent = r.key;
+  $('#resDlg').showModal();
+}
+async function copy(text, msg) { try { await navigator.clipboard.writeText(text); toast(msg); } catch { toast('Could not copy. Select the text and press Ctrl+C.', true); } }
+$('#copyKey').addEventListener('click', () => copy(lastKey.key, 'Key copied'));
+$('#copyMsg').addEventListener('click', () => copy(`Hello, here is the SMS licence key for ${lastKey.school}, valid until ${fmtDate(lastKey.expiresAt)}:\n\n${lastKey.key}\n\nOpen the SMS app, go to Settings, tap "Change / Enter New License Key", paste it and tap Activate. Your data stays safe.`, 'Message copied'));
+
+// ---- release
+function renderRelease() {
+  $('#verChip').textContent = $('#verChip2').textContent = 'Version ' + S.version;
+  const exe = S.built.filter((f) => f.kind === 'exe'), apk = S.built.filter((f) => f.kind === 'apk');
+  const done = exe.length && apk.length;
+  $('#builtNote').innerHTML = done
+    ? `<div class="note warn">Version ${esc(S.version)} is already built. If you changed the app since then, press "Raise version +1" before building again.</div>`
+    : `<div class="note ok">Version ${esc(S.version)} has not been built yet.</div>`;
+  const j = S.job;
+  const st = $('#jobState');
+  if (j.running) st.innerHTML = '<span class="badge b-warn">Running...</span>';
+  else if (j.name && j.exitCode === 0) st.innerHTML = '<span class="badge b-ok">Finished OK</span>';
+  else if (j.name) st.innerHTML = '<span class="badge b-bad">Failed. See the log.</span>';
+  else st.innerHTML = '';
+  $('#buildBtn').disabled = $('#testBtn').disabled = $('#bumpBtn').disabled = j.running;
+  const out = $('#outFiles');
+  let html = '';
+  if (done && !j.running) {
+    html += '<h2 style="margin-top:18px">Your files</h2><div class="files">';
+    S.built.forEach((f) => { html += `<div class="file"><span><b>${f.kind === 'exe' ? 'PC installer' : 'Phone app'}</b> &middot; ${esc(f.name)} &middot; ${fmtSize(f.size)}</span><button class="btn sm" data-open="${f.kind}">Open folder</button></div>`; });
+    if (S.uploadReady) html += `<div class="file"><span><b>Update files for GitHub</b> &middot; upload these 3 files to your releases repo to update every installed app</span><button class="btn sm" data-open="upload">Open folder</button></div>`;
+    html += '</div>';
+  }
+  out.innerHTML = html;
+  out.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => openFolder(b.dataset.open)));
+}
+$('#bumpBtn').addEventListener('click', () => busy($('#bumpBtn'), async () => { const r = await api('/api/version/bump', {}); toast('Version is now ' + r.version); await refresh(); }));
+$('#buildBtn').addEventListener('click', () => startJob('release'));
+$('#testBtn').addEventListener('click', () => startJob('tests'));
+function startJob(type) {
+  busy($('#buildBtn'), async () => {
+    await api('/api/job/start', { type, notes: $('#notes').value.trim() });
+    logPos = 0; $('#log').textContent = ''; wasRunning = true; await refresh(); poll();
+  });
+}
+async function poll() {
+  try {
+    const j = await api('/api/job?from=' + logPos);
+    const log = $('#log');
+    if (j.text) { const stick = log.scrollTop + log.clientHeight >= log.scrollHeight - 30; log.textContent += j.text; logPos = j.length; if (stick) log.scrollTop = log.scrollHeight; }
+    if (j.running) { setTimeout(poll, 1200); } else if (wasRunning) { wasRunning = false; await refresh(); toast(j.exitCode === 0 ? 'Finished OK' : 'Failed. See the log.', j.exitCode !== 0); }
+  } catch { setTimeout(poll, 3000); }
+}
+
+// ---- safety
+function renderSafety() {
+  $('#keyFiles').innerHTML = S.keyFiles.map((f) => `<div class="file"><span class="mono">${esc(f.name)}</span><span class="badge ${f.ok ? 'b-ok' : 'b-bad'}">${f.ok ? 'Found' : 'MISSING'}</span></div>`).join('');
+  $('#dataDir').textContent = S.dataDir;
+}
+
+async function refresh() { S = await api('/api/state'); renderSchools(); renderRelease(); renderSafety(); }
+(async () => {
+  try {
+    await refresh();
+    if (S.job.name) { logPos = 0; $('#log').textContent = ''; wasRunning = S.job.running; poll(); }
+  } catch (e) { document.body.innerHTML = '<main><div class="card"><h2>Cannot connect</h2><p class="hint">Open this console from the link printed in the black window (Start-Admin-Console.bat).</p></div></main>'; }
+})();
+</script>
+</body>
+</html>
