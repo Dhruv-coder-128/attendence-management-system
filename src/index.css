@@ -952,6 +952,9 @@ textarea {
   animation: modalScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes spin { to { transform: rotate(360deg); } }
+.animate-spin { animation: spin 1s linear infinite; }
+
 @keyframes modalScaleIn {
   from {
     opacity: 0;

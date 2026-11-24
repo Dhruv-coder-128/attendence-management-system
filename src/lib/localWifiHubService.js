@@ -275,7 +275,7 @@ export async function autoDiscoverSchoolPC(onProgress = null) {
       savedHost = new URL(saved).hostname;
       if (savedHost && savedHost !== 'localhost' && savedHost !== '127.0.0.1') {
         // 1. Same PC, any port (fast path: the usual "it worked yesterday" case).
-        const quick = (await Promise.all(HUB_PORTS.map((p) => probeHub(`http://${savedHost}:${p}`)))).find(Boolean);
+        const quick = (await Promise.all(HUB_PORTS.map((p) => probeHub(`http://${savedHost}:${p}`, 2500)))).find(Boolean);
         if (quick) return found(quick);
         const parts = savedHost.split('.');
         if (parts.length === 4) subnets.push(parts.slice(0, 3).join('.'));
@@ -314,7 +314,7 @@ export async function autoDiscoverSchoolPC(onProgress = null) {
  * Tests connection with the School PC over local Wi-Fi.
  * Supports auto-discovery fallback if the configured URL is missing or unreachable.
  */
-export async function checkHubConnection(hubUrl = null, tryAutoDiscover = false) {
+export async function checkHubConnection(hubUrl = null, tryAutoDiscover = false, { attempts = 2, timeout = 3500 } = {}) {
   let targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
 
   // 0. Auto-discovery fallback if requested and targetUrl is empty
@@ -335,34 +335,36 @@ export async function checkHubConnection(hubUrl = null, tryAutoDiscover = false)
     };
   }
 
-  // 3. Ping School PC Wi-Fi Hub
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timeoutId = controller ? setTimeout(() => controller.abort(), 2500) : null;
-
-  try {
-    // Plain GET: status is public, and custom headers would add a CORS preflight round-trip.
-    const res = await fetch(`${targetUrl}/api/local-hub?action=status`, {
-      signal: controller ? controller.signal : undefined,
-    });
-    if (timeoutId) clearTimeout(timeoutId);
-
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.service && data.service.includes('SMS Local Wi-Fi Attendance Hub')) {
-        if (data.token) {
-          setStoredHubToken(data.token);
+  // 3. Ping School PC Wi-Fi Hub. A busy Wi-Fi can drop one packet, so try again before saying "not found".
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 350));
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), timeout) : null;
+    try {
+      // Plain GET: status is public, and custom headers would add a CORS preflight round-trip.
+      const res = await fetch(`${targetUrl}/api/local-hub?action=status`, {
+        signal: controller ? controller.signal : undefined,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.service && data.service.includes('SMS Local Wi-Fi Attendance Hub')) {
+          if (data.token) {
+            setStoredHubToken(data.token);
+          }
+          return {
+            ok: true,
+            state: 'connected',
+            mode: 'wifi',
+            url: targetUrl,
+            data,
+          };
         }
-        return {
-          ok: true,
-          state: 'connected',
-          mode: 'wifi',
-          url: targetUrl,
-          data,
-        };
       }
+    } catch {
+      // try again
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
-  } catch {
-    if (timeoutId) clearTimeout(timeoutId);
   }
 
   // 4. If direct ping failed and auto-discovery was requested, attempt scan
@@ -397,7 +399,7 @@ export async function fetchBatchesFromHub(hubUrl = null) {
   // 1. PRIMARY: High-speed Local Wi-Fi Hub API (direct from School PC)
   try {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeout = controller ? setTimeout(() => controller.abort(), 2500) : null;
+    const timeout = controller ? setTimeout(() => controller.abort(), 5000) : null;
     const res = await hubFetch(`${targetUrl}/api/local-hub?action=batches`, {
       method: 'GET',
       headers: hubHeaders(),
@@ -413,6 +415,13 @@ export async function fetchBatchesFromHub(hubUrl = null) {
           localStorage.setItem(CACHED_BATCHES_KEY, JSON.stringify(data.batches));
         } catch {}
         return data.batches;
+      }
+      if (Array.isArray(data.batches)) {
+        // The School PC answered and really has no classes: do not keep showing an old saved copy
+        try {
+          localStorage.removeItem(CACHED_BATCHES_KEY);
+        } catch {}
+        return [];
       }
     }
   } catch {}
@@ -436,35 +445,46 @@ export async function fetchBatchesFromHub(hubUrl = null) {
  * Fetches student roster — queries Local Wi-Fi Hub direct from School PC.
  * Never silently returns mock/canonical dummy data if disconnected (Req 8).
  */
-export async function fetchStudentsFromHub(batchId, hubUrl = null) {
-  if (!batchId) return [];
+export async function fetchStudentsFromHubDetailed(batchId, hubUrl = null) {
+  if (!batchId) return { students: [], source: 'none', failed: false };
   const targetUrl = (hubUrl || getStoredHubUrl()).replace(/\/+$/, '');
+  let reached = false; // true once the School PC answered (even with an empty class)
 
-  // 1. PRIMARY: High-speed Local Wi-Fi Hub API (direct from School PC)
-  try {
-    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeout = controller ? setTimeout(() => controller.abort(), 2500) : null;
-    const res = await hubFetch(
-      `${targetUrl}/api/local-hub?action=students&batch_id=${encodeURIComponent(batchId)}`,
-      {
-        method: 'GET',
-        headers: hubHeaders(),
-        signal: controller ? controller.signal : undefined,
-      }
-    );
-    if (timeout) clearTimeout(timeout);
+  // 1. PRIMARY: High-speed Local Wi-Fi Hub API (direct from School PC). Second try if the first one drops.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeout = controller ? setTimeout(() => controller.abort(), 7000) : null;
+      const res = await hubFetch(
+        `${targetUrl}/api/local-hub?action=students&batch_id=${encodeURIComponent(batchId)}`,
+        {
+          method: 'GET',
+          headers: hubHeaders(),
+          signal: controller ? controller.signal : undefined,
+        }
+      );
+      if (timeout) clearTimeout(timeout);
 
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data.students) && data.students.length > 0) {
-        // Cache real students in phone storage
+      if (res.ok) {
+        reached = true;
+        const data = await res.json();
+        if (Array.isArray(data.students) && data.students.length > 0) {
+          // Cache real students in phone storage
+          try {
+            localStorage.setItem(`${CACHED_STUDENTS_PREFIX}${batchId}`, JSON.stringify(data.students));
+          } catch {}
+          return { students: data.students, source: 'hub', failed: false };
+        }
         try {
-          localStorage.setItem(`${CACHED_STUDENTS_PREFIX}${batchId}`, JSON.stringify(data.students));
+          localStorage.removeItem(`${CACHED_STUDENTS_PREFIX}${batchId}`);
         } catch {}
-        return data.students;
+        return { students: [], source: 'hub', failed: false }; // the PC says this class is empty
       }
+      if (res.status === 401) break; // not paired: retrying will not help
+    } catch {
+      // network hiccup: try once more
     }
-  } catch {}
+  }
 
   // 3. OFFLINE CACHE: Return previously synchronized roster for this batch
   try {
@@ -472,13 +492,17 @@ export async function fetchStudentsFromHub(batchId, hubUrl = null) {
     if (cached) {
       const parsed = JSON.parse(cached);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return { students: parsed, source: 'cache', failed: !reached };
       }
     }
   } catch {}
 
-  // Return empty array so UI can show disconnected state
-  return [];
+  // Nothing from the PC and nothing saved: the screen can tell "could not load" from "class is empty"
+  return { students: [], source: 'none', failed: !reached };
+}
+
+export async function fetchStudentsFromHub(batchId, hubUrl = null) {
+  return (await fetchStudentsFromHubDetailed(batchId, hubUrl)).students;
 }
 
 /**
@@ -492,7 +516,7 @@ export async function fetchExistingAttendanceFromHub(batchId, date, hubUrl = nul
   // 1. PRIMARY: Hub API (local attendance saved on PC)
   try {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeout = controller ? setTimeout(() => controller.abort(), 2000) : null;
+    const timeout = controller ? setTimeout(() => controller.abort(), 4500) : null;
     const res = await hubFetch(
       `${targetUrl}/api/local-hub?action=attendance&batch_id=${encodeURIComponent(
         batchId
@@ -541,11 +565,12 @@ export async function submitAttendanceToHub(batchId, date, records, hubUrl = nul
   let refusedMessage = '';
 
   // 1. Try Local Wi-Fi Hub with pairing token (a second attempt after re-finding the PC if it moved)
+  // (The app's connection keeper re-finds a PC that moved; here a dropped packet just gets one quick second try.)
+  const startedAt = Date.now();
   for (let attempt = 0; attempt < 2 && targetUrl && !wifiSyncOk && !refusedMessage; attempt++) {
     if (attempt === 1) {
-      const disc = await autoDiscoverSchoolPC();
-      if (!disc.ok || disc.url === targetUrl) break;
-      targetUrl = disc.url;
+      if (Date.now() - startedAt > 5000) break; // the PC is hanging, not dropping: queue it instead of making the teacher wait
+      await new Promise((r) => setTimeout(r, 500));
     }
     try {
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -588,11 +613,16 @@ export async function submitAttendanceToHub(batchId, date, records, hubUrl = nul
       wifiSyncOk = true;
       serverMessage = resJson?.message || 'Saved to School PC';
       // On successful Wi-Fi sync, immediately remove any pending offline queued item for this batch and date
+      // (only the students that were just sent: other marks of that class still waiting on the phone must stay)
       try {
-        const queue = getOfflineQueue();
-        const remaining = queue.filter(
-          (item) => !(item.batch_id === batchId && item.date === targetDate)
-        );
+        const sent = new Set((records || []).map((r) => r.student_id));
+        const remaining = getOfflineQueue()
+          .map((item) =>
+            item.batch_id === batchId && item.date === targetDate
+              ? { ...item, records: (item.records || []).filter((r) => !sent.has(r.student_id)) }
+              : item
+          )
+          .filter((item) => (item.records || []).length > 0);
         localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
       } catch {}
     }
@@ -666,11 +696,18 @@ export function clearOfflineQueue() {
 /**
  * Retries and flushes all pending offline attendance records to the School PC
  */
-export async function flushOfflineQueue(hubUrl = null) {
+let flushInFlight = null;
+export function flushOfflineQueue(hubUrl = null) {
+  // Start-up, "Refresh", a returning Wi-Fi and the keeper can all ask at once: run one flush and share its result
+  if (!flushInFlight) flushInFlight = doFlushOfflineQueue(hubUrl).finally(() => { flushInFlight = null; });
+  return flushInFlight;
+}
+
+async function doFlushOfflineQueue(hubUrl) {
   const queue = getOfflineQueue();
   if (queue.length === 0) return { ok: true, flushedCount: 0 };
 
-  const remaining = [];
+  const sentKeys = new Set();
   let flushedCount = 0;
 
   for (const item of queue) {
@@ -684,18 +721,21 @@ export async function flushOfflineQueue(hubUrl = null) {
     );
     if (res.ok) {
       flushedCount++;
-    } else {
-      remaining.push(item);
+      sentKeys.add(`${item.batch_id}|${item.date}|${item.queued_at}`);
     }
   }
 
+  // Remove only what was really sent. Marks queued while this was running stay on the list.
+  let remainingCount = 0;
   try {
+    const remaining = getOfflineQueue().filter((it) => !sentKeys.has(`${it.batch_id}|${it.date}|${it.queued_at}`));
+    remainingCount = remaining.length;
     localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
   } catch {}
 
   return {
-    ok: remaining.length === 0,
+    ok: remainingCount === 0,
     flushedCount,
-    remainingCount: remaining.length,
+    remainingCount,
   };
 }

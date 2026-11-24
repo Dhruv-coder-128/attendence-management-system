@@ -323,6 +323,18 @@ export default function App() {
       .catch(() => {});
   }, [hubLocked]);
 
+  // 0. Dedicated Native Mobile Mode / Teacher Attendance Portal
+  // Teachers use mobile APK strictly for attendance roll-call over local Wi-Fi.
+  // Mobile APK NEVER shows licensing lockouts, trial expired screens, or floating timer capsules!
+  const isTeacherApp =
+    Capacitor.isNativePlatform() ||
+    (typeof window !== 'undefined' &&
+      (window.location.search.includes('portal=teacher') || activePage === 'teacher-portal'));
+
+  if (isTeacherApp) {
+    return <TeacherAttendancePage />;
+  }
+
   // 1. Loading Splash Screen
   if (authLoading) {
     return (
@@ -359,18 +371,6 @@ export default function App() {
         </div>
       </div>
     );
-  }
-
-  // 0. Dedicated Native Mobile Mode / Teacher Attendance Portal
-  // Teachers use mobile APK strictly for attendance roll-call over local Wi-Fi.
-  // Mobile APK NEVER shows licensing lockouts, trial expired screens, or floating timer capsules!
-  const isTeacherApp =
-    Capacitor.isNativePlatform() ||
-    (typeof window !== 'undefined' &&
-      (window.location.search.includes('portal=teacher') || activePage === 'teacher-portal'));
-
-  if (isTeacherApp) {
-    return <TeacherAttendancePage />;
   }
 
   // 0.5. Parent Portal PWA Standalone Mode

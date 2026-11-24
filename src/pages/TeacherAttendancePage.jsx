@@ -6,26 +6,20 @@ import {
   RefreshCw,
   Search,
   CheckCheck,
-  School,
   Check,
   Camera,
   ArrowLeft,
   ChevronRight,
   Clock,
-  MapPin,
   X,
   WifiOff,
   QrCode,
   Lock,
-  ShieldCheck,
-  Smartphone,
   Users,
   AlertTriangle,
   Calendar,
+  School,
   Sparkles,
-  Cake,
-  ChevronDown,
-  Layers,
 } from 'lucide-react';
 import { App } from '@capacitor/app';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -37,25 +31,23 @@ import {
   checkHubConnection,
   autoDiscoverSchoolPC,
   fetchBatchesFromHub,
-  fetchStudentsFromHub,
+  fetchStudentsFromHubDetailed,
   fetchExistingAttendanceFromHub,
   submitAttendanceToHub,
   getOfflineQueue,
+  queueAttendanceOffline,
   flushOfflineQueue,
-  DEFAULT_SCHOOL_PC_URL,
   pairDeviceWithHub,
   hubFetch,
-  checkDeviceRegistration,
-  isDevicePairedLocally,
-  setDevicePairedLocally,
 } from '../lib/localWifiHubService';
 import { useAcademySettings } from '../lib/academySettings';
 import { groupBatchesByStandard } from '../lib/classHierarchyHelper';
 import BirthdayWishModal from '../components/students/BirthdayWishModal';
 import { isStudentBirthdayToday } from '../lib/telegramClient';
-
-
 import { todayLocal } from '../lib/dateUtils';
+import { version as APP_VERSION } from '../../package.json';
+import '../teacher.css';
+
 export const CANONICAL_BATCH_CODES = [];
 
 export function getCanonicalBatchCode(raw) {
@@ -135,235 +127,130 @@ export function computeBatchStatuses(batches, records, live = null) {
   return out;
 }
 
+
+// ---------------------------------------------------------------------------
+// Small presentational pieces (all styling lives in src/teacher.css, classes start with tm-)
+// ---------------------------------------------------------------------------
+
+/** What the roll call shows for a student: Present / Late / Absent, or Pending when nothing is marked. */
+const statusOf = (map, s) => map[s.id] || (s.admission_no ? map[s.admission_no] : null) || 'Pending';
+
+const FILTERS = [
+  ['all', 'All', ''],
+  ['Pending', 'Pending', ''],
+  ['Present', 'Present', 'ok'],
+  ['Late', 'Late', 'warn'],
+  ['Absent', 'Absent', 'bad'],
+];
+
+const fmtDay = (iso, long = false) => {
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-IN', long ? { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' } : { weekday: 'short', day: 'numeric', month: 'short' });
+};
+
+const badgeText = (s) => {
+  const words = String(s || '').trim().split(/\s+/);
+  const w = words.find((x) => /\d/.test(x)) || words[0] || '?'; // "Class 8" -> 8, "11th Commerce" -> 11th
+  return w.length > 4 ? w.slice(0, 3) : w;
+};
+
+/** "Done" / "12/40 marked" / "Not taken" for a class or division. */
+function StatusPill({ marked, total }) {
+  const t = Math.max(total, marked);
+  if (t > 0 && marked >= t) return <span className="tm-pill ok"><Check size={11} strokeWidth={3} />Done</span>;
+  if (marked > 0) return <span className="tm-pill info">{marked}/{t} marked</span>;
+  return <span className="tm-pill warn"><Clock size={11} />Not taken</span>;
+}
+
+/** One tappable class / division card with a progress bar. */
+function ClassCard({ badge, name, meta, marked, absent, total, onClick }) {
+  const t = Math.max(total, marked);
+  const g = t > 0 ? Math.min(100, ((marked - absent) / t) * 100) : 0;
+  const r = t > 0 ? Math.min(100 - g, (absent / t) * 100) : 0;
+  const done = t > 0 && marked >= t;
+  return (
+    <button type="button" className={`tm-card${done ? ' done' : ''}`} onClick={onClick}>
+      <div className="tm-card-top">
+        <div className="tm-badge">{done ? <Check size={22} strokeWidth={3} /> : badge}</div>
+        <div className="tm-card-body">
+          <div className="tm-card-name">{name}</div>
+          <div className="tm-card-meta">{meta}</div>
+        </div>
+        <ChevronRight size={20} className="tm-chev" />
+      </div>
+      <div className="tm-card-foot">
+        <div className="tm-bar"><b className="g" style={{ width: `${g}%` }} /><b className="r" style={{ width: `${r}%` }} /></div>
+        <StatusPill marked={marked} total={total} />
+      </div>
+    </button>
+  );
+}
+
+/** Ring that shows how much of the school is marked today. */
+function Ring({ pct }) {
+  const r = 40;
+  const c = 2 * Math.PI * r;
+  return (
+    <div className="tm-ring">
+      <svg width="96" height="96" viewBox="0 0 96 96" aria-hidden="true">
+        <circle cx="48" cy="48" r={r} fill="none" stroke="rgba(255,255,255,.14)" strokeWidth="9" />
+        <circle
+          cx="48" cy="48" r={r} fill="none" stroke={pct >= 100 ? '#34d399' : '#dfcaa8'} strokeWidth="9" strokeLinecap="round"
+          strokeDasharray={c} strokeDashoffset={c * (1 - Math.min(100, pct) / 100)} style={{ transition: 'stroke-dashoffset .5s ease' }}
+        />
+      </svg>
+      <div className="tm-ring-c"><b>{pct}%</b><span>marked</span></div>
+    </div>
+  );
+}
+
+/** Bottom sheet. Passing no onClose makes it undismissable (used for the "saved" confirmation). */
+function Sheet({ title, onClose, center = false, children }) {
+  return (
+    <div className="tm-backdrop" onClick={onClose}>
+      <div className={`tm-sheet${center ? ' center' : ''}`} role="dialog" aria-modal="true" aria-label={title} onClick={(e) => e.stopPropagation()}>
+        <div className="tm-grab" />
+        {!center && (
+          <div className="tm-sheet-head">
+            <h3>{title}</h3>
+            {onClose && <button type="button" className="tm-sheet-x" onClick={onClose} aria-label="Close"><X size={18} /></button>}
+          </div>
+        )}
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /**
- * One student card. Memoised: a tap re-renders only the card whose status changed, not the whole class
+ * One student row. Memoised: a tap re-renders only the row whose status changed, not the whole class
  * (this is what makes a 100-student roll call stay smooth on a cheap phone).
  */
 const StudentRow = React.memo(function StudentRow({ student, status, onSetStatus, onWish }) {
-  const isPresent = status === 'Present';
-  const isLate = status === 'Late';
-  const isAbsent = status === 'Absent';
-
+  const name = student.full_name || student.name || student['Student Name'] || `Student ${student.roll_no || student.admission_no}`;
+  const birthday = isStudentBirthdayToday(student.dob);
+  const mark = (cls, label, letter) => (
+    <button type="button" className={`${cls}${status === label ? ' on' : ''}`} aria-label={label} aria-pressed={status === label} onClick={() => onSetStatus(student.id, label)}>
+      {letter}
+    </button>
+  );
   return (
-    <div
-        className="liquid-card student-row"
-        style={{
-          backgroundColor: '#ffffff',
-          border: '1px solid #e2e8f0',
-          borderRadius: '16px',
-          padding: '14px',
-                              display: 'flex',
-          flexDirection: 'column',
-          gap: '12px',
-        }}
-      >
-        {/* TIER 1: Student Details with FULL NAME VISIBILITY (NO TRUNCATION) */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '10px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
-            {/* Roll Number Badge */}
-            <div
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                backgroundColor: '#f1f5f9',
-                border: '1px solid #cbd5e1',
-                color: '#0f172a',
-                fontSize: '14px',
-                fontWeight: 800,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                boxShadow: '0 2px 6px rgba(15, 23, 42, 0.05)',
-              }}
-            >
-              {student.roll_no}
-            </div>
-
-            {/* Full Name & Admission No */}
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div
-                style={{
-                  fontSize: '15px',
-                  fontWeight: 800,
-                  color: '#0f172a',
-                  lineHeight: 1.3,
-                  wordBreak: 'break-word',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <span>{student.full_name || student.name || student['Student Name'] || `Student ${student.roll_no || student.admission_no}`}</span>
-                {isStudentBirthdayToday(student.dob) && (
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '3px',
-                      padding: '1px 6px',
-                      borderRadius: '10px',
-                      backgroundColor: '#fce7f3',
-                      color: '#be185d',
-                      fontSize: '10px',
-                      fontWeight: 800,
-                    }}
-                  >
-                    🎂 Birthday!
-                  </span>
-                )}
-              </div>
-              <div
-                style={{
-                  fontSize: '11px',
-                  color: '#64748b',
-                  marginTop: '2px',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}
-              >
-                <span>ID: <span style={{ color: '#334155', fontFamily: 'monospace', fontWeight: 700 }}>{student.admission_no}</span></span>
-                {isStudentBirthdayToday(student.dob) && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onWish(student);
-                    }}
-                    style={{
-                      border: 'none',
-                      background: '#ec4899',
-                      color: '#ffffff',
-                      borderRadius: '4px',
-                      padding: '2px 8px',
-                      fontSize: '10.5px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    🎉 Wish
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Status Pill Badge */}
-          <span
-            style={{
-              padding: '4px 10px',
-              borderRadius: '20px',
-              fontSize: '11px',
-              fontWeight: 800,
-              backgroundColor: isPresent ? '#ecfdf5' : isLate ? '#fffbeb' : isAbsent ? '#fff1f2' : '#fef3c7',
-              color: isPresent ? '#059669' : isLate ? '#b45309' : isAbsent ? '#e11d48' : '#d97706',
-              border: `1px solid ${isPresent ? '#a7f3d0' : isLate ? '#fde68a' : isAbsent ? '#fecdd3' : '#fcd34d'}`,
-              flexShrink: 0,
-            }}
-          >
-            {status}
-          </span>
-        </div>
-
-        {/* TIER 2: Full-Width 3-Button Segmented Selector for Thumb Comfort */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: '6px',
-            backgroundColor: '#f1f5f9',
-            border: '1px solid #e2e8f0',
-            padding: '4px',
-            borderRadius: '12px',
-          }}
-        >
-          {/* Present Button */}
-          <button
-            type="button"
-            onClick={() => onSetStatus(student.id, 'Present')}
-            className="touch-action-btn"
-            style={{
-              backgroundColor: isPresent ? '#10b981' : 'transparent',
-              color: isPresent ? '#ffffff' : '#64748b',
-              border: 'none',
-              borderRadius: '9px',
-              padding: '10px 4px',
-              fontSize: '13px',
-              fontWeight: isPresent ? 800 : 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              boxShadow: isPresent ? '0 2px 8px rgba(16, 185, 129, 0.35)' : 'none',
-            }}
-          >
-            <Check size={15} strokeWidth={isPresent ? 3 : 2} color={isPresent ? '#ffffff' : '#64748b'} />
-            <span>Present</span>
-          </button>
-
-          {/* Late Button */}
-          <button
-            type="button"
-            onClick={() => onSetStatus(student.id, 'Late')}
-            className="touch-action-btn"
-            style={{
-              backgroundColor: isLate ? '#f59e0b' : 'transparent',
-              color: isLate ? '#ffffff' : '#64748b',
-              border: 'none',
-              borderRadius: '9px',
-              padding: '10px 4px',
-              fontSize: '13px',
-              fontWeight: isLate ? 800 : 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              boxShadow: isLate ? '0 2px 8px rgba(245, 158, 11, 0.35)' : 'none',
-            }}
-          >
-            <Clock size={15} strokeWidth={isLate ? 3 : 2} color={isLate ? '#ffffff' : '#64748b'} />
-            <span>Late</span>
-          </button>
-
-          {/* Absent Button */}
-          <button
-            type="button"
-            onClick={() => onSetStatus(student.id, 'Absent')}
-            className="touch-action-btn"
-            style={{
-              backgroundColor: isAbsent ? '#ef4444' : 'transparent',
-              color: isAbsent ? '#ffffff' : '#64748b',
-              border: 'none',
-              borderRadius: '9px',
-              padding: '10px 4px',
-              fontSize: '13px',
-              fontWeight: isAbsent ? 800 : 600,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              boxShadow: isAbsent ? '0 2px 8px rgba(239, 68, 68, 0.35)' : 'none',
-            }}
-          >
-            <X size={15} strokeWidth={isAbsent ? 3 : 2} color={isAbsent ? '#ffffff' : '#64748b'} />
-            <span>Absent</span>
-          </button>
+    <div className={`tm-row st-${status}`}>
+      <div className="tm-roll">{student.roll_no || '-'}</div>
+      <div className="tm-who">
+        <div className="tm-name">{name}</div>
+        <div className="tm-sub">
+          <span>ID <code>{student.admission_no}</code></span>
+          {birthday && <button type="button" className="tm-wish" onClick={() => onWish(student)}>🎂 Birthday · Wish</button>}
         </div>
       </div>
+      <div className="tm-pla" role="group" aria-label={`Mark ${name}`}>
+        {mark('p', 'Present', 'P')}
+        {mark('l', 'Late', 'L')}
+        {mark('a', 'Absent', 'A')}
+      </div>
+    </div>
   );
 });
 
@@ -374,6 +261,7 @@ export default function TeacherAttendancePage() {
   const [isPaired, setIsPaired] = useState(() => Boolean(getStoredHubToken()));
   const [pairCode, setPairCode] = useState('');
   const [pairError, setPairError] = useState('');
+  const [isPairing, setIsPairing] = useState(false);
   useEffect(() => {
     const onUnpaired = () => setIsPaired(false);
     window.addEventListener('sms-hub-unpaired', onUnpaired);
@@ -388,7 +276,7 @@ export default function TeacherAttendancePage() {
     error: null,
   });
 
-  // 2-View Screen Mode: 'batches' (list of cohorts) | 'rollcall' (student roll call)
+  // Screens: 'batches' (class list) | 'divisions' (sections of one class) | 'rollcall' (students)
   const [viewMode, setViewMode] = useState('batches');
 
   // Modals
@@ -403,6 +291,12 @@ export default function TeacherAttendancePage() {
   const [batches, setBatches] = useState([]);
   const [selectedBatchId, setSelectedBatchId] = useState('');
   const [selectedDate, setSelectedDate] = useState(() => todayLocal());
+  // While the teacher has not picked another day, the app follows the calendar (an app left open overnight must not mark yesterday)
+  const followTodayRef = useRef(true);
+  const pickDate = useCallback((v) => {
+    followTodayRef.current = v === todayLocal();
+    setSelectedDate(v);
+  }, []);
   const [students, setStudents] = useState([]);
   const [attendanceMap, setAttendanceMap] = useState({}); // { student_id: 'Present' | 'Late' | 'Absent' }
 
@@ -423,7 +317,6 @@ export default function TeacherAttendancePage() {
   }, [batches]);
 
   // Class Hierarchy: Standard -> Section State
-  const [expandedStandard, setExpandedStandard] = useState(null);
   const [selectedStandard, setSelectedStandard] = useState(null);
 
   const standardGroups = useMemo(() => {
@@ -460,7 +353,11 @@ export default function TeacherAttendancePage() {
     setStoredDayRecords(date, records);
   }, []);
 
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(''); // student search inside a roll call
+  const [statusFilter, setStatusFilter] = useState('all'); // all | Pending | Present | Late | Absent
+  const [classQuery, setClassQuery] = useState(''); // class search on the Classes screen
+  const [classFilter, setClassFilter] = useState('all'); // all | pending | done
+  const [loadError, setLoadError] = useState(''); // the open class could not be loaded from the PC
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -470,7 +367,7 @@ export default function TeacherAttendancePage() {
 
   const showToast = useCallback((msg, type = 'success') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast({ id: Date.now(), message: String(msg).replace(/^[✓⚠️\s]+/u, ''), type }); // the toast already shows an icon
+    setToast({ id: Date.now(), message: String(msg), type });
     toastTimerRef.current = setTimeout(() => setToast(null), 4000);
   }, []);
 
@@ -538,7 +435,7 @@ export default function TeacherAttendancePage() {
         } catch {}
       } else {
         lastBackPressTimeRef.current = now;
-        showToast('Press back once more to exit application');
+        showToast('Press back once more to exit');
       }
     };
 
@@ -553,6 +450,7 @@ export default function TeacherAttendancePage() {
       App.addListener('appStateChange', ({ isActive }) => {
         if (isActive && typeof verifyConnectionRef.current === 'function') {
           verifyConnectionRef.current(hubUrlRef.current, false);
+          kickRef.current();
         }
       })
         .then((handle) => {
@@ -589,29 +487,37 @@ export default function TeacherAttendancePage() {
   }, [showToast]);
 
   // 1. Load Batches
-  const loadBatches = useCallback(async (targetUrl = hubUrl) => {
-    setIsLoading(true);
+  const loadBatches = useCallback(async (targetUrl = hubUrl, silent = false) => {
+    if (!silent) setIsLoading(true); // background refreshes must not blink the spinner or touch a class that is loading
     const list = await fetchBatchesFromHub(targetUrl);
     setBatches(Array.isArray(list) ? list : []);
-    setIsLoading(false);
+    if (!silent) setIsLoading(false);
   }, [hubUrl]);
 
+  // The newest values for the long-running background tasks below (they must never read stale ones)
+  const selectedDateRef = useRef(selectedDate);
+  selectedDateRef.current = selectedDate;
+
   // Refresh authoritative daily metrics across all batches from PC Hub with canonical deduplication
-  const refreshHubMetrics = useCallback(async (targetUrl = hubUrl, date = selectedDate) => {
+  const refreshHubMetrics = useCallback(async (targetUrl, date) => {
     const activeUrl = targetUrl || getStoredHubUrl();
+    const day = date || selectedDateRef.current;
     if (!activeUrl) return;
     try {
-      const res = await hubFetch(`${activeUrl.replace(/\/+$/, '')}/api/local-hub?action=updates&date=${encodeURIComponent(date)}`);
+      const res = await hubFetch(`${activeUrl.replace(/\/+$/, '')}/api/local-hub?action=updates&date=${encodeURIComponent(day)}`);
       if (res.ok) {
         const data = await res.json();
         const records = data.allRecords || data.records || [];
-        if (Array.isArray(records)) saveDayRecords(date, records);
+        if (Array.isArray(records)) saveDayRecords(day, records);
       }
     } catch {}
-  }, [hubUrl, selectedDate, saveDayRecords]);
+  }, [saveDayRecords]);
 
-  // 2. Verify Connection with Smart Auto-Discovery
+  // 2. Verify Connection with Smart Auto-Discovery.
+  // Several checks can overlap (start-up, Wi-Fi back, app resume, a tap); only the newest one may update the screen.
+  const verifySeqRef = useRef(0);
   const verifyConnection = useCallback(async (targetUrl = hubUrl, tryAutoScan = true) => {
+    const seq = ++verifySeqRef.current;
     let res = await checkHubConnection(targetUrl);
 
     // If not reachable and auto-scan allowed, automatically probe the local Wi-Fi subnet
@@ -624,22 +530,23 @@ export default function TeacherAttendancePage() {
         setHubUrl(disc.url);
         setUrlInput(disc.url);
         res = await checkHubConnection(disc.url);
-        showToast('✓ Auto-connected to School PC on Wi-Fi!');
+        showToast('Connected to the School PC');
       }
     }
 
+    if (seq !== verifySeqRef.current) return; // a newer check is running; its answer wins
     setConnectionStatus(res);
     const activeUrl = res?.ok ? res.url : (targetUrl || hubUrl);
     loadBatches(activeUrl);
     if (res?.ok) {
-      refreshHubMetrics(activeUrl, selectedDate);
+      refreshHubMetrics(activeUrl, selectedDateRef.current);
       flushOfflineQueue(activeUrl).then((r) => {
         if (r && r.flushedCount > 0) {
           setOfflineQueue(getOfflineQueue());
         }
       }).catch(() => {});
     }
-  }, [hubUrl, loadBatches, refreshHubMetrics, selectedDate]);
+  }, [hubUrl, loadBatches, refreshHubMetrics, showToast]);
 
   useEffect(() => {
     verifyConnectionRef.current = verifyConnection;
@@ -650,10 +557,146 @@ export default function TeacherAttendancePage() {
     verifyConnection(hubUrl, true);
   }, [hubUrl, verifyConnection]);
 
+  // ---------------------------------------------------------------------------
+  // Connection keeper: the phone watches the School PC all the time.
+  //  - pings every 5 s; one missed ping is ignored (busy Wi-Fi), two in a row = "reconnecting"
+  //  - then looks for the PC again (it may have restarted on another port or got a new Wi-Fi address)
+  //  - the moment it is back: shows it, reloads the classes and sends any roll call waiting on the phone
+  // ---------------------------------------------------------------------------
+  const live = useRef({});
+  live.current = { hubUrl, connectionStatus, isAutoDiscovering, loadBatches, refreshHubMetrics, students, activeBatch, selectedBatchId };
+  const kickRef = useRef(() => {});
+  useEffect(() => {
+    let stopped = false;
+    let pinging = false;
+    let scanning = false;
+    let misses = 0;
+    let lastScan = 0;
+    let lastBack = 0;
+    let scanGap = 20000; // waits longer between full searches while the PC stays away (saves battery)
+
+    const reconnected = async (r) => {
+      misses = 0;
+      scanGap = 20000;
+      if (Date.now() - lastBack < 3000) return; // already handled a moment ago
+      lastBack = Date.now();
+      const L = live.current;
+      setConnectionStatus(r);
+      showToast('Reconnected to the School PC');
+      L.loadBatches(r.url);
+      L.refreshHubMetrics(r.url, selectedDateRef.current);
+      if (L.syncDirty) L.syncDirty(); // marks tapped while the PC was away go out now
+      try {
+        const q = await flushOfflineQueue(r.url);
+        setOfflineQueue(getOfflineQueue());
+        if (q && q.flushedCount > 0) showToast(`Sent ${q.flushedCount} waiting roll call(s) to the School PC`);
+      } catch {}
+    };
+
+    // Looking for a PC that moved (new Wi-Fi address or port). Slow, so it runs on the side: the quick
+    // ping of the known address keeps going every 5 s and wins as soon as the PC answers there.
+    const search = async () => {
+      if (scanning || Date.now() - lastScan < scanGap) return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return; // no Wi-Fi at all: nothing to search
+      scanning = true;
+      lastScan = Date.now();
+      try {
+        const disc = await autoDiscoverSchoolPC();
+        if (stopped || live.current.connectionStatus.ok) return;
+        if (disc?.ok && disc.url) {
+          const r = await checkHubConnection(disc.url, false, { attempts: 2, timeout: 3500 });
+          if (r.ok) {
+            if (disc.url !== live.current.hubUrl) {
+              setHubUrl(disc.url);
+              setUrlInput(disc.url);
+            }
+            scanGap = 20000;
+            await reconnected(r);
+            return;
+          }
+        }
+        scanGap = Math.min(scanGap * 1.5, 120000);
+        if (Date.now() - lastBack > 3000) {
+          setConnectionStatus((c) => (c.ok ? c : { ...c, ok: false, state: 'pc_unreachable', url: live.current.hubUrl, error: null }));
+        }
+      } catch {
+        // never let the keeper stop; it tries again later
+      } finally {
+        scanning = false;
+        lastScan = Date.now();
+      }
+    };
+
+    const tick = async () => {
+      if (stopped || pinging || document.hidden) return;
+      const L = live.current;
+      if (L.connectionStatus.state === 'checking' || L.isAutoDiscovering) return; // a manual check is already looking
+      pinging = true;
+      let lost = false;
+      try {
+        const url = L.hubUrl;
+        if (url) {
+          const r = await checkHubConnection(url, false, { attempts: 1, timeout: 3000 });
+          if (stopped) return;
+          if (r.ok) {
+            if (!live.current.connectionStatus.ok) await reconnected(r);
+            else {
+              misses = 0;
+              // keep the "licence paused" notice fresh without redrawing the screen every 5 s
+              if (Boolean(r.data?.is_locked) !== Boolean(live.current.connectionStatus.data?.is_locked)) setConnectionStatus(r);
+            }
+            return;
+          }
+          misses += 1;
+          lost = misses >= 2; // one missed ping is ignored
+        } else {
+          lost = true; // no PC saved yet: keep looking
+        }
+        if (lost && live.current.connectionStatus.ok) setConnectionStatus({ ok: false, state: 'reconnecting', url, error: null });
+      } catch {
+        // never let the keeper stop; it tries again on the next tick
+      } finally {
+        pinging = false;
+      }
+      if (lost) search();
+    };
+
+    kickRef.current = () => {
+      lastScan = 0;
+      tick();
+    };
+    const id = setInterval(tick, 5000);
+    const wake = () => {
+      if (!document.hidden) kickRef.current();
+    };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    return () => {
+      stopped = true;
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('online', wake);
+    };
+  }, [showToast]);
+
+  // A new day started while the app was open or asleep: move to today (not while a roll call is open)
+  useEffect(() => {
+    const sync = () => {
+      const t = todayLocal();
+      if (followTodayRef.current && selectedDateRef.current !== t && viewModeRef.current !== 'rollcall') setSelectedDate(t);
+    };
+    const id = setInterval(sync, 30000);
+    document.addEventListener('visibilitychange', sync);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', sync);
+    };
+  }, []);
+
   // One-tap manual trigger for local Wi-Fi auto-discovery
   const handleTriggerAutoDiscovery = async () => {
     setIsAutoDiscovering(true);
-    showToast('🔍 Scanning local Wi-Fi for School PC...');
+    showToast('Looking for the School PC on Wi-Fi…');
     const disc = await autoDiscoverSchoolPC();
     setIsAutoDiscovering(false);
     if (disc?.ok && disc?.url) {
@@ -661,9 +704,9 @@ export default function TeacherAttendancePage() {
       setHubUrl(disc.url);
       setUrlInput(disc.url);
       verifyConnection(disc.url, false);
-      showToast('✓ Connected to School PC: ' + disc.url.replace(/^https?:\/\//, ''));
+      showToast('Connected to ' + disc.url.replace(/^https?:\/\//, ''));
     } else {
-      showToast('⚠️ Could not auto-detect. Please scan PC QR code or enter IP.');
+      showToast('Could not find the School PC. Scan its QR code or type its address.', 'warning');
     }
   };
 
@@ -671,7 +714,7 @@ export default function TeacherAttendancePage() {
   useEffect(() => {
     if (!connectionStatus.ok || viewMode !== 'batches') return;
     const interval = setInterval(() => {
-      loadBatches(hubUrl);
+      loadBatches(hubUrl, true);
       refreshHubMetrics(hubUrl, selectedDate);
     }, 4000);
     return () => clearInterval(interval);
@@ -679,19 +722,27 @@ export default function TeacherAttendancePage() {
 
   // Note: Destructive 3-second poll in roll call mode removed to prevent clobbering active teacher edits
 
-  // Recheck when phone reconnects to network
+  // The School PC says this phone is no longer paired (e.g. the PC app was reinstalled)
   useEffect(() => {
-    const handleNetworkChange = () => verifyConnection(hubUrl, false);
-    window.addEventListener('online', handleNetworkChange);
-    return () => {
-      window.removeEventListener('online', handleNetworkChange);
-    };
-  }, [hubUrl, verifyConnection]);
+    const onUnpaired = () => showToast('Please pair this phone again with the code on the School PC.', 'warning');
+    window.addEventListener('sms-hub-unpaired', onUnpaired);
+    return () => window.removeEventListener('sms-hub-unpaired', onUnpaired);
+  }, [showToast]);
 
   // 3. Load Students when batch is opened & load existing attendance from PC
+  const openSeqRef = useRef(0);
   const openBatchRollCall = async (batchId, standardName = null) => {
+    const seq = ++openSeqRef.current;
     setSelectedBatchId(batchId);
     if (standardName) setSelectedStandard(standardName);
+    setSearchTerm('');
+    setStatusFilter('all');
+    // Start clean so the previous class never shows under this class's name while the new one loads
+    dirtyIdsRef.current = new Set();
+    attendanceMapRef.current = {};
+    setStudents([]);
+    setAttendanceMap({});
+    setLoadError('');
     setViewMode('rollcall');
     setIsLoading(true);
 
@@ -699,13 +750,16 @@ export default function TeacherAttendancePage() {
       window.history.pushState({ view: 'rollcall' }, '');
     } catch {}
 
-    let studentList = await fetchStudentsFromHub(batchId, hubUrl);
-    if (!Array.isArray(studentList)) studentList = [];
-
+    const detail = await fetchStudentsFromHubDetailed(batchId, hubUrl);
+    if (seq !== openSeqRef.current) return; // another class was opened meanwhile
+    const studentList = Array.isArray(detail.students) ? detail.students : [];
     setStudents(studentList);
+    if (detail.failed && studentList.length === 0) setLoadError('Could not reach the School PC to load this class.');
+    else if (detail.failed) showToast('School PC not reachable. Showing the copy saved on this phone.', 'warning');
 
     // Fetch existing attendance previously marked today on PC or phone
     const existingRecords = await fetchExistingAttendanceFromHub(batchId, selectedDate, hubUrl);
+    if (seq !== openSeqRef.current) return;
     const initialMap = {};
     if (Array.isArray(existingRecords) && existingRecords.length > 0) {
       existingRecords.forEach((r) => {
@@ -720,17 +774,23 @@ export default function TeacherAttendancePage() {
           initialMap[matched.id] = r.status;
         }
       });
-      showToast('✓ Loaded existing roll call');
     }
 
-    dirtyIdsRef.current = new Set();
-    setAttendanceMap(initialMap);
+    // Marks the teacher already tapped while this was loading must not be wiped by the older copy from the PC
+    const tapped = attendanceMapRef.current;
+    const merged = { ...initialMap };
+    dirtyIdsRef.current.forEach((id) => {
+      if (tapped[id]) merged[id] = tapped[id];
+    });
+    attendanceMapRef.current = merged;
+    setAttendanceMap(merged);
     setIsLoading(false);
   };
 
   // When date changes in roll call mode, re-fetch attendance for that date
   const handleDateChange = async (newDate) => {
-    setSelectedDate(newDate);
+    queueDirtyMarks(); // marks not yet confirmed by the PC belong to the old date: keep them safe first
+    pickDate(newDate);
     if (!selectedBatchId) return;
 
     setIsLoading(true);
@@ -749,7 +809,6 @@ export default function TeacherAttendancePage() {
           map[matched.id] = r.status;
         }
       });
-      showToast(`Loaded records for ${newDate}`);
     }
     dirtyIdsRef.current = new Set();
     setAttendanceMap(map);
@@ -807,6 +866,58 @@ export default function TeacherAttendancePage() {
       }
     }, 300);
   }, [hubUrl, selectedBatchId, activeBatch, students, selectedDate]);
+  live.current.syncDirty = syncRollCallToHubDebounced;
+
+  // Marks the School PC has not confirmed yet go on the phone's waiting list, so they can never be lost
+  // (back button, another class, another date, phone locked, app closed). They are sent as soon as the PC is reachable.
+  const queueDirtyMarks = useCallback(() => {
+    const L = live.current;
+    const ids = dirtyIdsRef.current;
+    if (!ids.size || !L.selectedBatchId) return;
+    const map = attendanceMapRef.current;
+    const stamp = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    const records = (L.students || [])
+      .filter((s) => ids.has(s.id) && map[s.id] && map[s.id] !== 'Pending')
+      .map((s) => ({
+        student_id: s.id,
+        admission_no: s.admission_no || s.id,
+        roll_no: s.roll_no,
+        full_name: s.full_name || s.name || '',
+        status: map[s.id],
+        remarks: '',
+        time_in: stamp,
+      }));
+    if (records.length === 0) return;
+    const batchId = L.activeBatch?.id || L.selectedBatchId;
+    const date = selectedDateRef.current;
+    const waiting = getOfflineQueue().find((q) => q.batch_id === batchId && q.date === date);
+    const byStudent = new Map((waiting?.records || []).map((r) => [r.student_id, r]));
+    records.forEach((r) => byStudent.set(r.student_id, r));
+    queueAttendanceOffline({
+      batch_id: batchId,
+      batch_code: getCanonicalBatchCode(L.activeBatch?.code || L.selectedBatchId),
+      batch_name: L.activeBatch?.name || '',
+      date,
+      records: [...byStudent.values()],
+    });
+    setOfflineQueue(getOfflineQueue());
+  }, []);
+  const prevViewRef = useRef(viewMode);
+  useEffect(() => {
+    if (prevViewRef.current === 'rollcall' && viewMode !== 'rollcall') queueDirtyMarks();
+    prevViewRef.current = viewMode;
+  }, [viewMode, queueDirtyMarks]);
+  useEffect(() => {
+    const onHide = () => {
+      if (document.hidden) queueDirtyMarks();
+    };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', queueDirtyMarks);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', queueDirtyMarks);
+    };
+  }, [queueDirtyMarks]);
 
   // Live two-way sync: while a roll call is open, pick up marks made on the School PC (or another phone).
   useEffect(() => {
@@ -870,7 +981,7 @@ export default function TeacherAttendancePage() {
     attendanceMapRef.current = next;
     setAttendanceMap(next);
     syncRollCallToHubDebounced();
-    showToast(`✓ All ${students.length} students marked Present`);
+    showToast(`All ${students.length} students marked Present`);
   };
 
   const markAllAbsent = () => {
@@ -882,39 +993,36 @@ export default function TeacherAttendancePage() {
     attendanceMapRef.current = next;
     setAttendanceMap(next);
     syncRollCallToHubDebounced();
-    showToast(`✓ All ${students.length} students marked Absent`);
+    showToast(`All ${students.length} students marked Absent`);
   };
 
   // Metric Computations (Present, Late, Absent, Total) - strictly 1 state per student
-  const getStudentStatus = (s) => attendanceMap[s.id] || (s.admission_no ? attendanceMap[s.admission_no] : null) || 'Pending';
   const totalCount = students.length;
-  const presentCount = useMemo(() => {
-    return students.filter((s) => getStudentStatus(s) === 'Present').length;
-  }, [students, attendanceMap]);
-
-  const lateCount = useMemo(() => {
-    return students.filter((s) => getStudentStatus(s) === 'Late').length;
-  }, [students, attendanceMap]);
-
-  const absentCount = useMemo(() => {
-    return students.filter((s) => getStudentStatus(s) === 'Absent').length;
+  const { presentCount, lateCount, absentCount } = useMemo(() => {
+    const c = { Present: 0, Late: 0, Absent: 0 };
+    students.forEach((s) => {
+      const st = statusOf(attendanceMap, s);
+      if (st in c) c[st]++;
+    });
+    return { presentCount: c.Present, lateCount: c.Late, absentCount: c.Absent };
   }, [students, attendanceMap]);
 
   // Long classes appear instantly: draw the first 30 cards, then the rest a moment later.
   const [renderCount, setRenderCount] = useState(30);
-  useEffect(() => { setRenderCount(30); }, [selectedBatchId, searchTerm]);
+  useEffect(() => { setRenderCount(30); }, [selectedBatchId, searchTerm, statusFilter]);
 
-  // Filter students
+  // Filter students by the search box and the Pending / Present / Late / Absent tabs
   const filteredStudents = useMemo(() => {
-    if (!searchTerm.trim()) return students;
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.trim().toLowerCase();
     return students.filter(
       (s) =>
-        (s.full_name || s.name || '')?.toLowerCase().includes(term) ||
-        String(s.roll_no || '').includes(term) ||
-        String(s.admission_no || '').toLowerCase().includes(term)
+        (statusFilter === 'all' || statusOf(attendanceMap, s) === statusFilter) &&
+        (!term ||
+          (s.full_name || s.name || '').toLowerCase().includes(term) ||
+          String(s.roll_no || '').includes(term) ||
+          String(s.admission_no || '').toLowerCase().includes(term))
     );
-  }, [students, searchTerm]);
+  }, [students, searchTerm, statusFilter, attendanceMap]);
   useEffect(() => {
     if (renderCount >= filteredStudents.length) return undefined;
     const t = setTimeout(() => setRenderCount((c) => c + 30), 60);
@@ -977,9 +1085,11 @@ export default function TeacherAttendancePage() {
     });
 
     if (res.ok) {
-      dirtyIdsRef.current = new Set();
+      // Cleared only for students unchanged since the tap; a mark changed while saving still has to go out
+      marked.forEach((r) => {
+        if (attendanceMapRef.current[r.student_id] === r.status) dirtyIdsRef.current.delete(r.student_id);
+      });
       setShowSuccessModal(true);
-      showToast(`✓ Saved to School PC (${presentCount} Present · ${absentCount} Absent)`);
       setOfflineQueue(getOfflineQueue());
       flushOfflineQueue(hubUrl).then((r) => {
         if (r && r.flushedCount > 0) {
@@ -989,9 +1099,8 @@ export default function TeacherAttendancePage() {
     } else if (res.queued) {
       setShowSuccessModal(true);
       setOfflineQueue(getOfflineQueue());
-      showToast(res.error || 'Saved on this phone. It will be sent to the School PC automatically.', 'warning');
     } else {
-      showToast('⚠️ Could not save attendance: ' + (res.error || 'Connection failed'), 'error');
+      showToast('Could not save attendance: ' + (res.error || 'Connection failed'), 'error');
     }
   };
 
@@ -1001,9 +1110,9 @@ export default function TeacherAttendancePage() {
     setIsFlushingQueue(false);
     setOfflineQueue(getOfflineQueue());
     if (res.ok && res.flushedCount > 0) {
-      showToast(`✓ Successfully synced ${res.flushedCount} pending roll call(s) to School PC!`);
+      showToast(`Sent ${res.flushedCount} waiting roll call(s) to the School PC`);
     } else if (res.remainingCount > 0) {
-      showToast(`⚠️ Could not reach School PC. ${res.remainingCount} roll call(s) still in phone queue.`);
+      showToast(`Could not reach the School PC. ${res.remainingCount} roll call(s) still waiting on this phone.`, 'warning');
     }
   };
 
@@ -1026,13 +1135,13 @@ export default function TeacherAttendancePage() {
         }
         setHubUrl(target);
         setUrlInput(target);
-        showToast(`✓ Scanned & Connected: ${target.replace(/^https?:\/\//, '')}`);
+        showToast(`Scanned. Connecting to ${target.replace(/^https?:\/\//, '')}`);
         verifyConnection(target, false);
 
         // Automatically flush pending queue if connected
         flushOfflineQueue(target).then((r) => {
           if (r.flushedCount > 0) {
-            showToast(`✓ Synced ${r.flushedCount} pending roll call(s) to School PC!`);
+            showToast(`Sent ${r.flushedCount} waiting roll call(s) to the School PC`);
             setOfflineQueue(getOfflineQueue());
           }
         });
@@ -1040,7 +1149,7 @@ export default function TeacherAttendancePage() {
         showToast('Scanned code: ' + rawText);
       }
     },
-    [verifyConnection]
+    [verifyConnection, showToast]
   );
 
   // Camera QR Scanner Handler
@@ -1154,1942 +1263,665 @@ export default function TeacherAttendancePage() {
     return () => clearInterval(t);
   }, [viewMode, connectionStatus.ok, hubUrl, selectedDate, refreshHubMetrics]);
 
-  return (
-    <div
-      style={{
-        minHeight: '100vh',
-        backgroundColor: '#f8fafc',
-        backgroundImage: `
-          radial-gradient(circle at 12% 8%, rgba(219, 234, 254, 0.6) 0%, transparent 45%),
-          radial-gradient(circle at 88% 22%, rgba(254, 243, 199, 0.45) 0%, transparent 45%),
-          radial-gradient(circle at 50% 85%, rgba(209, 250, 229, 0.4) 0%, transparent 50%)
-        `,
-        color: '#0f172a',
-        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-        paddingBottom: viewMode === 'rollcall' ? '180px' : '90px',
-        WebkitFontSmoothing: 'antialiased',
-      }}
-    >
-      <style>{`
-        @keyframes slideDownToast {
-          0% { opacity: 0; transform: translateY(-18px) scale(0.95); }
-          100% { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes pulseGlow {
-          0%, 100% { opacity: 0.55; transform: scale(1); }
-          50% { opacity: 1; transform: scale(1.15); }
-        }
-        .liquid-card {
-          transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
-        }
-        .liquid-card:active {
-          transform: scale(0.985);
-        }
-        /* Long class lists: cards outside the screen are not laid out or painted until scrolled near. */
-        .student-row {
-          transition: none;
-        }
-        /* Phone WebView: no 300 ms tap delay, no grey tap flash, no rubber-band over-scroll on the page. */
-        html, body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
-        button { -webkit-tap-highlight-color: transparent; }
-        .touch-action-btn {
-          transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), filter 0.15s ease;
-        }
-        .touch-action-btn:active {
-          transform: scale(0.95);
-        }
-      `}</style>
 
-      {/* Artisanal Liquid Glass Floating Toast Capsule */}
+  // ---------------------------------------------------------------------------
+  // Screen helpers
+  // ---------------------------------------------------------------------------
+  const goBack = () => setViewMode(activeStandardGroup?.hasMultipleSections ? 'divisions' : 'batches');
+  const openScanner = () => {
+    setCameraError('');
+    setShowCameraScanner(true);
+  };
+  const refreshAll = () => {
+    verifyConnection(hubUrl);
+    if (offlineQueue.length > 0) handleFlushQueue();
+  };
+  const connectManually = (raw) => {
+    let clean = String(raw || '').trim().replace(/\/+$/, '');
+    if (!clean) {
+      showToast('Type the School PC address first.', 'warning');
+      return;
+    }
+    if (!/^https?:\/\//i.test(clean)) clean = `http://${clean}`;
+    setStoredHubUrl(clean);
+    setHubUrl(clean);
+    setUrlInput(clean);
+    setShowSettingsModal(false);
+    verifyConnection(clean, false);
+  };
+  const handlePair = async () => {
+    setPairError('');
+    setIsPairing(true);
+    const r = await pairDeviceWithHub(hubUrl, pairCode);
+    setIsPairing(false);
+    if (!r.ok) {
+      setPairError(r.error);
+      return;
+    }
+    setIsPaired(true);
+    setPairCode('');
+    showToast('Phone paired with School PC');
+    verifyConnection(hubUrl, false);
+  };
+
+  // New screen = start at the top; open sheets freeze the page behind them
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [viewMode]);
+  useEffect(() => {
+    document.documentElement.classList.add('tm-root');
+    return () => document.documentElement.classList.remove('tm-root');
+  }, []);
+  const sheetOpen = showCameraScanner || showSettingsModal || showSuccessModal;
+  useEffect(() => {
+    document.documentElement.style.overflow = sheetOpen ? 'hidden' : '';
+    return () => {
+      document.documentElement.style.overflow = '';
+    };
+  }, [sheetOpen]);
+
+  // Class cards: one per standard, with its day's numbers added up from the divisions
+  const groupCards = useMemo(
+    () =>
+      standardGroups.map((group) => {
+        let p = 0;
+        let a = 0;
+        let total = 0;
+        group.sections.forEach((b) => {
+          const st = batchStatuses[batchKey(b)];
+          if (!st) return;
+          p += st.present + st.late;
+          a += st.absent;
+          total += st.total;
+        });
+        const marked = p + a;
+        const t = Math.max(total, marked);
+        return { group, p, a, marked, total: t, done: t > 0 && marked >= t };
+      }),
+    [standardGroups, batchStatuses]
+  );
+  const visibleGroups = useMemo(() => {
+    const term = classQuery.trim().toLowerCase();
+    return groupCards.filter((c) => {
+      if (classFilter === 'pending' && c.done) return false;
+      if (classFilter === 'done' && !c.done) return false;
+      if (!term) return true;
+      return (
+        c.group.standardName.toLowerCase().includes(term) ||
+        c.group.sections.some(
+          (b) => b.name?.toLowerCase().includes(term) || b.code?.toLowerCase().includes(term) || String(b.section || '').toLowerCase().includes(term)
+        )
+      );
+    });
+  }, [groupCards, classQuery, classFilter]);
+  const doneGroups = groupCards.filter((c) => c.done).length;
+
+  const markedCount = presentCount + lateCount + absentCount;
+  const pendingCount = Math.max(0, totalCount - markedCount);
+  const filterCounts = { all: totalCount, Pending: pendingCount, Present: presentCount, Late: lateCount, Absent: absentCount };
+  const markedToday = dailyMetrics.present + dailyMetrics.late + dailyMetrics.absent;
+  const todayPct = dailyMetrics.total > 0 ? Math.min(100, Math.round((markedToday / dailyMetrics.total) * 100)) : 0;
+  const isToday = selectedDate === todayLocal();
+
+  const connWaiting = connectionStatus.state === 'checking' || connectionStatus.state === 'reconnecting';
+  const connState = connectionStatus.ok ? 'ok' : connWaiting ? 'wait' : 'bad';
+  const connText = connectionStatus.ok
+    ? 'Connected to School PC'
+    : connectionStatus.state === 'reconnecting'
+    ? 'Reconnecting to School PC…'
+    : connectionStatus.state === 'checking'
+    ? 'Looking for School PC…'
+    : connectionStatus.state === 'wifi_disconnected'
+    ? 'Wi-Fi is off'
+    : 'School PC not found · tap to connect';
+  const hubLocked = Boolean(connectionStatus.ok && (connectionStatus.data?.is_locked || connectionStatus.data?.isLocked));
+  const needsConnect = !connectionStatus.ok && !connWaiting;
+  const hasClasses = uniqueBatches.length > 0;
+
+  const groupMeta = (c) => (
+    <>
+      <span className="u"><Users size={12} />{c.total} students</span>
+      {c.group.hasMultipleSections && <span>Divisions {c.group.sections.map((x) => x.section).join(', ')}</span>}
+      {c.marked > 0 && (
+        <span>
+          <span className="p">{c.p} present</span> · <span className="a">{c.a} absent</span>
+        </span>
+      )}
+    </>
+  );
+
+  return (
+    <div className="tm-app">
+      {/* Toast */}
       {toast && (
-        <div
-          key={toast.id}
-          style={{
-            position: 'fixed',
-            top: '18px',
-            left: '16px',
-            right: '16px',
-            zIndex: 99999,
-            display: 'flex',
-            justifyContent: 'center',
-            pointerEvents: 'none',
-            animation: 'slideDownToast 0.32s cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-        >
-          <div
-            style={{
-              maxWidth: '460px',
-              width: '100%',
-              backgroundColor: 'rgba(255, 255, 255, 0.96)',
-              backdropFilter: 'blur(24px)',
-              WebkitBackdropFilter: 'blur(24px)',
-              border: `1px solid ${
-                toast.type === 'error'
-                  ? '#fecaca'
-                  : toast.type === 'warning'
-                  ? '#fde68a'
-                  : '#a7f3d0'
-              }`,
-              boxShadow: `0 16px 36px rgba(15, 23, 42, 0.12), 0 0 20px ${
-                toast.type === 'error'
-                  ? 'rgba(239, 68, 68, 0.15)'
-                  : toast.type === 'warning'
-                  ? 'rgba(245, 158, 11, 0.15)'
-                  : 'rgba(16, 185, 129, 0.15)'
-              }`,
-              borderRadius: '16px',
-              padding: '12px 18px',
-              color: '#0f172a',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              pointerEvents: 'auto',
-            }}
-          >
-            <div
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '10px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                backgroundColor:
-                  toast.type === 'error'
-                    ? '#fee2e2'
-                    : toast.type === 'warning'
-                    ? '#fef3c7'
-                    : '#d1fae5',
-              }}
-            >
-              {toast.type === 'error' ? (
-                <XCircle size={18} color="#dc2626" />
-              ) : toast.type === 'warning' ? (
-                <AlertTriangle size={18} color="#d97706" />
-              ) : (
-                <CheckCircle2 size={18} color="#059669" />
-              )}
+        <div className={`tm-toast ${toast.type}`} key={toast.id} role="status">
+          <div className="tm-toast-in">
+            <div className="tm-toast-ico">
+              {toast.type === 'error' ? <XCircle size={18} /> : toast.type === 'warning' ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
             </div>
-            <div style={{ flex: 1, minWidth: 0, fontSize: '13px', fontWeight: 600, lineHeight: 1.4, color: '#0f172a' }}>
-              {toast.message}
-            </div>
-            <button
-              onClick={() => setToast(null)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#64748b',
-                cursor: 'pointer',
-                padding: '4px',
-                display: 'flex',
-                alignItems: 'center',
-              }}
-            >
-              <X size={15} />
-            </button>
+            <div className="tm-toast-msg">{toast.message}</div>
+            <button type="button" className="tm-toast-x" onClick={() => setToast(null)} aria-label="Dismiss"><X size={16} /></button>
           </div>
         </div>
       )}
 
-      {/* Header: logo + school name, and one tappable line that shows the School PC connection */}
-      <header
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 50,
-          backgroundColor: '#ffffff',
-          borderBottom: '1px solid #e2e8f0',
-          padding: 'calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '640px', margin: '0 auto' }}>
-          <img
-            src={academySettings.logo_url || '/logo.svg'}
-            alt=""
-            style={{ width: '38px', height: '38px', borderRadius: '10px', objectFit: 'contain', flexShrink: 0 }}
-          />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {academySettings.academy_name || 'Student Management System'}
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowSettingsModal(true)}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: 0,
-                marginTop: '2px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                maxWidth: '100%',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: 600,
-                color: connectionStatus.ok ? '#047857' : connectionStatus.state === 'checking' ? '#64748b' : '#b91c1c',
-              }}
-            >
-              <span
-                style={{
-                  width: '8px',
-                  height: '8px',
-                  borderRadius: '50%',
-                  flexShrink: 0,
-                  backgroundColor: connectionStatus.ok ? '#10b981' : connectionStatus.state === 'checking' ? '#94a3b8' : '#ef4444',
-                }}
-              />
-              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {connectionStatus.ok
-                  ? 'Connected to School PC'
-                  : connectionStatus.state === 'checking'
-                  ? 'Looking for School PC…'
-                  : connectionStatus.state === 'wifi_disconnected'
-                  ? 'Wi-Fi is off'
-                  : 'School PC not found - tap to connect'}
-              </span>
-            </button>
-          </div>
-          {isLoading && <RefreshCw size={16} color="#94a3b8" className="animate-spin" style={{ flexShrink: 0 }} />}
-        </div>
-      </header>
-
-      {/* ========================================================================= */}
-      {/* SCREEN 1: ALL BATCHES SELECTION SCREEN                                  */}
-      {/* ========================================================================= */}
+      {/* ------------------------------ Top bar ------------------------------ */}
       {viewMode === 'batches' && (
-        <main style={{ padding: '16px 16px 96px', maxWidth: '640px', margin: '0 auto' }}>
-          {/* OFFLINE PENDING QUEUE BANNER */}
+        <header className="tm-top">
+          <div className="tm-wrap">
+            <div className="tm-top-row">
+              <img className="tm-logo" src={academySettings.logo_url || '/logo.svg'} alt="" />
+              <div className="tm-brand">
+                <div className="tm-brand-name">{academySettings.academy_name || 'Student Management System'}</div>
+                <button type="button" className={`tm-conn ${connState}`} onClick={() => setShowSettingsModal(true)}>
+                  <i />
+                  <span>{connText}</span>
+                </button>
+              </div>
+              {isLoading && <RefreshCw size={18} className="tm-spin" color="#9fb0cc" style={{ flexShrink: 0 }} />}
+            </div>
+          </div>
+        </header>
+      )}
+
+      {viewMode === 'divisions' && activeStandardGroup && (
+        <header className="tm-top">
+          <div className="tm-wrap">
+            <div className="tm-top-row">
+              <button type="button" className="tm-iconbtn" onClick={() => setViewMode('batches')} aria-label="Back to all classes"><ArrowLeft size={22} /></button>
+              <div className="tm-title">
+                <h1>{activeStandardGroup.standardName}</h1>
+                <p>{activeStandardGroup.sections.length} divisions · {activeStandardGroup.totalStudents} students</p>
+              </div>
+              {isLoading && <RefreshCw size={18} className="tm-spin" color="#9fb0cc" style={{ flexShrink: 0 }} />}
+            </div>
+          </div>
+        </header>
+      )}
+
+      {viewMode === 'rollcall' && (
+        <header className="tm-top">
+          <div className="tm-wrap">
+            <div className="tm-top-row">
+              <button type="button" className="tm-iconbtn" onClick={goBack} aria-label="Back"><ArrowLeft size={22} /></button>
+              <div className="tm-title">
+                <h1>{activeBatch.name || activeBatch.code || 'Roll call'}</h1>
+                <p>{[activeBatch.code, activeBatch.classroom, activeBatch.timing].filter(Boolean).join(' · ') || 'Take roll call'}</p>
+              </div>
+              <span className={`tm-dot ${connState}`} role="img" aria-label={connText} title={connText} />
+              <span className={`tm-ratio${totalCount > 0 && pendingCount === 0 ? ' full' : ''}`}>{markedCount}/{totalCount}</span>
+            </div>
+            <div className="tm-topbar" aria-hidden="true">
+              <b style={{ width: `${totalCount ? (presentCount / totalCount) * 100 : 0}%`, background: '#34d399' }} />
+              <b style={{ width: `${totalCount ? (lateCount / totalCount) * 100 : 0}%`, background: '#fbbf24' }} />
+              <b style={{ width: `${totalCount ? (absentCount / totalCount) * 100 : 0}%`, background: '#f87171' }} />
+            </div>
+          </div>
+        </header>
+      )}
+
+      {/* ----------------------------- 1. Classes ----------------------------- */}
+      {viewMode === 'batches' && (
+        <main key="batches" className="tm-main tm-wrap tm-screen">
+          {hubLocked && (
+            <div className="tm-banner bad">
+              <Lock size={20} />
+              <span>The school's licence is paused, so roll call cannot be saved right now. Please tell the school office.</span>
+            </div>
+          )}
+
           {offlineQueue && offlineQueue.length > 0 && (
-            <div
-              style={{
-                backgroundColor: '#fffbeb',
-                border: '1px solid #fde68a',
-                borderRadius: '14px',
-                padding: '12px 16px',
-                marginBottom: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '10px',
-                boxShadow: '0 4px 14px rgba(245, 158, 11, 0.12)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Clock size={18} color="#d97706" />
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#92400e' }}>
-                  {offlineQueue.length} offline roll call{offlineQueue.length > 1 ? 's' : ''} saved locally.
-                </span>
-              </div>
-              <button
-                onClick={handleFlushQueue}
-                disabled={isFlushingQueue}
-                className="touch-action-btn"
-                style={{
-                  backgroundColor: '#d97706',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '7px 14px',
-                  borderRadius: '10px',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(217, 119, 6, 0.3)',
-                }}
-              >
-                {isFlushingQueue ? 'Syncing...' : 'Sync to PC'}
+            <div className="tm-banner warn">
+              <Clock size={20} />
+              <span>{offlineQueue.length} roll call{offlineQueue.length > 1 ? 's' : ''} waiting on this phone.</span>
+              <button type="button" className="tm-btn ok" onClick={handleFlushQueue} disabled={isFlushingQueue}>
+                {isFlushingQueue ? 'Sending…' : 'Send now'}
               </button>
             </div>
           )}
 
-          {/* STATE 1: Wi-Fi Disconnected Warning Banner */}
-          {connectionStatus.state === 'wifi_disconnected' && (
-            <div
-              style={{
-                backgroundColor: '#fef2f2',
-                border: '1px solid #fecaca',
-                borderRadius: '16px',
-                padding: '16px',
-                marginBottom: '16px',
-                boxShadow: '0 4px 16px rgba(239, 68, 68, 0.08)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                <div
-                  style={{
-                    width: '42px',
-                    height: '42px',
-                    borderRadius: '12px',
-                    backgroundColor: '#fee2e2',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                  }}
-                >
-                  <WifiOff size={22} color="#dc2626" />
-                </div>
-                <div>
-                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#991b1b' }}>
-                    Connect to School Wi-Fi Network
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#7f1d1d', marginTop: '3px', lineHeight: 1.4 }}>
-                    Your phone Wi-Fi is currently off or disconnected. Please join the same school Wi-Fi network as your School PC to sync roll calls instantly.
-                  </div>
+          {needsConnect && (
+            <section className="tm-panel">
+              <div className="tm-panel-ico">{connectionStatus.state === 'wifi_disconnected' ? <WifiOff size={26} /> : <School size={26} />}</div>
+              <h3>{connectionStatus.state === 'wifi_disconnected' ? 'Join the school Wi-Fi' : 'Connect to your School PC'}</h3>
+              <p>
+                {hubUrl
+                  ? `Cannot reach the School PC at ${hubUrl.replace(/^https?:\/\//, '')}. Make sure the SMS app is open on the PC and this phone is on the same school Wi-Fi.`
+                  : 'Open the SMS app on the School PC. This phone and the PC must be on the same school Wi-Fi.'}
+              </p>
+              <button type="button" className="tm-btn primary block" onClick={handleTriggerAutoDiscovery} disabled={isAutoDiscovering}>
+                {isAutoDiscovering ? <RefreshCw size={18} className="tm-spin" /> : <Sparkles size={18} />}
+                {isAutoDiscovering ? 'Looking for the School PC…' : 'Find School PC automatically'}
+              </button>
+              <div className="tm-or">OR</div>
+              <button type="button" className="tm-btn ghost block" onClick={openScanner}>
+                <Camera size={18} />Scan the QR code on the PC
+              </button>
+              <div className="tm-field">
+                <span>Or type the PC address</span>
+                <div className="tm-row2">
+                  <input
+                    className="tm-input mono"
+                    type="text"
+                    inputMode="url"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    placeholder="192.168.0.104:5173"
+                  />
+                  <button type="button" className="tm-btn soft" onClick={() => connectManually(urlInput)}>Connect</button>
                 </div>
               </div>
-              <button
-                onClick={() => verifyConnection(hubUrl)}
-                className="touch-action-btn"
-                style={{
-                  backgroundColor: '#dc2626',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '10px 14px',
-                  borderRadius: '10px',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  boxShadow: '0 2px 8px rgba(220, 38, 38, 0.25)',
-                }}
-              >
-                <RefreshCw size={14} />
-                Recheck Wi-Fi Connection
-              </button>
-            </div>
+            </section>
           )}
 
-          {/* STATE 2: Wi-Fi On, but School PC Not Configured or Unreachable */}
           {connectionStatus.ok && !isPaired && (
-            <div style={{ margin: '12px 0', padding: '14px', borderRadius: '12px', backgroundColor: '#fffbeb', border: '1px solid #fcd34d' }}>
-              <div style={{ fontSize: '13px', fontWeight: 800, color: '#92400e', marginBottom: '6px' }}>Pair this phone with the School PC</div>
-              <div style={{ fontSize: '12px', color: '#78350f', marginBottom: '10px' }}>
-                Enter the 6-digit code shown on the School PC (Connect Teacher App), or scan its QR code.
-              </div>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={pairCode}
-                  onChange={(e) => setPairCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="123456"
-                  style={{ flex: 1, padding: '9px 12px', fontSize: '16px', letterSpacing: '4px', borderRadius: '10px', border: '1px solid #cbd5e1', fontFamily: 'monospace' }}
-                />
-                <button
-                  className="touch-action-btn"
-                  disabled={pairCode.length !== 6}
-                  onClick={async () => {
-                    setPairError('');
-                    const r = await pairDeviceWithHub(hubUrl, pairCode);
-                    if (!r.ok) return setPairError(r.error);
-                    setIsPaired(true);
-                    setPairCode('');
-                    showToast('✓ Phone paired with School PC');
-                    verifyConnection(hubUrl, false);
-                  }}
-                  style={{ backgroundColor: '#0f172a', border: 'none', color: '#ffffff', padding: '9px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 700 }}
-                >
-                  Pair
-                </button>
-              </div>
-              {pairError && <div style={{ marginTop: '8px', fontSize: '12px', color: '#b91c1c' }}>{pairError}</div>}
-            </div>
+            <section className="tm-panel">
+              <div className="tm-panel-ico"><Lock size={26} /></div>
+              <h3>Pair this phone</h3>
+              <p>On the School PC open <b>Connect Teacher App</b> and type the 6-digit code here, or scan its QR code.</p>
+              <input
+                className="tm-input otp"
+                style={{ marginTop: 14 }}
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={pairCode}
+                onChange={(e) => setPairCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="000000"
+                aria-label="6-digit pairing code"
+              />
+              {pairError && <div className="tm-err">{pairError}</div>}
+              <button type="button" className="tm-btn primary block" disabled={pairCode.length !== 6 || isPairing} onClick={handlePair}>
+                {isPairing ? <RefreshCw size={18} className="tm-spin" /> : <CheckCircle2 size={18} />}
+                {isPairing ? 'Pairing…' : 'Pair phone'}
+              </button>
+              <div className="tm-or">OR</div>
+              <button type="button" className="tm-btn ghost block" onClick={openScanner}>
+                <Camera size={18} />Scan QR code
+              </button>
+            </section>
           )}
 
-          {connectionStatus.state === 'pc_unreachable' && (
-            <div
-              style={{
-                backgroundColor: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '18px',
-                padding: '18px',
-                marginBottom: '16px',
-                boxShadow: '0 8px 24px rgba(15, 23, 42, 0.05)',
-                textAlign: 'center',
-              }}
-            >
-              <div
-                style={{
-                  width: '50px',
-                  height: '50px',
-                  borderRadius: '14px',
-                  backgroundColor: '#eff6ff',
-                  border: '1px solid #bfdbfe',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginBottom: '10px',
-                }}
-              >
-                <QrCode size={26} color="#2563eb" />
+          {hasClasses && (
+            <section className="tm-hero" aria-label="Today at a glance">
+              <div className="tm-hero-head">
+                <div>
+                  <div className="tm-kicker">{isToday ? 'Today' : 'Selected day'}</div>
+                  <div className="tm-hero-date">{fmtDay(selectedDate, true)}</div>
+                </div>
+                <label className="tm-datepick">
+                  <Calendar size={16} />
+                  Change
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => e.target.value && pickDate(e.target.value)}
+                    aria-label="Choose date"
+                  />
+                </label>
               </div>
-              <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a' }}>
-                School PC Hub Not Detected
+              <div className="tm-hero-body">
+                <Ring pct={todayPct} />
+                <div className="tm-stats">
+                  <div className="tm-stat ok"><b>{dailyMetrics.present + dailyMetrics.late}</b><span>Present</span></div>
+                  <div className="tm-stat bad"><b>{dailyMetrics.absent}</b><span>Absent</span></div>
+                  <div className="tm-stat warn"><b>{dailyMetrics.pending}</b><span>Pending</span></div>
+                  <div className="tm-stat"><b>{schoolTotalStudents}</b><span>Enrolled</span></div>
+                </div>
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', lineHeight: 1.5 }}>
-                Cannot reach School PC at <span style={{ color: '#0284c7', fontFamily: 'monospace', fontWeight: 700 }}>{hubUrl}</span>. Auto-detect below or scan the QR code displayed on your PC screen.
-              </div>
-
-              {/* Primary: Smart Wi-Fi Auto-Discovery Button */}
-              <button
-                onClick={handleTriggerAutoDiscovery}
-                disabled={isAutoDiscovering}
-                className="touch-action-btn"
-                style={{
-                  marginTop: '14px',
-                  width: '100%',
-                  backgroundColor: '#059669',
-                  backgroundImage: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-                  border: 'none',
-                  color: '#ffffff',
-                  padding: '13px',
-                  borderRadius: '12px',
-                  fontSize: '14px',
-                  fontWeight: 800,
-                  cursor: isAutoDiscovering ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 16px rgba(16, 185, 129, 0.25)',
-                }}
-              >
-                {isAutoDiscovering ? (
-                  <>
-                    <RefreshCw size={18} className="animate-spin" />
-                    <span>Probing Local Wi-Fi Subnet...</span>
-                  </>
-                ) : (
-                  <>
-                    <Search size={18} />
-                    <span>Auto-Detect School PC on Wi-Fi</span>
-                  </>
-                )}
-              </button>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '12px 0' }}>
-                <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
-                <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700 }}>OR SCAN QR CODE</span>
-                <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
-              </div>
-
-              {/* Large Camera Scan Button */}
-              <button
-                onClick={() => setShowCameraScanner(true)}
-                className="touch-action-btn"
-                style={{
-                  width: '100%',
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #cbd5e1',
-                  color: '#0f172a',
-                  padding: '12px',
-                  borderRadius: '12px',
-                  fontSize: '14px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
-                }}
-              >
-                <Camera size={18} color="#0284c7" />
-                <span>Scan School PC QR Code</span>
-              </button>
-
-              {/* Manual IP input inside the notice */}
-              <div style={{ marginTop: '12px', display: 'flex', gap: '6px' }}>
-                <input
-                  type="text"
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="http://192.168.0.104:5173"
-                  style={{
-                    flex: 1,
-                    padding: '9px 12px',
-                    fontSize: '12px',
-                    borderRadius: '10px',
-                    backgroundColor: '#f8fafc',
-                    border: '1px solid #cbd5e1',
-                    color: '#0f172a',
-                    outline: 'none',
-                    fontFamily: 'monospace',
-                  }}
-                />
-                <button
-                  onClick={() => {
-                    const clean = urlInput.trim();
-                    setStoredHubUrl(clean);
-                    setHubUrl(clean);
-                    verifyConnection(clean);
-                  }}
-                  className="touch-action-btn"
-                  style={{
-                    backgroundColor: '#0f172a',
-                    border: 'none',
-                    color: '#ffffff',
-                    padding: '9px 14px',
-                    borderRadius: '10px',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Connect
-                </button>
-              </div>
-            </div>
+              {!isToday && (
+                <div className="tm-today-reset"><button type="button" onClick={() => pickDate(todayLocal())}>Back to today</button></div>
+              )}
+            </section>
           )}
 
-          {/* TOP STUDENT SUMMARY METRICS BAR (Persistent across RAM wipes!) */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(5, 1fr)',
-              gap: '6px',
-              marginBottom: '18px',
-            }}
-          >
-            {/* Total Students */}
-            <div
-              className="liquid-card"
-              style={{
-                backgroundColor: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderTop: '3px solid #2563eb',
-                borderRadius: '14px',
-                padding: '10px 2px',
-                boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.2px' }}>
-                Enrolled
+          {hasClasses ? (
+            <>
+              <div className="tm-sec">
+                <h2>Classes</h2>
+                <span>{doneGroups} of {groupCards.length} done</span>
               </div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
-                {schoolTotalStudents}
+              <label className="tm-search">
+                <Search size={18} />
+                <input
+                  type="text"
+                  placeholder="Search classes"
+                  value={classQuery}
+                  onChange={(e) => setClassQuery(e.target.value)}
+                  aria-label="Search classes"
+                />
+                {classQuery && <button type="button" onClick={() => setClassQuery('')} aria-label="Clear search"><X size={14} /></button>}
+              </label>
+              <div className="tm-tabs" role="tablist">
+                {[['all', `All ${groupCards.length}`], ['pending', `To do ${groupCards.length - doneGroups}`], ['done', `Done ${doneGroups}`]].map(([id, label]) => (
+                  <button key={id} type="button" role="tab" aria-selected={classFilter === id} className={`tm-tab${classFilter === id ? ' on' : ''}`} onClick={() => setClassFilter(id)}>
+                    {label}
+                  </button>
+                ))}
               </div>
+              {visibleGroups.length === 0 ? (
+                <div className="tm-empty">
+                  <div className="tm-empty-ico"><Search size={26} /></div>
+                  <h3>No class found</h3>
+                  <p>{classQuery ? `Nothing matches "${classQuery}".` : classFilter === 'done' ? 'No class is finished yet.' : 'Every class is done. Well done!'}</p>
+                  {(classQuery || classFilter !== 'all') && (
+                    <button type="button" className="tm-btn soft sm" onClick={() => { setClassQuery(''); setClassFilter('all'); }}>Show all classes</button>
+                  )}
+                </div>
+              ) : (
+                <div className="tm-list">
+                  {visibleGroups.map((c) => (
+                    <ClassCard
+                      key={c.group.standardName}
+                      badge={badgeText(c.group.standardName)}
+                      name={c.group.standardName}
+                      meta={groupMeta(c)}
+                      marked={c.marked}
+                      absent={c.a}
+                      total={c.total}
+                      onClick={() => {
+                        if (c.group.hasMultipleSections) {
+                          setSelectedStandard(c.group.standardName);
+                          setViewMode('divisions');
+                        } else {
+                          const single = c.group.sections[0];
+                          openBatchRollCall(single.id || single.code, c.group.standardName);
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
+          ) : connWaiting || isLoading ? (
+            <div className="tm-list" aria-label="Loading classes">
+              <div className="tm-skel" />
+              <div className="tm-skel" />
+              <div className="tm-skel" />
             </div>
-
-            {/* Present Today (Persistent across RAM kill - Never shows '--') */}
-            <div
-              className="liquid-card"
-              style={{
-                backgroundColor: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderTop: '3px solid #10b981',
-                borderRadius: '14px',
-                padding: '10px 2px',
-                boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: '9px', color: '#059669', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.2px' }}>
-                Present
-              </div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#059669', marginTop: '2px' }}>
-                {dailyMetrics.present + dailyMetrics.late}
-              </div>
+          ) : connectionStatus.ok ? (
+            <div className="tm-empty">
+              <div className="tm-empty-ico"><School size={28} /></div>
+              <h3>No classes yet</h3>
+              <p>Add classes and students on the School PC. They will appear here in a moment.</p>
+              <button type="button" className="tm-btn soft sm" onClick={refreshAll}><RefreshCw size={16} />Refresh</button>
             </div>
-
-            {/* Absent Today (Persistent across RAM kill - Never shows '--') */}
-            <div
-              className="liquid-card"
-              style={{
-                backgroundColor: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderTop: '3px solid #ef4444',
-                borderRadius: '14px',
-                padding: '10px 2px',
-                boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: '9px', color: '#dc2626', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.2px' }}>
-                Absent
-              </div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#dc2626', marginTop: '2px' }}>
-                {dailyMetrics.absent}
-              </div>
-            </div>
-
-            {/* Pending Today (Strict Invariant: Present + Absent + Pending = 100) */}
-            <div
-              className="liquid-card"
-              style={{
-                backgroundColor: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderTop: '3px solid #f59e0b',
-                borderRadius: '14px',
-                padding: '10px 2px',
-                boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: '9px', color: '#d97706', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.2px' }}>
-                Pending
-              </div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#d97706', marginTop: '2px' }}>
-                {dailyMetrics.pending}
-              </div>
-            </div>
-
-            {/* Batches / Cohorts */}
-            <div
-              className="liquid-card"
-              style={{
-                backgroundColor: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderTop: '3px solid #8b5cf6',
-                borderRadius: '14px',
-                padding: '10px 2px',
-                boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: '9px', color: '#7c3aed', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.2px' }}>
-                Classes
-              </div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#7c3aed', marginTop: '2px' }}>
-                {uniqueBatches.length}
-              </div>
-            </div>
-          </div>
-
-          {/* Section Heading */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '14px',
-            }}
-          >
-            <div>
-              <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
-                Classes
-              </h1>
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-                Tap a class to take roll call
-              </div>
-            </div>
-            <span
-              style={{
-                backgroundColor: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                borderRadius: '20px',
-                padding: '4px 12px',
-                fontSize: '11px',
-                fontWeight: 700,
-                color: '#1d4ed8',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              {uniqueBatches.length} {uniqueBatches.length === 1 ? 'class' : 'classes'}
-            </span>
-          </div>
-
-          {/* Search Cohorts */}
-          <div
-            style={{
-              position: 'relative',
-              marginBottom: '14px',
-            }}
-          >
-            <Search
-              size={15}
-              color="#94a3b8"
-              style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }}
-            />
-            <input
-              type="text"
-              placeholder="Search classes"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '10px 14px 10px 38px',
-                fontSize: '13px',
-                backgroundColor: '#ffffff',
-                border: '1px solid #cbd5e1',
-                borderRadius: '12px',
-                color: '#0f172a',
-                outline: 'none',
-                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.03)',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          {/* Hierarchical Standard & Division Cards Grid */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {standardGroups
-              .filter((group) => {
-                if (!searchTerm.trim()) return true;
-                const term = searchTerm.toLowerCase();
-                const matchesStandard = group.standardName.toLowerCase().includes(term);
-                const matchesAnySection = group.sections.some(
-                  (b) =>
-                    b.name?.toLowerCase().includes(term) ||
-                    b.code?.toLowerCase().includes(term) ||
-                    String(b.section || '').toLowerCase().includes(term)
-                );
-                return matchesStandard || matchesAnySection;
-              })
-              .map((group) => {
-                const totalDivisions = group.sections.length;
-                let markedDivisionsCount = 0;
-                let totalStudentsInStandard = 0;
-                group.sections.forEach((b) => {
-                  if (batchStatuses[batchKey(b)]?.taken) markedDivisionsCount++;
-                  totalStudentsInStandard += typeof b.student_count === 'number' ? b.student_count : (typeof b.enrolled === 'number' ? b.enrolled : 0);
-                });
-
-                // If standalone single-division class, can launch directly; if multiple divisions, drills down to divisions screen
-                const handleCardClick = () => {
-                  if (group.hasMultipleSections) {
-                    setSelectedStandard(group.standardName);
-                    setViewMode('divisions');
-                  } else {
-                    const singleBatch = group.sections[0];
-                    openBatchRollCall(singleBatch.id || singleBatch.code, group.standardName);
-                  }
-                };
-
-                return (
-                  <div
-                    key={group.standardName}
-                    onClick={handleCardClick}
-                    className="liquid-card"
-                    style={{
-                      backgroundColor: '#ffffff',
-                      borderRadius: '16px',
-                      padding: '16px',
-                      border: markedDivisionsCount === totalDivisions && totalDivisions > 0 ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
-                      borderLeft: '4px solid #4f46e5',
-                      boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
-                        <span
-                          style={{
-                            backgroundColor: '#e0e7ff',
-                            border: '1px solid #c7d2fe',
-                            color: '#4338ca',
-                            padding: '2px 8px',
-                            borderRadius: '6px',
-                            fontSize: '11px',
-                            fontWeight: 800,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                          }}
-                        >
-                          <Layers size={12} />
-                          <span>{group.hasMultipleSections ? `Divisions ${group.sections.map((x) => x.section).join(', ')}` : 'Class'}</span>
-                        </span>
-
-                        {markedDivisionsCount === totalDivisions && totalDivisions > 0 ? (
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              color: '#059669',
-                              backgroundColor: '#ecfdf5',
-                              border: '1px solid #a7f3d0',
-                              padding: '2px 8px',
-                              borderRadius: '20px',
-                              fontWeight: 700,
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                            }}
-                          >
-                            <Check size={11} strokeWidth={3} />
-                            <span>Done today</span>
-                          </span>
-                        ) : markedDivisionsCount > 0 ? (
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              color: '#0284c7',
-                              backgroundColor: '#f0f9ff',
-                              border: '1px solid #bae6fd',
-                              padding: '2px 8px',
-                              borderRadius: '20px',
-                              fontWeight: 700,
-                            }}
-                          >
-                            {markedDivisionsCount}/{totalDivisions} Marked
-                          </span>
-                        ) : (
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              color: '#b45309',
-                              backgroundColor: '#fffbeb',
-                              border: '1px solid #fde68a',
-                              padding: '2px 8px',
-                              borderRadius: '20px',
-                              fontWeight: 600,
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                            }}
-                          >
-                            <Clock size={11} />
-                            <span>Not taken yet</span>
-                          </span>
-                        )}
-                      </div>
-
-                      <div
-                        style={{
-                          fontSize: '17px',
-                          fontWeight: 800,
-                          color: '#0f172a',
-                          letterSpacing: '-0.3px',
-                        }}
-                      >
-                        {group.standardName}
-                      </div>
-
-                      <div
-                        style={{
-                          fontSize: '12px',
-                          color: '#64748b',
-                          marginTop: '4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          flexWrap: 'wrap',
-                        }}
-                      >
-                        <Users size={12} color="#64748b" />
-                        <span style={{ whiteSpace: 'nowrap' }}>{totalStudentsInStandard} students</span>
-                        {(() => {
-                          let p = 0;
-                          let a = 0;
-                          group.sections.forEach((b) => {
-                            const st = batchStatuses[batchKey(b)];
-                            if (st) {
-                              p += st.present + st.late;
-                              a += st.absent;
-                            }
-                          });
-                          return p + a > 0 ? (
-                            <span style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
-                              · <span style={{ color: '#059669' }}>{p} present</span> · <span style={{ color: '#dc2626' }}>{a} absent</span>
-                            </span>
-                          ) : null;
-                        })()}
-                      </div>
-                    </div>
-
-                    <ChevronRight size={20} color="#4f46e5" style={{ flexShrink: 0, marginLeft: '8px' }} />
-                  </div>
-                );
-              })}
-          </div>
+          ) : null}
         </main>
       )}
 
-      {/* ========================================================================= */}
-      {/* SCREEN 2: DIVISIONS / SECTIONS DRILL-DOWN SCREEN (USER SKETCH IMAGE 2)    */}
-      {/* ========================================================================= */}
+      {/* ---------------------------- 2. Divisions ---------------------------- */}
       {viewMode === 'divisions' && activeStandardGroup && (
-        <main style={{ padding: '16px 16px 130px 16px', maxWidth: '640px', margin: '0 auto', minHeight: '100vh', boxSizing: 'border-box' }}>
-          {/* Top Back Navigation Bar */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <button
-              type="button"
-              onClick={() => setViewMode('batches')}
-              className="touch-action-btn"
-              style={{
-                backgroundColor: '#ffffff',
-                border: '1px solid #cbd5e1',
-                color: '#0f172a',
-                padding: '9px 16px',
-                borderRadius: '12px',
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
-              }}
-            >
-              <ArrowLeft size={16} color="#0284c7" />
-              <span>All Classes</span>
-            </button>
-
-            <span
-              style={{
-                backgroundColor: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                borderRadius: '20px',
-                padding: '4px 12px',
-                fontSize: '11px',
-                fontWeight: 700,
-                color: '#1d4ed8',
-              }}
-            >
-              {activeStandardGroup.sections.length} Divisions
-            </span>
+        <main key="divisions" className="tm-main tm-wrap tm-screen">
+          <div className="tm-sec">
+            <h2>Choose a division</h2>
+            <span>Tap to take roll call</span>
           </div>
-
-          {/* Standard Cohort Banner */}
-          <div
-            style={{
-              backgroundColor: '#ffffff',
-              borderRadius: '16px',
-              padding: '16px',
-              border: '1px solid #e2e8f0',
-              boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
-              marginBottom: '16px',
-              borderLeft: '4px solid #4f46e5',
-            }}
-          >
-            <div style={{ fontSize: '11px', color: '#4f46e5', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: '4px' }}>
-              Standard Cohort
-            </div>
-            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
-              {activeStandardGroup.standardName}
-            </h1>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Users size={13} color="#64748b" />
-              <span>{activeStandardGroup.totalStudents} Enrolled Students</span>
-              <span style={{ color: '#cbd5e1' }}>•</span>
-              <span>Select a division below to take roll call</span>
-            </div>
-          </div>
-
-          {/* Division Cards List (Image 2) */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="tm-list">
             {activeStandardGroup.sections.map((batch) => {
-              const bStatus = batchStatuses[batchKey(batch)];
-              const isMarked = bStatus && bStatus.taken;
-
+              const st = batchStatuses[batchKey(batch)] || { present: 0, late: 0, absent: 0, total: 0 };
+              const marked = st.present + st.late + st.absent;
               return (
-                <div
+                <ClassCard
                   key={batch.code || batch.id}
-                  onClick={() => openBatchRollCall(batch.id || batch.code, activeStandardGroup.standardName)}
-                  className="liquid-card"
-                  style={{
-                    backgroundColor: '#ffffff',
-                    borderRadius: '16px',
-                    padding: '16px',
-                    border: isMarked ? '1px solid #a7f3d0' : '1px solid #e2e8f0',
-                    borderLeft: '4px solid #2563eb',
-                    boxShadow: '0 4px 14px rgba(15, 23, 42, 0.04)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
-                      <span
-                        style={{
-                          backgroundColor: '#2563eb',
-                          color: '#ffffff',
-                          padding: '2px 10px',
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                          fontWeight: 800,
-                          letterSpacing: '0.2px',
-                        }}
-                      >
-                        Division {batch.section || 'A'}
-                      </span>
-
-                      <span
-                        style={{
-                          backgroundColor: '#f1f5f9',
-                          border: '1px solid #cbd5e1',
-                          color: '#0f172a',
-                          padding: '2px 8px',
-                          borderRadius: '6px',
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          fontFamily: 'monospace',
-                        }}
-                      >
-                        {batch.code || batch.id}
-                      </span>
-
-                      {isMarked ? (
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            color: '#059669',
-                            backgroundColor: '#ecfdf5',
-                            border: '1px solid #a7f3d0',
-                            padding: '2px 8px',
-                            borderRadius: '20px',
-                            fontWeight: 700,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                          }}
-                        >
-                          <Check size={11} strokeWidth={3} />
-                          <span>{bStatus.present + bStatus.late} present · {bStatus.absent} absent{bStatus.pending ? ` · ${bStatus.pending} left` : ''}</span>
-                        </span>
-                      ) : (
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            color: '#b45309',
-                            backgroundColor: '#fffbeb',
-                            border: '1px solid #fde68a',
-                            padding: '2px 8px',
-                            borderRadius: '20px',
-                            fontWeight: 600,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                          }}
-                        >
-                          <Clock size={11} />
-                          <span>Not taken yet</span>
+                  badge={String(batch.section || 'A').slice(0, 3)}
+                  name={batch.displayName || batch.name}
+                  meta={
+                    <>
+                      <span className="u"><Users size={12} />{st.total || batch.student_count || 0} students</span>
+                      {batch.timing && <span>{batch.timing}</span>}
+                      {marked > 0 && (
+                        <span>
+                          <span className="p">{st.present + st.late} present</span> · <span className="a">{st.absent} absent</span>
                         </span>
                       )}
-                    </div>
-
-                    <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.2px' }}>
-                      {batch.displayName || batch.name}
-                    </div>
-
-                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Users size={12} color="#64748b" />
-                      <span style={{ color: '#2563eb', fontWeight: 700 }}>{batch.student_count || 0} students</span>
-                      {batch.timing && <span style={{ whiteSpace: 'nowrap' }}>· {batch.timing}</span>}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      color: '#2563eb',
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      paddingLeft: '12px',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <ChevronRight size={20} />
-                  </div>
-                </div>
+                    </>
+                  }
+                  marked={marked}
+                  absent={st.absent}
+                  total={st.total || batch.student_count || 0}
+                  onClick={() => openBatchRollCall(batch.id || batch.code, activeStandardGroup.standardName)}
+                />
               );
             })}
           </div>
         </main>
       )}
 
-      {/* ========================================================================= */}
-      {/* SCREEN 3: STUDENT ROLL CALL SCREEN (MOBILE-FRIENDLY 2-TIER CARDS)         */}
-      {/* ========================================================================= */}
+      {/* ----------------------------- 3. Roll call ----------------------------- */}
       {viewMode === 'rollcall' && (
-        <main style={{ padding: '16px 16px 130px 16px', maxWidth: '640px', margin: '0 auto', minHeight: '100vh', boxSizing: 'border-box' }}>
-          {/* Header: Back Navigation + Date Selector */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '14px',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                if (activeStandardGroup?.hasMultipleSections) {
-                  setViewMode('divisions');
-                } else {
-                  setViewMode('batches');
-                }
-              }}
-              className="touch-action-btn"
-              style={{
-                backgroundColor: '#ffffff',
-                border: '1px solid #cbd5e1',
-                color: '#0f172a',
-                padding: '9px 16px',
-                borderRadius: '12px',
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
-              }}
-            >
-              <ArrowLeft size={16} color="#0284c7" />
-              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>{activeStandardGroup?.hasMultipleSections ? activeStandardGroup.standardName : 'All Classes'}</span>
-            </button>
-
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                backgroundColor: '#ffffff',
-                border: '1px solid #cbd5e1',
-                borderRadius: '12px',
-                padding: '4px 10px',
-                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
-              }}
-            >
-              <Calendar size={14} color="#0284c7" />
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => handleDateChange(e.target.value)}
-                style={{
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  color: '#0f172a',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  outline: 'none',
-                  fontFamily: 'inherit',
-                }}
-              />
+        <main key="rollcall" className="tm-main roll tm-wrap tm-screen">
+          {!connectionStatus.ok && !loadError && (
+            <div className="tm-banner warn">
+              <WifiOff size={20} />
+              <span>{connWaiting ? 'Reconnecting to the School PC…' : 'School PC not reachable.'} You can keep marking. Everything is kept on this phone and sent when the PC is back.</span>
+            </div>
+          )}
+          <div className="tm-tools">
+            <label className="tm-datechip">
+              <Calendar size={16} />
+              {fmtDay(selectedDate)}
+              <input type="date" value={selectedDate} onChange={(e) => e.target.value && handleDateChange(e.target.value)} aria-label="Choose date" />
+            </label>
+            <div className="tm-bulk">
+              <button type="button" className="ok" onClick={markAllPresent} disabled={totalCount === 0}><CheckCheck size={16} />All present</button>
+              <button type="button" className="bad" onClick={markAllAbsent} disabled={totalCount === 0}><XCircle size={16} />All absent</button>
             </div>
           </div>
 
-          {/* Active Class Title & Chips */}
-          <div style={{ marginBottom: '14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              <span
-                style={{
-                  backgroundColor: '#f1f5f9',
-                  border: '1px solid #cbd5e1',
-                  color: '#0f172a',
-                  padding: '2px 8px',
-                  borderRadius: '6px',
-                  fontSize: '11px',
-                  fontWeight: 800,
-                  fontFamily: 'monospace',
-                }}
+          <div className="tm-chips" role="tablist" aria-label="Filter students">
+            {FILTERS.map(([id, label, tone]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={statusFilter === id}
+                className={`tm-chip ${tone}${statusFilter === id ? ' on' : ''}`}
+                onClick={() => setStatusFilter(id)}
               >
-                {activeBatch.code || selectedBatchId}
-              </span>
-              <span
-                style={{
-                  fontSize: '11px',
-                  color: '#64748b',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                }}
-              >
-                {activeBatch.classroom && <MapPin size={11} color="#64748b" />}
-                {activeBatch.classroom || ''}
-              </span>
-            </div>
-            <h2 style={{ margin: 0, fontSize: '19px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
-              {activeBatch.name}
-            </h2>
-            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
-              {activeBatch.timing || ''}
-            </div>
+                <b>{filterCounts[id]}</b>
+                <span>{label}</span>
+              </button>
+            ))}
           </div>
 
-          {/* 4 Roll Call Metric Cards */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gap: '8px',
-              marginBottom: '14px',
-            }}
-          >
-            {/* Enrolled */}
-            <div
-              className="liquid-card"
-              style={{
-                backgroundColor: '#ffffff',
-                border: '1px solid #e2e8f0',
-                borderTop: '3px solid #2563eb',
-                borderRadius: '12px',
-                padding: '8px 4px',
-                boxShadow: '0 4px 12px rgba(15, 23, 42, 0.04)',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase', fontWeight: 700 }}>
-                Enrolled
-              </div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
-                {totalCount}
-              </div>
-            </div>
-
-            {/* Present */}
-            <div
-              className="liquid-card"
-              style={{
-                backgroundColor: '#ecfdf5',
-                border: '1px solid #a7f3d0',
-                borderTop: '3px solid #10b981',
-                borderRadius: '12px',
-                padding: '8px 4px',
-                boxShadow: '0 4px 12px rgba(16, 185, 129, 0.06)',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: '9px', color: '#047857', textTransform: 'uppercase', fontWeight: 700 }}>
-                Present
-              </div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#047857', marginTop: '2px' }}>
-                {presentCount}
-              </div>
-            </div>
-
-            {/* Late */}
-            <div
-              className="liquid-card"
-              style={{
-                backgroundColor: '#fffbeb',
-                border: '1px solid #fde68a',
-                borderTop: '3px solid #f59e0b',
-                borderRadius: '12px',
-                padding: '8px 4px',
-                boxShadow: '0 4px 12px rgba(245, 158, 11, 0.06)',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: '9px', color: '#92400e', textTransform: 'uppercase', fontWeight: 700 }}>
-                Late
-              </div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#b45309', marginTop: '2px' }}>
-                {lateCount}
-              </div>
-            </div>
-
-            {/* Absent */}
-            <div
-              className="liquid-card"
-              style={{
-                backgroundColor: '#fff1f2',
-                border: '1px solid #fecdd3',
-                borderTop: '3px solid #ef4444',
-                borderRadius: '12px',
-                padding: '8px 4px',
-                boxShadow: '0 4px 12px rgba(239, 68, 68, 0.06)',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: '9px', color: '#9f1239', textTransform: 'uppercase', fontWeight: 700 }}>
-                Absent
-              </div>
-              <div style={{ fontSize: '18px', fontWeight: 800, color: '#e11d48', marginTop: '2px' }}>
-                {absentCount}
-              </div>
-            </div>
-          </div>
-
-          {/* Quick Mark Shortcuts */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
-            <button
-              onClick={markAllPresent}
-              className="touch-action-btn"
-              style={{
-                flex: 1,
-                backgroundColor: '#ecfdf5',
-                border: '1px solid #a7f3d0',
-                color: '#047857',
-                borderRadius: '10px',
-                padding: '9px 12px',
-                fontSize: '12px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.1)',
-              }}
-            >
-              <CheckCheck size={14} color="#059669" />
-              <span>Mark All Present</span>
-            </button>
-
-            <button
-              onClick={markAllAbsent}
-              className="touch-action-btn"
-              style={{
-                flex: 1,
-                backgroundColor: '#fff1f2',
-                border: '1px solid #fecdd3',
-                color: '#e11d48',
-                borderRadius: '10px',
-                padding: '9px 12px',
-                fontSize: '12px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                boxShadow: '0 2px 8px rgba(239, 68, 68, 0.1)',
-              }}
-            >
-              <XCircle size={14} color="#ef4444" />
-              <span>Mark All Absent</span>
-            </button>
-          </div>
-
-          {/* Student Search */}
-          <div style={{ position: 'relative', marginBottom: '14px' }}>
-            <Search
-              size={14}
-              color="#94a3b8"
-              style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }}
-            />
+          <label className="tm-search">
+            <Search size={18} />
             <input
               type="text"
-              placeholder="Search student name or roll number..."
+              placeholder="Search name, roll no or ID"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '9px 12px 9px 36px',
-                fontSize: '12px',
-                backgroundColor: '#ffffff',
-                border: '1px solid #cbd5e1',
-                borderRadius: '10px',
-                color: '#0f172a',
-                outline: 'none',
-                boxSizing: 'border-box',
-                boxShadow: '0 2px 6px rgba(15, 23, 42, 0.03)',
-              }}
+              aria-label="Search students"
             />
-          </div>
+            {searchTerm && <button type="button" onClick={() => setSearchTerm('')} aria-label="Clear search"><X size={14} /></button>}
+          </label>
 
-          {/* MOBILE-FIRST 2-TIER STUDENT CARDS: 100% FULL NAME READABILITY */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {students.length > 0 && (
+            <div className="tm-legend" aria-hidden="true">
+              <span className="p"><b>P</b> Present</span>
+              <span className="l"><b>L</b> Late</span>
+              <span className="a"><b>A</b> Absent</span>
+            </div>
+          )}
+
+          <div className="tm-rows">
             {filteredStudents.length === 0 ? (
-              <div
-                style={{
-                  backgroundColor: '#ffffff',
-                  borderRadius: '16px',
-                  border: '2px dashed #cbd5e1',
-                  padding: '36px 20px',
-                  textAlign: 'center',
-                  margin: '10px 0',
-                }}
-              >
-                <div
-                  style={{
-                    width: '56px',
-                    height: '56px',
-                    borderRadius: '50%',
-                    backgroundColor: '#f1f5f9',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    margin: '0 auto 12px',
-                  }}
-                >
-                  <Users size={28} color="#64748b" />
+              loadError ? (
+                <div className="tm-empty">
+                  <div className="tm-empty-ico"><WifiOff size={28} /></div>
+                  <h3>Could not load this class</h3>
+                  <p>{loadError} Check the Wi-Fi and try again.</p>
+                  <button type="button" className="tm-btn primary sm" onClick={() => openBatchRollCall(selectedBatchId, selectedStandard)}>
+                    <RefreshCw size={16} />Try again
+                  </button>
                 </div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>
-                  No Students Enrolled in {activeBatch.name || 'this Division'}
+              ) : isLoading && students.length === 0 ? (
+                <>
+                  <div className="tm-skel" style={{ height: 68 }} />
+                  <div className="tm-skel" style={{ height: 68 }} />
+                  <div className="tm-skel" style={{ height: 68 }} />
+                  <div className="tm-skel" style={{ height: 68 }} />
+                </>
+              ) : (
+                <div className="tm-empty">
+                  <div className="tm-empty-ico"><Users size={28} /></div>
+                  <h3>{students.length === 0 ? 'No students in this class' : 'No students here'}</h3>
+                  <p>
+                    {students.length === 0
+                      ? 'Add students to this class on the School PC and they will show up here.'
+                      : searchTerm.trim()
+                      ? `Nobody matches "${searchTerm}".`
+                      : `Nobody is marked ${statusFilter === 'Pending' ? 'pending' : statusFilter.toLowerCase()} right now.`}
+                  </p>
+                  {students.length > 0 && (searchTerm || statusFilter !== 'all') && (
+                    <button type="button" className="tm-btn soft sm" onClick={() => { setSearchTerm(''); setStatusFilter('all'); }}>Show everyone</button>
+                  )}
                 </div>
-                <div style={{ fontSize: '13px', color: '#64748b', maxWidth: '320px', margin: '0 auto', lineHeight: 1.5 }}>
-                  {searchTerm.trim()
-                    ? `No students found matching "${searchTerm}". Try a different name or admission number.`
-                    : 'This cohort does not have any students assigned yet. Add students from the School PC Admin portal to begin taking attendance.'}
-                </div>
-              </div>
+              )
             ) : (
               filteredStudents.slice(0, renderCount).map((student) => (
-                <StudentRow
-                  key={student.id}
-                  student={student}
-                  status={attendanceMap[student.id] || attendanceMap[student.admission_no] || 'Pending'}
-                  onSetStatus={onSetStatus}
-                  onWish={onWish}
-                />
+                <StudentRow key={student.id} student={student} status={statusOf(attendanceMap, student)} onSetStatus={onSetStatus} onWish={onWish} />
               ))
             )}
-        </div>
+          </div>
 
-          {/* Sticky Bottom "DONE — Save to School PC" Action Bar (Floating White Glass Dock) */}
-          <div
-            style={{
-              position: 'fixed',
-              bottom: '64px',
-              left: 0,
-              right: 0,
-              backgroundColor: '#ffffff',
-              borderTop: '1px solid #e2e8f0',
-              padding: '10px 16px',
-              zIndex: 40,
-              boxShadow: '0 -4px 20px rgba(15, 23, 42, 0.08)',
-            }}
-          >
-            <div style={{ maxWidth: '640px', margin: '0 auto' }}>
+          <div className="tm-savebar">
+            <div className="tm-wrap">
+              <div className="tm-savebar-info">
+                <span><b>{markedCount}</b> of {totalCount} marked</span>
+                <span>{pendingCount > 0 ? `${pendingCount} left` : totalCount > 0 ? 'Everyone marked' : ''}</span>
+              </div>
               <button
+                type="button"
+                className={`tm-btn block ${pendingCount === 0 && totalCount > 0 ? 'ok' : 'primary'}`}
                 onClick={handleSubmit}
-                disabled={isSubmitting || students.length === 0}
-                className="touch-action-btn"
-                style={{
-                  width: '100%',
-                  backgroundColor: '#2563eb',
-                  backgroundImage: 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 50%, #3b82f6 100%)',
-                  border: 'none',
-                  color: '#ffffff',
-                  padding: '14px 18px',
-                  borderRadius: '14px',
-                  fontSize: '14px',
-                  fontWeight: 800,
-                  cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 16px rgba(37, 99, 235, 0.35)',
-                }}
+                disabled={isSubmitting || students.length === 0 || markedCount === 0}
               >
-                {isSubmitting ? (
-                  <>
-                    <RefreshCw size={17} className="animate-spin" />
-                    <span>Saving…</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 size={18} color="#ffffff" style={{ flexShrink: 0 }} />
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      Save · {presentCount + lateCount} present · {absentCount} absent
-                    </span>
-                  </>
-                )}
+                {isSubmitting ? <RefreshCw size={18} className="tm-spin" /> : <CheckCircle2 size={18} />}
+                {isSubmitting ? 'Saving…' : `Save · ${presentCount + lateCount} present · ${absentCount} absent`}
               </button>
             </div>
           </div>
         </main>
       )}
 
-      {/* Camera QR Scanner Modal */}
-      {showCameraScanner && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            backgroundColor: 'rgba(15, 23, 42, 0.75)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: '#ffffff',
-              borderRadius: '16px',
-              border: '1px solid #e2e8f0',
-              padding: '18px',
-              width: '100%',
-              maxWidth: '380px',
-              textAlign: 'center',
-              boxShadow: '0 20px 50px rgba(15, 23, 42, 0.15)',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '12px',
-              }}
-            >
-              <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
-                📷 Scan School PC QR Code
-              </div>
-              <button
-                onClick={() => setShowCameraScanner(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#64748b',
-                  cursor: 'pointer',
-                }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Video Mount Container */}
-            <div
-              id="qr-reader"
-              style={{
-                width: '100%',
-                minHeight: '260px',
-                borderRadius: '12px',
-                overflow: 'hidden',
-                backgroundColor: '#000000',
-              }}
-            />
-
-            {cameraError && (
-              <div
-                style={{
-                  marginTop: '10px',
-                  backgroundColor: '#fee2e2',
-                  border: '1px solid #fecaca',
-                  color: '#dc2626',
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  fontSize: '11px',
-                  textAlign: 'left',
-                }}
-              >
-                {cameraError}
-              </div>
-            )}
-
-            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '12px' }}>
-              Point camera at the QR code displayed in the School PC Desktop App
-            </div>
+      {/* ------------------------------ Bottom nav ------------------------------ */}
+      {viewMode !== 'rollcall' && (
+        <nav className="tm-nav" aria-label="Main">
+          <div className="tm-nav-in">
+            <button type="button" className={`tm-navbtn${viewMode === 'batches' || viewMode === 'divisions' ? ' on' : ''}`} onClick={() => setViewMode('batches')}>
+              <i><School size={22} /></i>Classes
+            </button>
+            <button type="button" className="tm-navbtn" onClick={openScanner}>
+              <i><Camera size={22} /></i>Scan QR
+            </button>
+            <button type="button" className="tm-navbtn" onClick={refreshAll}>
+              <i><RefreshCw size={22} className={isLoading || isFlushingQueue ? 'tm-spin' : ''} /></i>Refresh
+              {offlineQueue.length > 0 && <em>{offlineQueue.length}</em>}
+            </button>
+            <button type="button" className="tm-navbtn" onClick={() => setShowSettingsModal(true)}>
+              <i><Settings size={22} /></i>Settings
+            </button>
           </div>
-        </div>
+        </nav>
       )}
 
-      {/* Success Modal */}
+      {/* -------------------------------- Sheets -------------------------------- */}
+      {showCameraScanner && (
+        <Sheet title="Scan School PC QR" onClose={() => setShowCameraScanner(false)}>
+          <p className="lead">Point the camera at the QR code shown in <b>Connect Teacher App</b> on the School PC.</p>
+          <div id="qr-reader" />
+          {cameraError && <div className="tm-err">{cameraError}</div>}
+        </Sheet>
+      )}
+
       {showSuccessModal && savedSummary && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            backgroundColor: 'rgba(15, 23, 42, 0.65)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-          }}
-        >
-          <div
-            className="liquid-card"
-            style={{
-              backgroundColor: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '20px',
-              padding: '24px',
-              width: '100%',
-              maxWidth: '380px',
-              textAlign: 'center',
-              boxShadow: '0 20px 50px rgba(15, 23, 42, 0.15)',
-            }}
-          >
-            <div
-              style={{
-                width: '60px',
-                height: '60px',
-                borderRadius: '50%',
-                backgroundColor: '#ecfdf5',
-                border: '2px solid #10b981',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '14px',
-                boxShadow: '0 4px 16px rgba(16, 185, 129, 0.25)',
-              }}
-            >
-              <CheckCircle2 size={34} color="#059669" />
-            </div>
-
-            <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
-              {savedSummary?.syncedToPc === false ? 'Saved on this phone only' : 'Roll Call Recorded!'}
-            </h3>
-            <div style={{ fontSize: '12px', color: savedSummary?.syncedToPc === false ? '#b45309' : '#64748b', marginTop: '4px', lineHeight: 1.4 }}>
-              {savedSummary?.syncedToPc === false
-                ? `Not on the School PC yet. ${savedSummary.notSyncedReason || ''} It will be sent automatically once the phone reaches the PC.`
-                : 'Attendance has been saved on the School PC.'}
-            </div>
-
-            {/* Summary Breakdown */}
-            <div
-              style={{
-                marginTop: '16px',
-                backgroundColor: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: '14px',
-                padding: '12px',
-                display: 'grid',
-                gridTemplateColumns: 'repeat(4, 1fr)',
-                gap: '6px',
-                textAlign: 'center',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: '10px', color: '#64748b', fontWeight: 700 }}>Total</div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
-                  {savedSummary.total}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '10px', color: '#059669', fontWeight: 700 }}>Present</div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: '#059669', marginTop: '2px' }}>
-                  {savedSummary.present}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '10px', color: '#b45309', fontWeight: 700 }}>Late</div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: '#b45309', marginTop: '2px' }}>
-                  {savedSummary.late}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '10px', color: '#dc2626', fontWeight: 700 }}>Absent</div>
-                <div style={{ fontSize: '16px', fontWeight: 800, color: '#dc2626', marginTop: '2px' }}>
-                  {savedSummary.absent}
-                </div>
-              </div>
-            </div>
-
+        <Sheet center>
+          <div className={`tm-done-ico${savedSummary.syncedToPc === false ? ' warn' : ''}`}>
+            {savedSummary.syncedToPc === false ? <Clock size={36} /> : <Check size={38} strokeWidth={3} />}
+          </div>
+          <h3 style={{ fontSize: 21, fontWeight: 800, letterSpacing: '-.02em' }}>
+            {savedSummary.syncedToPc === false ? 'Saved on this phone' : 'Roll call saved'}
+          </h3>
+          <p className="lead">
+            {savedSummary.batchName} · {fmtDay(savedSummary.date)}
+            <br />
+            {savedSummary.syncedToPc === false
+              ? `Not on the School PC yet. ${savedSummary.notSyncedReason || ''} It will be sent automatically when the phone reaches the PC.`
+              : 'Attendance is now on the School PC.'}
+          </p>
+          <div className="tm-sum">
+            <div><b>{savedSummary.total}</b><span>Total</span></div>
+            <div className="ok"><b>{savedSummary.present}</b><span>Present</span></div>
+            <div className="late"><b>{savedSummary.late}</b><span>Late</span></div>
+            <div className="bad"><b>{savedSummary.absent}</b><span>Absent</span></div>
+          </div>
+          <div className="tm-stack">
             <button
+              type="button"
+              className="tm-btn primary block"
               onClick={() => {
                 setShowSuccessModal(false);
                 setViewMode('batches');
                 loadBatches(hubUrl);
               }}
-              className="touch-action-btn"
-              style={{
-                marginTop: '18px',
-                width: '100%',
-                backgroundColor: '#059669',
-                backgroundImage: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-                border: 'none',
-                color: '#ffffff',
-                padding: '13px',
-                borderRadius: '12px',
-                fontSize: '13px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                boxShadow: '0 4px 16px rgba(16, 185, 129, 0.3)',
-              }}
             >
-              Back to Classes
+              Back to classes
             </button>
           </div>
-        </div>
+        </Sheet>
       )}
 
-      {/* Settings / Manual IP Modal */}
       {showSettingsModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            backgroundColor: 'rgba(15, 23, 42, 0.65)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-          }}
-        >
-          <div
-            className="liquid-card"
-            style={{
-              backgroundColor: '#ffffff',
-              border: '1px solid #e2e8f0',
-              borderRadius: '20px',
-              padding: '22px',
-              width: '100%',
-              maxWidth: '380px',
-              boxShadow: '0 20px 50px rgba(15, 23, 42, 0.15)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <div style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.3px' }}>
-                School PC Wi-Fi Connection
-              </div>
-              <button
-                onClick={() => setShowSettingsModal(false)}
-                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '4px' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '16px', lineHeight: 1.45 }}>
-              Enter the local IP address of your School PC. Both devices must be on the same School Wi-Fi network.
-            </div>
-
-            <div style={{ marginBottom: '14px' }}>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
-                SCHOOL PC WI-FI URL:
-              </label>
-              <input
-                type="text"
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                placeholder="http://192.168.0.104:5173"
-                style={{
-                  width: '100%',
-                  padding: '10px 12px',
-                  fontSize: '13px',
-                  borderRadius: '10px',
-                  backgroundColor: '#f8fafc',
-                  border: '1px solid #cbd5e1',
-                  color: '#0f172a',
-                  outline: 'none',
-                  fontFamily: 'monospace',
-                  boxSizing: 'border-box',
-                }}
-              />
-              <button
-                onClick={() => {
-                  setUrlInput(DEFAULT_SCHOOL_PC_URL);
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#0284c7',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  padding: 0,
-                  marginTop: '8px',
-                }}
-              >
-                ↺ Reset to Default (192.168.0.104:5173)
-              </button>
-            </div>
-
-            <div style={{ marginBottom: '16px' }}>
-              <button
-                onClick={() => {
-                  setShowSettingsModal(false);
-                  handleTriggerAutoDiscovery();
-                }}
-                disabled={isAutoDiscovering}
-                className="touch-action-btn"
-                style={{
-                  width: '100%',
-                  backgroundColor: '#059669',
-                  backgroundImage: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-                  border: 'none',
-                  color: '#ffffff',
-                  padding: '11px',
-                  borderRadius: '10px',
-                  fontSize: '12px',
-                  fontWeight: 800,
-                  cursor: isAutoDiscovering ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.25)',
-                }}
-              >
-                <Search size={14} />
-                <span>Auto-Detect School PC on Wi-Fi</span>
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                onClick={() => setShowSettingsModal(false)}
-                className="touch-action-btn"
-                style={{
-                  flex: 1,
-                  backgroundColor: '#f1f5f9',
-                  border: '1px solid #e2e8f0',
-                  color: '#334155',
-                  padding: '11px',
-                  borderRadius: '10px',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  const clean = urlInput.trim();
-                  setStoredHubUrl(clean);
-                  setHubUrl(clean);
-                  setShowSettingsModal(false);
-                  verifyConnection(clean, false);
-                }}
-                className="touch-action-btn"
-                style={{
-                  flex: 1,
-                  backgroundColor: '#0f172a',
-                  border: 'none',
-                  color: '#ffffff',
-                  padding: '11px',
-                  borderRadius: '10px',
-                  fontSize: '12px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                }}
-              >
-                Connect Now
-              </button>
+        <Sheet title="School PC connection" onClose={() => setShowSettingsModal(false)}>
+          <p className="lead">This phone and the School PC must be on the same school Wi-Fi.</p>
+          <div className={`tm-status-card ${connState}`}>
+            {connectionStatus.ok ? <CheckCircle2 size={24} color="#059669" /> : connWaiting ? <RefreshCw size={22} className="tm-spin" color="#64748b" /> : <WifiOff size={24} color="#dc2626" />}
+            <div style={{ minWidth: 0 }}>
+              <strong>{connectionStatus.ok ? 'Connected' : connWaiting ? 'Looking for the School PC…' : 'Not connected'}</strong>
+              <small>{hubUrl ? hubUrl.replace(/^https?:\/\//, '') : 'No School PC saved yet'}</small>
             </div>
           </div>
-        </div>
+          <label className="tm-field">
+            <span>School PC address</span>
+            <input
+              className="tm-input mono"
+              type="text"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              placeholder="192.168.0.104:5173"
+            />
+          </label>
+          {urlInput && <button type="button" className="tm-link" onClick={() => setUrlInput('')}>Clear address</button>}
+          <div className="tm-stack">
+            <button type="button" className="tm-btn primary block" onClick={() => connectManually(urlInput)}>Connect</button>
+            <button
+              type="button"
+              className="tm-btn soft block"
+              onClick={() => {
+                setShowSettingsModal(false);
+                handleTriggerAutoDiscovery();
+              }}
+              disabled={isAutoDiscovering}
+            >
+              <Sparkles size={18} />Find School PC automatically
+            </button>
+            <button type="button" className="tm-btn soft block" onClick={() => { setShowSettingsModal(false); openScanner(); }}>
+              <QrCode size={18} />Scan QR code
+            </button>
+          </div>
+          <div className="tm-ver">SMS Teacher · v{APP_VERSION} · {isPaired ? 'Paired with School PC' : 'Not paired yet'}</div>
+        </Sheet>
       )}
 
-      {/* ========================================================================= */}
-      {/* ARTISANAL PURE WHITE FIXED MOBILE BOTTOM NAVIGATION BAR                  */}
-      {/* ========================================================================= */}
-      <nav
-        style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: '64px',
-          backgroundColor: '#ffffff',
-          borderTop: '1px solid #e2e8f0',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-around',
-          zIndex: 100,
-          boxShadow: '0 -4px 16px rgba(15, 23, 42, 0.04)',
-          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        }}
-      >
-        {/* 1. Batches Cohorts */}
-        <button
-          onClick={() => setViewMode('batches')}
-          className="touch-action-btn"
-          style={{
-            background: 'none',
-            border: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '3px',
-            color: viewMode === 'batches' ? '#2563eb' : '#64748b',
-            cursor: 'pointer',
-            padding: '6px 12px',
-          }}
-        >
-          <div
-            style={{
-              padding: '2px 10px',
-              borderRadius: '12px',
-              backgroundColor: viewMode === 'batches' ? '#eff6ff' : 'transparent',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <School size={20} color={viewMode === 'batches' ? '#2563eb' : '#64748b'} />
-          </div>
-          <span style={{ fontSize: '10px', fontWeight: viewMode === 'batches' ? 800 : 500 }}>Classes</span>
-        </button>
-
-        {/* 2. Camera QR Scanner */}
-        <button
-          onClick={() => setShowCameraScanner(true)}
-          className="touch-action-btn"
-          style={{
-            background: 'none',
-            border: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '3px',
-            color: '#64748b',
-            cursor: 'pointer',
-            padding: '6px 12px',
-          }}
-        >
-          <Camera size={20} color="#64748b" />
-          <span style={{ fontSize: '10px', fontWeight: 500 }}>Scan QR</span>
-        </button>
-
-        {/* 3. Sync PC */}
-        <button
-          onClick={() => {
-            verifyConnection(hubUrl);
-            if (offlineQueue.length > 0) handleFlushQueue();
-          }}
-          className="touch-action-btn"
-          style={{
-            background: 'none',
-            border: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '3px',
-            color: '#64748b',
-            cursor: 'pointer',
-            padding: '6px 12px',
-          }}
-        >
-          <RefreshCw size={20} color="#64748b" className={isLoading || isFlushingQueue ? 'animate-spin' : ''} />
-          <span style={{ fontSize: '10px', fontWeight: 500 }}>Refresh</span>
-        </button>
-
-        {/* 5. Settings */}
-        <button
-          onClick={() => setShowSettingsModal(true)}
-          className="touch-action-btn"
-          style={{
-            background: 'none',
-            border: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '3px',
-            color: '#64748b',
-            cursor: 'pointer',
-            padding: '6px 12px',
-          }}
-        >
-          <Settings size={20} color="#64748b" />
-          <span style={{ fontSize: '10px', fontWeight: 500 }}>Settings</span>
-        </button>
-      </nav>
-
-      <BirthdayWishModal
-        isOpen={isBirthdayModalOpen}
-        onClose={() => setIsBirthdayModalOpen(false)}
-        student={activeBirthdayStudent}
-      />
+      <BirthdayWishModal isOpen={isBirthdayModalOpen} onClose={() => setIsBirthdayModalOpen(false)} student={activeBirthdayStudent} />
     </div>
   );
 }
