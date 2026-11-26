@@ -36,7 +36,7 @@ function getEnv() {
 }
 
 const env = getEnv();
-process.env.TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN || '8614141443:AAHOlKo5tP167sjlJqU1KfQi15Q1j8PRH8k';
+process.env.TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN || '';
 process.env.VITE_SUPABASE_URL = env.VITE_SUPABASE_URL || 'https://uugvudqbwoyywzbjrfol.supabase.co';
 process.env.VITE_SUPABASE_PUBLISHABLE_KEY = env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_pd2n3DRFhFgn79-SW6FEPw_vqRz2Jut';
 

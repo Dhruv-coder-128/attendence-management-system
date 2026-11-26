@@ -356,6 +356,7 @@ export async function commitMasterSpreadsheetData(parseResult, { onProgress = ()
       tuition_fee: r.annualFee || 0,
       fee_paid: r.paidFee || 0,
       enrollment_date: new Date().toISOString().split('T')[0],
+      status: 'active',
       enrollment_status: 'active',
       is_active: true,
     };

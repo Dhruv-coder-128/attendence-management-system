@@ -950,7 +950,7 @@ export default function NotificationsPage({ notifications = [], onBroadcast, onR
             {dispatchLogs.length} Records
           </div>
           <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-            Audited from public.attendance
+            From attendance records
           </div>
         </div>
 

@@ -41,3 +41,6 @@ src/data/attendance_sync.json
 
 # Files prepared for a GitHub release (npm run release)
 release-upload
+
+# Sales material and strategy: private, this repository is public
+sales-kit/

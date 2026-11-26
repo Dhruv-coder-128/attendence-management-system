@@ -829,6 +829,13 @@ textarea {
   margin-bottom: 24px;
 }
 
+/* Laptops: tighter columns so the action buttons stay on screen */
+@media (max-width: 1700px) {
+  .erp-table th, .erp-table td { padding-left: 9px !important; padding-right: 9px !important; }
+  .erp-table .btn { padding-left: 9px; padding-right: 9px; }
+  .erp-table .col-wide { display: none; }
+}
+
 .erp-table-scroll {
   overflow-x: auto;
   width: 100%;

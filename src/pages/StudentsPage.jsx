@@ -80,7 +80,6 @@ export default function StudentsPage({ onRefreshCounts }) {
   const [showAdvancedFields, setShowAdvancedFields] = useState(false);
   const [capacityNotice, setCapacityNotice] = useState(null);
   const maxCapacity = getMaxStudentCapacity();
-  const capacityTier = getStudentCapacityTier(maxCapacity);
 
   // Form State for Add / Edit
   const initialFormState = {
@@ -129,7 +128,7 @@ export default function StudentsPage({ onRefreshCounts }) {
   // 1. Fetch Students, Courses, and Batches from Supabase
   const fetchData = async () => {
     if (!isSupabaseConfigured || !supabase) {
-      setError('Supabase is not configured. Please check .env.local.');
+      setError('The database is not ready yet.');
       setLoading(false);
       return;
     }
@@ -225,7 +224,7 @@ export default function StudentsPage({ onRefreshCounts }) {
       setParents(parentsData || []);
     } catch (err) {
       console.error('Error fetching student data:', err);
-      setError(err.message || 'Failed to load students from Supabase database.');
+      setError(err.message || 'Failed to load students.');
     } finally {
       setLoading(false);
     }
@@ -539,7 +538,7 @@ export default function StudentsPage({ onRefreshCounts }) {
       if (err.message?.includes('duplicate key') || err.message?.includes('students_admission_no_key')) {
         setModalError('A student with this Admission Number already exists. Please use a unique ID.');
       } else {
-        setModalError(err.message || 'Failed to save student record to Supabase.');
+        setModalError(err.message || 'Failed to save the student record.');
       }
     } finally {
       setIsSubmitting(false);
@@ -858,28 +857,6 @@ export default function StudentsPage({ onRefreshCounts }) {
             )}
           </div>
 
-          {/* Student Plan Capacity Badge */}
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: '8px',
-              border: students.length >= maxCapacity ? '1px solid #fca5a5' : '1px solid #bfdbfe',
-              backgroundColor: students.length >= maxCapacity ? '#fef2f2' : '#eff6ff',
-              color: students.length >= maxCapacity ? '#b91c1c' : '#1e40af',
-              fontSize: '12px',
-              fontWeight: 700,
-            }}
-            title={`Authorized Plan: ${capacityTier.name} (Max ${maxCapacity} Students)`}
-          >
-            <Users size={14} />
-            <span>
-              {students.length} / {maxCapacity} Students ({capacityTier.name})
-            </span>
-          </div>
-
           <Button
             variant="primary"
             size="md"
@@ -954,7 +931,7 @@ export default function StudentsPage({ onRefreshCounts }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#92400e' }}>
             <Layers size={18} />
             <span>
-              <strong>Note:</strong> No academic batches found in <code>public.batches</code> table. Students require an assigned batch.
+              <strong>Note:</strong> No class has been created yet. Students require an assigned batch.
             </span>
           </div>
           <Button
@@ -1251,7 +1228,7 @@ export default function StudentsPage({ onRefreshCounts }) {
           setStudentToEdit(null);
         }}
         title={studentToEdit ? 'Edit Student Record' : 'Register New Student Admission'}
-        subtitle="Saved directly to Supabase PostgreSQL table (public.students)"
+        subtitle="Admission details"
         size="lg"
         footer={
           <>
@@ -1272,7 +1249,7 @@ export default function StudentsPage({ onRefreshCounts }) {
               onClick={handleSaveStudent}
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Saving to Supabase...' : studentToEdit ? 'Save Changes' : 'Confirm Admission'}
+              {isSubmitting ? 'Saving...' : studentToEdit ? 'Save Changes' : 'Confirm Admission'}
             </Button>
           </>
         }
@@ -1621,7 +1598,7 @@ export default function StudentsPage({ onRefreshCounts }) {
         isOpen={Boolean(studentToDelete)}
         onClose={() => setStudentToDelete(null)}
         title="Confirm Student Removal"
-        subtitle="Supabase Row Deletion"
+        subtitle="This cannot be undone"
         footer={
           <>
             <Button
@@ -1659,7 +1636,7 @@ export default function StudentsPage({ onRefreshCounts }) {
                 color: 'var(--status-absent)',
               }}
             >
-              <strong>Warning:</strong> This will permanently delete the student from your Supabase <code>public.students</code> table and cascade-remove any associated attendance or parent links. This action cannot be undone.
+              <strong>Warning:</strong> This will permanently delete the student and remove any associated attendance or parent links. This action cannot be undone.
             </div>
           </div>
         )}

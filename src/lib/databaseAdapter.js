@@ -331,6 +331,8 @@ export function createLocalTableQueryBuilder(tableName) {
 async function executeLocalQuery(state) {
   try {
     let rows = await getAllFromStore(state.tableName);
+    // A student without a status is an active one (older Excel imports did not write it)
+    if (state.tableName === 'students') rows = rows.map((r) => (r.status ? r : { ...r, status: 'active' }));
 
     // 1. Handle INSERT / UPSERT
     if (state.operation === 'insert' || state.operation === 'upsert') {
@@ -382,6 +384,8 @@ async function executeLocalQuery(state) {
             existingRecord = rows.find(
               (r) => r.student_id === item.student_id && (r.academic_year === item.academic_year || !item.academic_year)
             );
+          } else if (state.tableName === 'exam_marks') {
+            existingRecord = rows.find((r) => r.exam_id === item.exam_id && r.student_id === item.student_id);
           } else if (state.tableName === 'parent_students') {
             existingRecord = rows.find(
               (r) => r.parent_id === item.parent_id && r.student_id === item.student_id
@@ -860,6 +864,18 @@ async function resolveRelations(tableName, records, selectString) {
           parent_students: parentStudents,
         };
       });
+    }
+
+    if (tableName === 'exam_marks') {
+      const exams = await resolveRelations('exams', await getAllFromStore('exams'), 'batches(*)');
+      const examMap = new Map(exams.map((e) => [e.id, e]));
+      return records.map((rec) => ({ ...rec, exams: examMap.get(rec.exam_id) || null }));
+    }
+
+    if (tableName === 'exams') {
+      const batchMap = new Map((await getAllFromStore('batches')).map((b) => [b.id, b]));
+      const courseMap = new Map((await getAllFromStore('courses')).map((c) => [c.id, c]));
+      return records.map((rec) => ({ ...rec, batches: batchMap.get(rec.batch_id) || null, courses: courseMap.get(rec.course_id) || null }));
     }
 
     return records;

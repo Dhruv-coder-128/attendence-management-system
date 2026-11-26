@@ -164,7 +164,7 @@ export default function MonthlyAttendanceRegister({
       setSessionDates(sortedSessionDates);
     } catch (err) {
       console.error('Failed to load monthly attendance:', err);
-      setError(err.message || 'Error fetching monthly records from Supabase.');
+      setError(err.message || 'Could not load the monthly records.');
     } finally {
       setLoading(false);
     }

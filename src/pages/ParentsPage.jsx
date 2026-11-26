@@ -125,7 +125,7 @@ export default function ParentsPage({ onRefreshCounts }) {
   // Fetch Parents with linked students, and student options
   const fetchData = async (forceRepair = false) => {
     if (!isSupabaseConfigured || !supabase) {
-      setError('Supabase is not configured.');
+      setError('The database is not ready yet.');
       setLoading(false);
       return;
     }
@@ -251,7 +251,7 @@ export default function ParentsPage({ onRefreshCounts }) {
       }
     } catch (err) {
       console.error('Error fetching parents:', err);
-      setError(err.message || 'Failed to load parents from Supabase.');
+      setError(err.message || 'Failed to load parents.');
     } finally {
       setLoading(false);
     }
@@ -1075,7 +1075,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                 <tr>
                   <td colSpan={7} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
                     <RefreshCw size={22} className="animate-spin" style={{ marginBottom: '8px' }} />
-                    <div>Loading guardians from Supabase...</div>
+                    <div>Loading guardians...</div>
                   </td>
                 </tr>
               ) : filteredParents.length === 0 ? (
@@ -1084,12 +1084,12 @@ export default function ParentsPage({ onRefreshCounts }) {
                     <Users size={32} color="var(--gold-dark)" style={{ marginBottom: '10px' }} />
                     <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--navy-950)' }}>
                       {parents.length === 0
-                        ? 'No Guardian Records in Supabase Database'
+                        ? 'No guardians added yet'
                         : 'No matching guardians found'}
                     </div>
                     <div style={{ fontSize: '12px', marginTop: '4px', maxWidth: '420px', margin: '4px auto 16px' }}>
                       {parents.length === 0
-                        ? 'Your public.parents table is currently empty. Click below to register guardian details and link student wards.'
+                        ? 'Your guardian list is empty. Click below to register guardian details and link student wards.'
                         : 'Try adjusting your search query or clearing the channel filter.'}
                     </div>
                     {parents.length === 0 && (
@@ -1421,7 +1421,7 @@ export default function ParentsPage({ onRefreshCounts }) {
           setParentToEdit(null);
         }}
         title={parentToEdit ? 'Edit Guardian Details' : 'Register New Parent / Guardian'}
-        subtitle="Saved directly to Supabase public.parents"
+        subtitle="Contact details and linked students"
         size="lg"
         footer={
           <>
@@ -1560,7 +1560,7 @@ export default function ParentsPage({ onRefreshCounts }) {
         isOpen={Boolean(parentToDelete)}
         onClose={() => setParentToDelete(null)}
         title="Confirm Guardian Deletion"
-        subtitle="Supabase Row Deletion"
+        subtitle="This cannot be undone"
         size="sm"
         footer={
           <>
@@ -1713,7 +1713,7 @@ export default function ParentsPage({ onRefreshCounts }) {
                     </div>
                     <div style={{ padding: '8px', background: 'rgba(255,255,255,0.7)', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                       <strong>3. Tap Confirm</strong>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>Instant link in Supabase</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '10px' }}>Linked instantly</div>
                     </div>
                   </div>
 

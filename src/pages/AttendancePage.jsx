@@ -582,7 +582,7 @@ export default function AttendancePage({ onRefreshCounts }) {
         }).catch(() => {});
       } catch {}
 
-      showToast(`Marked ${students.length} students as Present in Supabase!`);
+      showToast(`Marked ${students.length} students as Present!`);
     } catch (err) {
       console.error('Error marking all present:', err);
       alert('Failed to mark all present: ' + err.message);
@@ -1909,13 +1909,13 @@ export default function AttendancePage({ onRefreshCounts }) {
                   </div>
                   <ul style={{ margin: '0 0 0 16px', padding: 0, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                     <li>
-                      <strong>Zero Privacy Leaks:</strong> Every notification is resolved server-side from <code>public.parent_students</code>. Parents receive strictly their child's individual attendance record.
+                      <strong>Zero Privacy Leaks:</strong> Each message goes only to the parents linked to that student. Parents receive strictly their child's individual attendance record.
                     </li>
                     <li>
                       <strong>Duplicate Suppression:</strong> Students already notified for date <code>{selectedDate}</code> are skipped automatically to avoid repeated spam.
                     </li>
                     <li>
-                      <strong>Verified Deliveries Only:</strong> Status is marked <code>telegram_notified: true</code> in PostgreSQL only when Telegram Bot API confirms HTTP 200 message delivery.
+                      <strong>Verified Deliveries Only:</strong> A message is marked as sent only after Telegram confirms the delivery.
                     </li>
                   </ul>
                 </div>

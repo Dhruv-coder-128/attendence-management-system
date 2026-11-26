@@ -654,7 +654,7 @@ export default function FeesPage({ onRefreshCounts }) {
         isOpen={Boolean(selectedStudentForPayment)}
         onClose={() => setSelectedStudentForPayment(null)}
         title={`Record Tuition Payment: ${selectedStudentForPayment?.full_name}`}
-        subtitle="Submit fee receipt and update student balance in PostgreSQL"
+        subtitle="Record a payment and update the student balance"
       >
         {selectedStudentForPayment && (() => {
           const totalFee = Number(

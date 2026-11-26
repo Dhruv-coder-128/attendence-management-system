@@ -27,6 +27,7 @@ export default function LoginPage({ onLoginSuccess }) {
   const [forgotSuccess, setForgotSuccess] = useState('');
   const [isResetting, setIsResetting] = useState(false);
   const isCloudMode = getStorageMode() === 'cloud';
+  const [ownerExists, setOwnerExists] = useState(false); // once true, new accounts are made in Settings, not here
 
   // First run (or upgrade from a build without passwords): the owner must create a password.
   useEffect(() => {
@@ -34,6 +35,8 @@ export default function LoginPage({ onLoginSuccess }) {
       if (needed) {
         setIsSignUp(true);
         setSuccessMessage('First-time setup: create the owner account and password for this computer.');
+      } else {
+        setOwnerExists(true);
       }
     }).catch(() => {});
   }, []);
@@ -205,12 +208,12 @@ export default function LoginPage({ onLoginSuccess }) {
             SMS — Student Management System
           </h1>
           <p style={{ fontSize: '12px', color: 'var(--gold-light)', marginTop: '4px' }}>
-            Administrative Console &bull; Supabase Authentication
+            {isCloudMode ? 'Administrative Console • Secure Sign In' : 'School Office • Works Without Internet'}
           </p>
         </div>
 
-        {/* Tab switch between Sign In and Sign Up */}
-        <div
+        {/* Sign In / Sign Up tabs. Offline: hidden once the owner account exists; more staff are added in Settings */}
+        {(isCloudMode || !ownerExists) && <div
           style={{
             display: 'flex',
             borderBottom: '1px solid var(--border-subtle)',
@@ -267,7 +270,7 @@ export default function LoginPage({ onLoginSuccess }) {
           >
             <UserPlus size={14} /> Register Admin
           </button>
-        </div>
+        </div>}
 
         {/* Login Form Body */}
         <form onSubmit={handleSubmit} style={{ padding: '24px' }}>
@@ -379,7 +382,7 @@ export default function LoginPage({ onLoginSuccess }) {
             {isLoading
               ? isSignUp
                 ? 'Creating Account...'
-                : 'Verifying with Supabase...'
+                : 'Signing in...'
               : isSignUp
               ? 'Create Administrator Account'
               : 'Sign In to Console'}
@@ -399,10 +402,10 @@ export default function LoginPage({ onLoginSuccess }) {
             }}
           >
             <div style={{ fontWeight: 600, color: 'var(--navy-950)', marginBottom: '3px' }}>
-              Authentication Security Notice:
+              Your data is protected:
             </div>
             <div>
-              Protected by Supabase Auth with Row Level Security. Only authenticated administrative users can access the student registry and attendance records.
+              {isCloudMode ? 'Only signed-in staff can open student and attendance records.' : 'Your school data stays on this computer. Only staff with a password can open student and attendance records.'}
             </div>
           </div>
         </form>

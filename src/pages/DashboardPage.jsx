@@ -75,7 +75,7 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
   // Query live data directly from Supabase
   const fetchDashboardData = useCallback(async (isSilent = false) => {
     if (!isSupabaseConfigured || !supabase) {
-      setError('Supabase credentials are not configured in environment.');
+      setError('The database is not ready yet.');
       setLoading(false);
       return;
     }
@@ -96,7 +96,6 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
       const bdays = studentList.filter(
         (s) => s.status !== 'inactive' && s.status !== 'suspended' && isStudentBirthdayToday(s.dob)
       );
-      setBirthdayStudents(bdays);
 
       // 2. Active Batches with enrolled student count
       const { data: batchesData, error: bErr } = await supabase
@@ -114,6 +113,8 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
         `)
         .order('name');
       if (bErr) throw bErr;
+      const batchNames = new Map((batchesData || []).map((b) => [b.id, b.name]));
+      setBirthdayStudents(bdays.map((s) => ({ ...s, batch_name: batchNames.get(s.batch_id) })));
 
       // 3. Today's Attendance Records - Order by updated_at descending
       const { data: attendanceData, error: aErr } = await supabase
@@ -352,7 +353,7 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
               <div style={{ fontSize: '12.5px', color: '#9d174d', marginTop: '2px' }}>
                 {birthdayStudents.map((s, idx) => (
                   <span key={s.id || s.admission_no || idx} style={{ fontWeight: 600 }}>
-                    {s.full_name} ({s.batch_name || s.batch_code || s.batch_id || 'General'})
+                    {s.full_name} ({s.batch_name || s.batch_code || 'General'})
                     {idx < birthdayStudents.length - 1 ? ', ' : ''}
                   </span>
                 ))}
@@ -394,7 +395,7 @@ export default function DashboardPage({ onNavigate, onAlertParent }) {
       )}
 
       {/* 6 PRIMARY STATS GRID (Enrolled, Present, Late, Absent, Pending, Batches) */}
-      <div className="stats-grid" style={{ marginBottom: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+      <div className="stats-grid" style={{ marginBottom: '16px', gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))' }}>
         <StatsCard
           title="Total Students"
           value={loading ? '...' : String(stats.totalStudents)}

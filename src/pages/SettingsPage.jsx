@@ -411,6 +411,8 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
   const handleRestoreBackupFile = async (e) => {
     const backupFile = e.target.files?.[0];
     if (!backupFile) return;
+    e.target.value = ''; // so the same file can be chosen again after "Cancel"
+    if (!window.confirm(`Replace ALL current data on this computer with "${backupFile.name}"?\n\nCurrent students, attendance and fees will be overwritten. Export a backup first if unsure.`)) return;
     try {
       const text = await backupFile.text();
       const res = await importDatabaseBackup(text);
@@ -432,12 +434,12 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
     // Every client build shares the developer's default project, so cloud mode is only allowed
     // once this school has connected its OWN database; otherwise schools would see each other's data.
     if (newMode === 'cloud' && !getActiveDatabaseConfig().isCustomSchoolDb) {
-      setBackupNotice({ type: 'error', message: "Connect your school's own Supabase database first (Licence & Database setup). Until then data stays safely on this computer." });
+      setBackupNotice({ type: 'error', message: "Connect your school's own cloud database first (Licence & Database setup). Until then data stays safely on this computer." });
       return;
     }
     setStorageMode(newMode);
     setActiveStorageMode(newMode);
-    setBackupNotice({ type: 'success', message: `Switched storage engine to ${newMode === 'offline' ? 'Offline Local DB' : 'Cloud Supabase'}. Reloading...` });
+    setBackupNotice({ type: 'success', message: `Switched storage engine to ${newMode === 'offline' ? 'Offline Local DB' : 'Cloud database'}. Reloading...` });
     setTimeout(() => window.location.reload(), 1200);
   };
 
@@ -447,11 +449,12 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
         <div>
           <h1 className="page-title">Institution &amp; ERP System Settings</h1>
           <p className="page-description">
-            Academic Policies, Supabase PostgreSQL Connection Diagnostics &amp; Cloud Gateway
+            School details, attendance rules, backup and messages
           </p>
         </div>
 
         <div className="page-actions">
+          {!isTauriDesktop() && (
           <Button
             variant="outline"
             size="sm"
@@ -459,8 +462,9 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
             onClick={runConnectionTest}
             disabled={connectionState.loading}
           >
-            {connectionState.loading ? 'Checking...' : 'Re-test Supabase'}
+            {connectionState.loading ? 'Checking...' : 'Test connection'}
           </Button>
+          )}
           <Button
             variant="primary"
             size="sm"
@@ -902,7 +906,7 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
                     color: 'var(--navy-950)',
                   }}
                 >
-                  {isTauriDesktop() ? 'Institution Database & Storage Engine' : 'Supabase & PostgreSQL Database'}
+                  {isTauriDesktop() ? 'Institution Database & Storage Engine' : 'Database'}
                 </h2>
               </div>
 
@@ -922,7 +926,7 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '14px' }}>
               {isTauriDesktop()
                 ? '100% Offline On-Device Storage — Private, High-Performance & Secure (Zero Cloud Dependency)'
-                : 'Dual-Mode Engine: 100% Offline Local On-Device Storage or Dedicated Cloud Supabase'}
+                : 'Dual-Mode Engine: 100% Offline Local On-Device Storage or your own cloud database'}
             </p>
 
             {/* Storage Engine Status & Backup Hub */}
@@ -950,7 +954,7 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
                     border: `1px solid ${(isTauriDesktop() || activeStorageMode === 'offline') ? '#bbf7d0' : '#bfdbfe'}`,
                   }}
                 >
-                  {isTauriDesktop() || activeStorageMode === 'offline' ? '100% Offline On-Device (SQLite / IndexedDB)' : 'Cloud PostgreSQL'}
+                  {isTauriDesktop() || activeStorageMode === 'offline' ? '100% Offline (on this computer)' : 'Cloud database'}
                 </span>
               </div>
 
@@ -997,7 +1001,7 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
                     }}
                   >
                     <Cloud size={15} color={activeStorageMode === 'cloud' ? 'var(--gold-dark)' : 'var(--text-muted)'} />
-                    <span>Cloud Supabase DB</span>
+                    <span>Cloud database</span>
                   </button>
                 </div>
               )}
@@ -1111,7 +1115,7 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
                       }}
                     >
                       {connectionState.ok
-                        ? 'Supabase Connection Active'
+                        ? 'Connection active'
                         : isSupabaseConfigured
                         ? 'Connection Failed'
                         : 'Configuration Missing'}
@@ -1182,7 +1186,7 @@ export default function SettingsPage({ currentUserProfile, onOpenLicenseModal, o
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Database Isolation:</span>
                 <span style={{ color: isTauriDesktop() ? '#15803d' : (supabaseConfig.isCustomSchoolDb ? '#15803d' : 'var(--navy-700)'), fontWeight: 600 }}>
-                  {isTauriDesktop() ? '100% Isolated Local On-Device Database' : (supabaseConfig.isCustomSchoolDb ? 'Dedicated School Supabase DB' : 'Default Project Instance (.env.local)')}
+                  {isTauriDesktop() ? '100% Isolated Local On-Device Database' : (supabaseConfig.isCustomSchoolDb ? 'Own cloud database' : 'Default cloud database')}
                 </span>
               </div>
               {isTauriDesktop() ? (

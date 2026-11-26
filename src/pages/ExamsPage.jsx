@@ -526,7 +526,7 @@ export default function ExamsPage() {
                 <th>Course &amp; Cohort</th>
                 <th>Exam Date</th>
                 <th>Marks Scheme</th>
-                <th>Term</th>
+                <th className="col-wide">Term</th>
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
@@ -594,7 +594,7 @@ export default function ExamsPage() {
                         {exam.courses?.code || 'All Courses'}
                       </div>
                       <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                        {exam.batches?.name || 'Whole Stream Cohort'}
+                        {exam.batches?.name || 'All divisions'}
                       </div>
                     </td>
                     <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
@@ -608,7 +608,7 @@ export default function ExamsPage() {
                         Max: <strong>{exam.total_marks}</strong> &bull; Pass: {exam.passing_marks}
                       </div>
                     </td>
-                    <td style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                    <td className="col-wide" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                       {exam.academic_year || '2026-27'}
                     </td>
                     <td style={{ textAlign: 'right' }}>
@@ -807,7 +807,7 @@ export default function ExamsPage() {
         isOpen={Boolean(examToDelete)}
         onClose={() => setExamToDelete(null)}
         title="Confirm Examination Deletion"
-        subtitle="PostgreSQL Cascade Delete"
+        subtitle="Marks of this exam are removed too"
         footer={
           <>
             <Button variant="outline" size="sm" onClick={() => setExamToDelete(null)}>

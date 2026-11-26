@@ -63,7 +63,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
   const handleConnectCustomDb = async (e) => {
     e.preventDefault();
     if (!customDbUrl.trim() || !customDbAnonKey.trim()) {
-      setError('Both Supabase URL and Publishable Anon Key are required.');
+      setError('Both the database address and the public key are required.');
       return;
     }
 
@@ -114,7 +114,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
               ? `Currently connected to ${currentLicense?.schoolName || 'Enrolled School'}. Manage your license or switch keys below.`
               : (isTauriDesktop()
                 ? 'Each institution operates on a private, isolated local on-device database. Enter your School License Key to activate.'
-                : 'Each client/school operates on an isolated database. Connect using your School License Key or your own dedicated Supabase cloud project.')}
+                : 'Each client/school operates on an isolated database. Connect using your School License Key or your own cloud database.')}
           </p>
         </div>
 
@@ -161,7 +161,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                 gap: '6px',
               }}
             >
-              <Database size={14} /> Connect School Supabase DB
+              <Database size={14} /> Cloud database (advanced)
             </button>
           </div>
         )}
@@ -244,7 +244,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                     <div style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a', marginTop: '3px' }}>
                       {isTauriDesktop()
                         ? 'Private Local DB'
-                        : (currentLicense?.isCustomSchoolDb ? 'Dedicated Supabase' : 'Isolated Cloud DB')}
+                        : (currentLicense?.isCustomSchoolDb ? 'Own cloud database' : 'Isolated Cloud DB')}
                     </div>
                   </div>
                 </div>
@@ -306,7 +306,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                   <span style={{ color: 'var(--text-muted)' }}>Database Instance:</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--navy-900)' }}>
-                    {successData.isCustomSchoolDb ? 'Dedicated School Supabase Project' : 'Isolated Cloud Database'}
+                    {successData.isCustomSchoolDb ? 'Own cloud database' : 'Isolated Cloud Database'}
                   </span>
                 </div>
               </div>
@@ -432,7 +432,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
 
               <div className="form-group" style={{ marginBottom: '12px' }}>
                 <label className="form-label" style={{ fontWeight: 600, fontSize: '12.5px' }}>
-                  Supabase Project URL
+                  Cloud database address
                 </label>
                 <input
                   type="url"
@@ -448,7 +448,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
 
               <div className="form-group" style={{ marginBottom: '16px' }}>
                 <label className="form-label" style={{ fontWeight: 600, fontSize: '12.5px' }}>
-                  Supabase Publishable / Anon Key
+                  Cloud database public key
                 </label>
                 <input
                   type="text"
@@ -461,7 +461,7 @@ export default function SchoolActivationModal({ isOpen, onClose, onActivated, is
                   required
                 />
                 <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Safe client key. All data for this client will be stored exclusively in this Supabase database.
+                  Safe client key. All data of this school will be stored only in this database.
                 </p>
               </div>
 

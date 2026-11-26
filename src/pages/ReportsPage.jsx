@@ -564,8 +564,10 @@ export default function ReportsPage() {
   const topCohort = activeCohortsWithStudents.length > 0
     ? [...activeCohortsWithStudents].sort((a, b) => b.attendanceRate - a.attendanceRate)[0]
     : null;
-  const lowCohort = activeCohortsWithStudents.length > 0
-    ? [...activeCohortsWithStudents].sort((a, b) => a.attendanceRate - b.attendanceRate)[0]
+  // Only classes whose roll call was taken can be "low"; an untaken class is not 0% attendance
+  const takenCohorts = activeCohortsWithStudents.filter((c) => c.present + c.late + c.absent > 0);
+  const lowCohort = takenCohorts.length > 0
+    ? [...takenCohorts].sort((a, b) => a.attendanceRate - b.attendanceRate)[0]
     : null;
 
   return (
@@ -596,22 +598,9 @@ export default function ReportsPage() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <h1 className="page-title" style={{ margin: 0 }}>Reports &amp; Analytics Hub</h1>
-            <span
-              style={{
-                backgroundColor: '#e0e7ff',
-                color: '#4338ca',
-                fontSize: '11px',
-                fontWeight: 800,
-                padding: '2px 8px',
-                borderRadius: '6px',
-                fontFamily: 'monospace',
-              }}
-            >
-              Enterprise v3.0
-            </span>
           </div>
           <p className="page-description" style={{ marginTop: '4px' }}>
-            Sellable, authoritative institutional reporting across Attendance, Financial Collections, Examination Scores, and Directory Dossiers
+            Attendance, fee, exam and student reports you can print or export to Excel
           </p>
         </div>
 

@@ -73,7 +73,7 @@ export default function BatchesPage({ onRefreshCounts }) {
   // Fetch batches and courses from Supabase
   const fetchData = async () => {
     if (!isSupabaseConfigured || !supabase) {
-      setError('Supabase is not configured.');
+      setError('The database is not ready yet.');
       setLoading(false);
       return;
     }
@@ -115,7 +115,7 @@ export default function BatchesPage({ onRefreshCounts }) {
       setBatches(batchesData || []);
     } catch (err) {
       console.error('Error fetching batches:', err);
-      setError(err.message || 'Failed to load batches from Supabase.');
+      setError(err.message || 'Failed to load batches.');
     } finally {
       setLoading(false);
     }
@@ -252,7 +252,7 @@ export default function BatchesPage({ onRefreshCounts }) {
       if (err.message?.includes('duplicate key') || err.message?.includes('batches_code_key')) {
         setModalError('A batch with this code already exists. Please use a unique code.');
       } else {
-        setModalError(err.message || 'Failed to save batch to Supabase.');
+        setModalError(err.message || 'Failed to save the batch.');
       }
     } finally {
       setIsSubmitting(false);
@@ -612,7 +612,7 @@ export default function BatchesPage({ onRefreshCounts }) {
           setBatchToEdit(null);
         }}
         title={batchToEdit ? 'Edit Batch Cohort' : 'Create New Academic Batch'}
-        subtitle="Saved directly to Supabase PostgreSQL table (public.batches)"
+        subtitle="Class details, timing and room"
         footer={
           <>
             <Button
@@ -737,7 +737,7 @@ export default function BatchesPage({ onRefreshCounts }) {
         isOpen={Boolean(batchToDelete)}
         onClose={() => setBatchToDelete(null)}
         title="Confirm Batch Deletion"
-        subtitle="Supabase Row Deletion"
+        subtitle="This cannot be undone"
         footer={
           <>
             <Button

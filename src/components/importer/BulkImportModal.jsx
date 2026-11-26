@@ -300,7 +300,7 @@ export default function BulkImportModal({
       isOpen={isOpen}
       onClose={handleClose}
       title={`Enterprise Bulk Import — ${activeSchema.title}`}
-      subtitle="Direct Supabase PostgreSQL upload with schema mapping, validation & duplicate safeguards"
+      subtitle="Upload a sheet: columns are matched, checked and duplicates are skipped"
       size="xl"
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
@@ -529,7 +529,7 @@ export default function BulkImportModal({
             >
               <Layers size={16} style={{ flexShrink: 0 }} />
               <span>
-                <strong>Prerequisite Dependency:</strong> {activeSchema.description}. Ensure the required entities are already in Supabase to avoid foreign key errors.
+                <strong>Prerequisite Dependency:</strong> {activeSchema.description}. Ensure the required entities already exist before importing.
               </span>
             </div>
           )}
@@ -925,7 +925,7 @@ export default function BulkImportModal({
             <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
               <RefreshCw size={28} className="animate-spin" style={{ margin: '0 auto 12px' }} />
               <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--navy-950)' }}>
-                Validating rows against Supabase constraints...
+                Checking every row...
               </div>
               <div style={{ fontSize: '12px', marginTop: '4px' }}>
                 Checking duplicate primary keys and resolving foreign key relationships
@@ -1183,7 +1183,7 @@ export default function BulkImportModal({
           />
 
           <h3 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--navy-950)', marginBottom: '6px' }}>
-            Writing Records to Supabase PostgreSQL Database
+            Saving records
           </h3>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '24px' }}>
             Inserting chunk {importProgress.currentChunk || 1} of {importProgress.totalChunks || 1} safely via authenticated admin session...
@@ -1242,7 +1242,7 @@ export default function BulkImportModal({
               Bulk Import Operation Completed
             </h3>
             <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-              Supabase table <code>public.{activeSchema.table}</code> has been updated.
+              Your records have been updated.
             </p>
           </div>
 

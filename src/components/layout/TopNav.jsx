@@ -30,10 +30,12 @@ export default function TopNav({
         return 'Notifications';
       case 'settings':
         return 'Settings';
+      case 'reports':
+        return 'Reports';
       case 'import':
         return 'Bulk Import';
       default:
-        return 'ERP';
+        return 'Home';
     }
   };
 
